@@ -2892,6 +2892,191 @@ Check("counted events: the triggers and the watched list know the counted names"
 
 #endregion
 
+#region View text
+
+Check("view text: triggers read as words", () =>
+{
+    Expect(ViewText.TriggerText(Trigger.OnEvent("ignition", 2.0), 0) == "ignition +2.0 s", "event plus delay");
+    Expect(ViewText.TriggerText(Trigger.OnEvent("altitude:5000", -1.5), 0) == "altitude:5000 -1.5 s", "negative delay");
+    Expect(ViewText.TriggerText(Trigger.OnEvent("liftoff"), 0) == "liftoff", "no delay");
+    Expect(ViewText.TriggerText(Trigger.AtTime(12.0), 3) == "at 12.0 s", "time");
+    Expect(ViewText.TriggerText(Trigger.After(), 3) == "after #3", "after names the item before");
+    Expect(ViewText.TriggerText(Trigger.After(), 0) == "at the start", "first item");
+});
+
+Check("view text: rows of the three tracks", () =>
+{
+    Shot shot = MakeShot(ShotType.Chase, 8.0);
+    shot.At = Trigger.OnEvent("sequence:3", 1.0);
+    TrackRow row = ViewText.ShotRow(1, shot);
+    Expect(row.Number == "2" && row.Name == "chase" && row.Starts == "sequence:3 +1.0 s" && row.Extra == "8.0 s", "shot row " + row);
+    TrackRow key = ViewText.KeyRow(0, new SpeedKey { To = 0.25, Ramp = 2.0 });
+    Expect(key.Name == "to 0.25x" && key.Extra == "ramp 2.0 s" && key.Starts == "at the start", "key row " + key);
+    Expect(ViewText.KeyRow(0, new SpeedKey { To = 4.0 }).Extra == "jump", "no ramp");
+    TrackRow action = ViewText.ActionRow(0, new TakeAction { Sequence = 3, At = Trigger.AtTime(9.5) });
+    Expect(action.Name == "stage" && action.Extra == "sequence 3" && action.Starts == "at 9.5 s", "action row " + action);
+});
+
+Check("view text: the state of the take", () =>
+{
+    var idle = new RunStateInput(false, false, false, false, false, false, false);
+    Expect(ViewText.StateOf(idle) == RunState.Idle, "idle");
+    Expect(ViewText.StateOf(idle with { ResetReady = true }) == RunState.Ready, "ready");
+    Expect(ViewText.StateOf(idle with { ResetActive = true, ResetReady = true }) == RunState.Resetting, "reset first");
+    Expect(ViewText.StateOf(idle with { HasRun = true }) == RunState.Recording, "recording");
+    Expect(ViewText.StateOf(idle with { HasRun = true, DryRun = true }) == RunState.DryRun, "dry");
+    Expect(ViewText.StateOf(idle with { HasRun = true, Preview = true }) == RunState.Preview, "preview");
+    Expect(ViewText.StateOf(idle with { HasRun = true, Capturing = true }) == RunState.Capturing, "capturing");
+    Expect(ViewText.StateOf(idle with { HasRun = true, Paused = true }) == RunState.Paused, "paused");
+});
+
+Check("view text: ready latch holds until a take starts", () =>
+{
+    var latch = new ReadyLatch();
+    latch.Update(ResetPhase.Loading, false);
+    Expect(!latch.Ready, "loading");
+    latch.Update(ResetPhase.Done, false);
+    Expect(latch.Ready, "done");
+    latch.Update(ResetPhase.Done, false);
+    Expect(latch.Ready, "still ready");
+    latch.Update(ResetPhase.Done, true);
+    Expect(!latch.Ready, "take runs");
+    latch.Update(ResetPhase.Done, false);
+    Expect(!latch.Ready, "take ended, not ready again");
+    latch.Update(ResetPhase.Loading, false);
+    latch.Update(ResetPhase.Done, false);
+    Expect(latch.Ready, "second reset");
+});
+
+Check("view text: shot and speed texts", () =>
+{
+    Take take = ParseTake(minimal, out _);
+    Expect(ViewText.ShotText(take, 0, 0.404) == "shot 1 of 1, tripod, 40 %", ViewText.ShotText(take, 0, 0.404));
+    Expect(ViewText.ShotText(take, -1, 0) == "no shot yet", "no shot");
+    Expect(ViewText.SimSpeedText(0.25, 4.0) == "0.25x (target 4x)", "target");
+    Expect(ViewText.SimSpeedText(1.0, 1.0) == "1x", "same");
+    Expect(ViewText.SimSpeedText(0.0, null) == "stopped", "stopped");
+});
+
+Check("view text: the next trigger is the earliest known one", () =>
+{
+    var take = new Take();
+    take.Shots.Add(new Shot { Type = ShotType.Chase, Duration = 5 });
+    take.Shots.Add(new Shot { Type = ShotType.Orbit, Duration = 5, At = Trigger.OnEvent("sequence:3", 1.0) });
+    take.Speed.Add(new SpeedKey { To = 4.0, At = Trigger.OnEvent("altitude:5000") });
+    take.Speed.Add(new SpeedKey { To = 1.0, At = Trigger.AtTime(300.0) });
+    var aliases = new Dictionary<string, string>();
+    var none = new Dictionary<string, double>();
+    var predicted = new Dictionary<string, double> { ["altitude:5000"] = 40.0 };
+
+    NextTrigger? next = ViewText.FindNext(take, aliases, none, predicted, 100.0, 0);
+    Expect(next.HasValue && next.Value.What.StartsWith("speed key 1") && next.Value.Eta == 40.0, "predicted altitude wins: " + next?.Text);
+
+    var seen = new Dictionary<string, double> { ["altitude:5000"] = 90.0, ["sequence:3"] = 99.0 };
+    next = ViewText.FindNext(take, aliases, seen, predicted, 99.5, 0);
+    Expect(next.HasValue && next.Value.What.StartsWith("shot 2") && Near(next.Value.Eta!.Value, 0.5), "delay still pending: " + next?.Text);
+
+    next = ViewText.FindNext(take, aliases, seen, predicted, 101.5, 1);
+    Expect(next.HasValue && next.Value.What.StartsWith("speed key 2") && Near(next.Value.Eta!.Value, 198.5), "only the time key is left: " + next?.Text);
+
+    take.Speed.RemoveAt(1);
+    next = ViewText.FindNext(take, aliases, none, none, 0.0, -1);
+    Expect(next.HasValue && next.Value.Eta == null && next.Value.What.StartsWith("shot 2"), "unknown time names the first waiting item: " + next?.Text);
+});
+
+Check("view text: event rows list seen events, then awaited ones", () =>
+{
+    var seen = Events(("liftoff", 40.0), ("ignition", 38.1));
+    var predicted = new Dictionary<string, double> { ["altitude:5000"] = 41.6 };
+    List<EventRow> rows = ViewText.EventRows(seen, predicted, new[] { "ignition", "altitude:5000", "sequence:3", "sequence:3" });
+    Expect(rows.Count == 4, "four rows");
+    Expect(rows[0].Name == "ignition" && rows[0].Time == "38.1" && rows[0].Seen, "first seen");
+    Expect(rows[2].Name == "altitude:5000" && rows[2].Status == "in about 42.0 s", "prediction " + rows[2].Status);
+    Expect(rows[3].Name == "sequence:3" && rows[3].Status == "waiting" && !rows[3].Seen, "waiting");
+});
+
+Check("view text: reasons name the first blocker", () =>
+{
+    Expect(ViewText.StartBlock(false, false, true, false, true) == "", "free");
+    Expect(ViewText.StartBlock(true, false, false, false, true) == "A take or a preview runs already.", "running first");
+    Expect(ViewText.StartBlock(false, false, false, false, true) == "No controlled vehicle in flight.", "vehicle");
+    Expect(ViewText.StartBlock(false, false, true, false, false).Contains("problems"), "file");
+    Expect(ViewText.FileEditBlock(true).StartsWith("Stop the take") && ViewText.FileEditBlock(false) == "", "file edit");
+    Expect(ViewText.CheckpointBlock(false, true, false) == "A reset runs.", "checkpoint");
+});
+
+Check("view text: every shot field has a tip in plain ASCII", () =>
+{
+    foreach (ShotField field in Enum.GetValues<ShotField>())
+    {
+        string tip = ViewText.FieldTip(field);
+        Expect(tip.Length > 10 && tip.All(c => c < 128), "tip of " + field);
+    }
+});
+
+Check("counted events: an engine that lights a few seconds after the others is still ignition 1", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    VehicleSample S(bool engine, int fresh = 0) => new(engine, true, 0, 0, 0, null, fresh);
+    detector.Update(0.0, S(false));
+    detector.Update(1.0, S(true, fresh: 2));
+    Expect(detector.Update(4.0, S(true, fresh: 1)).Count == 0, "3 s later is the same ignition");
+    Expect(!detector.Seen.ContainsKey("ignition:2"), "no ignition:2");
+});
+
+Check("keep-out: boxes of a take that change after the director was made apply at once", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "tripod", "position": [-5, 0, 2], "lookAt": [20, 0, 0], "duration": 5 } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    Expect(Near3(director.Update(0.0, World(Sample())).Pose!.Value.Position, new V3(-5, 0, 2)), "no boxes");
+    file.DefaultTake.KeepOut = new List<KeepOutBox> { Box(-30, -30, -30, 0, 30, 30) };
+    Expect(Near3(director.Update(0.1, World(Sample())).Pose!.Value.Position, new V3(1, 0, 2)), "the new list is used");
+});
+
+Check("shot file from the environment: loads, round trips and plays through a simulated ascent with finite poses outside the boxes", () =>
+{
+    string? path = Environment.GetEnvironmentVariable("CINECAM_SHOT_FILE");
+    if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        return;
+    ShotFile file = ShotFileJson.Parse(File.ReadAllText(path)).File;
+    Expect(ShotFileJson.Write(ShotFileJson.Parse(ShotFileJson.Write(file)).File) == ShotFileJson.Write(file), "the file round trips");
+    foreach (Take take in file.Takes)
+    {
+        var director = new TakeDirector(take, file);
+        IReadOnlyList<KeepOutBox> boxes = file.KeepOutFor(take);
+        for (double t = 0.0; t < 900.0; t += 0.1)
+        {
+            double flight = Math.Max(t - 14.0, 0.0);
+            double altitude = Math.Min(0.5 * 12.0 * flight * flight, 250000.0);
+            double east = Math.Min(0.5 * 4.0 * flight * flight, 900000.0);
+            double vUp = flight > 0 ? 12.0 * flight : 0.0, vEast = flight > 0 ? 4.0 * flight : 0.0;
+            WorldSample world = new()
+            {
+                Vehicle = new VehicleSample(t >= 2.0 && t < 700.0, flight <= 0.0, 0, altitude, Math.Sqrt(vUp * vUp + vEast * vEast)),
+                VehicleFrame = new Basis3(new V3(altitude + 5.3, east, 0), V3.UnitX, V3.UnitY, V3.UnitZ),
+                VehicleHeight = 60.0,
+                VehicleWidth = 5.0,
+                BodyCentre = new V3(-6371000.0, 0, 0),
+                Pole = V3.UnitZ,
+                SurfaceVelocity = new V3(vUp, vEast, 0),
+            };
+            DirectorFrame frame = director.Update(t, world);
+            if (frame.Pose is not CameraPose pose)
+                continue;
+            bool finite = new[] { pose.Position.X, pose.Position.Y, pose.Position.Z, pose.LookAt.X, pose.LookAt.Y, pose.LookAt.Z, pose.Fov }.All(double.IsFinite);
+            Expect(finite && pose.Fov >= 1.0 && pose.Fov <= 120.0, $"{take.Name} t={t:0.0}: pose {pose.Position} look {pose.LookAt} fov {pose.Fov}");
+            if (pose.Position.Length <= KeepOutMath.NearSiteMeters)
+                Expect(boxes.All(b => !KeepOutMath.Contains(b, pose.Position)), $"{take.Name} t={t:0.0}: camera {pose.Position} is inside a box");
+            if (failures > 0)
+                return;
+        }
+    }
+});
+
+#endregion
+
 #region Pre-roll, aim, sun and separated vehicle
 
 const string preRollFile = """
