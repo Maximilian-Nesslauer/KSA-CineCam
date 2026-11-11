@@ -574,6 +574,54 @@ Check("The spring approaches the target without overshoot and the basis smoother
 
 #endregion
 
+#region Event log
+
+Check("CSV: header, invariant numbers, escaping and flush on each line", () =>
+{
+    CultureInfo old = CultureInfo.CurrentCulture;
+    try
+    {
+        CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+        using var inner = new StringWriter();
+        var flushing = new FlushCounter(inner);
+        using var log = new EventLogCsv(flushing);
+        log.Write(1.5, 100.25, -3.0, 0.25, -1, "event", "liftoff", "plain");
+        log.Write(2.0, 101.0, -2.0, 1.0, 42, "shot", "a,b", "say \"hi\"\nnext");
+        string[] lines = inner.ToString().Split('\n');
+        Expect(lines[0] == EventLogCsv.Header, "header");
+        Expect(lines[1] == "1.500,100.250,-3.000,0.25,,event,liftoff,plain", "line 1: " + lines[1]);
+        Expect(lines[2] == "2.000,101.000,-2.000,1,42,shot,\"a,b\",\"say \"\"hi\"\"", "line 2: " + lines[2]);
+        Expect(flushing.Flushes >= 3, "flushed " + flushing.Flushes + " times");
+    }
+    finally
+    {
+        CultureInfo.CurrentCulture = old;
+    }
+
+    Expect(EventLogCsv.Escape("plain") == "plain" && EventLogCsv.Escape("a\"b") == "\"a\"\"b\"", "escape");
+});
+
+Check("CSV file log is readable while open and complete after a write", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".csv");
+    try
+    {
+        using (var log = EventLogCsv.Create(path))
+        {
+            log.Write(0, 0, 0, 1, -1, "take", "start");
+            using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            string text = reader.ReadToEnd();
+            Expect(text.Contains("take,start"), "the line is on disk before the log closes");
+        }
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+});
+
+#endregion
+
 #region Event detector
 
 Check("json: hideUiAt takes an event or an alias and survives a round trip", () =>
