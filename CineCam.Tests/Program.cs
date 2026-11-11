@@ -1,6 +1,7 @@
 using System.Globalization;
 using CineCam.Director;
 using CineCam.Director.Quick;
+using CineCam.Director.Replay;
 using CineCam.Editing;
 
 int failures = 0;
@@ -3333,6 +3334,68 @@ Check("separated: the shot follows the picked vehicle, falls back to the control
 
 #endregion
 
+#region Replay
+
+ReplayFlight ReplayExample()
+{
+    ReplaySample S(double time, double x, ReplayRotation rotation) => new(time, new V3(x, 0, 0), rotation, Array.Empty<ReplayNozzle>());
+    var identity = new ReplayRotation(0, 0, 0, 2);
+    var actor = new ReplayActor(1, "vehicle", new()
+    {
+        new(0, "<first/>", new() { S(0, 0, identity), S(2, 2, new ReplayRotation(0, 0, 0, -1)) }),
+        new(3, "<second/>", new() { S(3, 30, identity), S(4, 40, identity) }),
+    });
+    var stage = new ReplayActor(2, "stage", new() { new(3, "<stage/>", new() { S(3, 10, identity) }) });
+    return new ReplayFlight("game", "system", "body", 100, new() { actor, stage }, new() { new(3, "stage") })
+    {
+        Views = new() { new("close", 3, V3.UnitX, identity, 45, 1, new ReplayMount(3, 0)) },
+    };
+}
+
+Check("replay: seeks choose visible actors and topology without blending across a cut", () =>
+{
+    ReplayFlight flight = ReplayExample();
+    ReplayActor actor = flight.Actors[0], stage = flight.Actors[1];
+    Expect(ReplayTimeline.Duration(flight) == 4, "duration");
+    Expect(ReplayTimeline.Sample(stage, 2.9) == null, "stage before separation");
+    var middle = ReplayTimeline.Sample(actor, 1)!.Value;
+    Expect(Near3(middle.Sample.Position, V3.UnitX) && Near(Math.Abs(middle.Sample.Rotation.W), 1), "position and shortest rotation");
+    Expect(ReplayTimeline.Sample(actor, 2.9)!.Value.Sample.Position.X == 2, "hold before topology change");
+    Expect(ReplayTimeline.Sample(actor, 3)!.Value.Segment.Definition == "<second/>", "new topology");
+    Expect(ReplayTimeline.Sample(stage, 3) != null && ReplayTimeline.Sample(stage, 4) != null, "stage persists");
+    Expect(ReplayTimeline.Sample(actor, 1)!.Value.Segment.Definition == "<first/>", "backward seek");
+    Expect(ReplayTimeline.Sample(stage, 1) == null, "backward seek hides stage");
+});
+
+Check("replay: file round trip preserves views and rejects invalid rotations", () =>
+{
+    string directory = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N"));
+    string path = Path.Combine(directory, "test.ccreplay");
+    try
+    {
+        ReplayFlight flight = ReplayExample();
+        ReplayFile.Save(path, flight);
+        ReplayFlight loaded = ReplayFile.Load(path);
+        Expect(loaded.Actors.Count == 2 && loaded.Views.Single().ActorId == 1 && loaded.Markers.Single().Label == "stage", "round trip");
+        Expect(loaded.Views.Single().Mount == new ReplayMount(3, 0), "part mount");
+        Expect(Near(loaded.Actors[0].Segments[0].Samples[0].Rotation.W, 1), "normalized");
+        ReplaySample original = flight.Actors[0].Segments[0].Samples[0];
+        flight.Actors[0].Segments[0].Samples[0] = original with { Rotation = default };
+        bool rejected = false;
+        try { ReplayFile.Save(path, flight); } catch (InvalidDataException) { rejected = true; }
+        Expect(rejected && ReplayFile.Load(path).Actors.Count == 2, "invalid write leaves the prior file intact");
+    }
+    finally
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+        if (Directory.Exists(directory))
+            Directory.Delete(directory);
+    }
+});
+
+#endregion
+
 #region Timeline dock layout
 
 var tlNoAliases = new Dictionary<string, string>();
@@ -4056,6 +4119,144 @@ Check("quick: the part list steps with wrap", () =>
 {
     Expect(QuickMath.Step(0, -1, 5) == 4 && QuickMath.Step(4, 1, 5) == 0 && QuickMath.Step(2, 7, 5) == 4, "wrap");
     Expect(QuickMath.Step(3, 1, 0) == 0, "empty list");
+});
+
+#endregion
+
+#region Replay sampling and projects
+
+int ReplayGridSamples(double frameSeconds, double duration)
+{
+    int count = 0;
+    double last = -1;
+    for (double time = 0; time <= duration; time += frameSeconds)
+    {
+        if (ReplaySampling.IsDue(time, last))
+        {
+            count++;
+            last = time;
+        }
+    }
+    return count;
+}
+
+Check("replay sampling: the sample rate does not depend on the frame rate", () =>
+{
+    int at60 = ReplayGridSamples(1.0 / 60, 10), at144 = ReplayGridSamples(1.0 / 144, 10), at30 = ReplayGridSamples(1.0 / 30, 10);
+    Expect(Math.Abs(at60 - 300) <= 2 && Math.Abs(at144 - 300) <= 2 && Math.Abs(at30 - 300) <= 2, $"samples {at30} {at60} {at144}");
+    Expect(ReplayGridSamples(2, 100) == 51, "a long warp frame gives one sample per frame");
+    Expect(ReplaySampling.IsDue(5, -1) && !ReplaySampling.IsDue(0.01, 0.0), "first sample and same grid cell");
+});
+
+Check("replay sampling: the limits hold a 15 minute flight with 16 vehicles", () =>
+{
+    Expect(ReplaySampling.MinimumSeconds >= 15 * 60, "length limit");
+    Expect(ReplaySampling.ActorLimit == 16, "vehicle limit");
+    Expect((long)ReplaySampling.SamplesPerActor * ReplaySampling.ActorLimit <= 2_000_000, "the file validator accepts the sample count");
+    var coast = new ReplaySample(812.345678901234, new V3(-6378137.123456789, 1234567.98765432, -2345678.12345678),
+        new ReplayRotation(-0.123456789012345, 0.234567890123456, -0.345678901234567, 0.901234567890123), [],
+        12345.678f, 0.12345678f, new V3(-1234.56789012345, 2345.67890123456, -345.678901234567));
+    long bytes = ReplayFile.MeasureSample(coast) * ReplaySampling.SamplesPerActor * ReplaySampling.ActorLimit;
+    Expect(!ReplaySampling.SizeReached(bytes), $"16 coasting vehicles need {bytes} bytes");
+    Expect(ReplaySampling.SizeReached(ReplayFile.MaxBytes), "the size limit stops before the file limit");
+});
+
+Check("replay file: a sample without burning engines stores no engine list", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        ReplayFlight flight = ReplayExample();
+        var burning = new ReplayNozzle(1, 3000, 1e5f, 3000, 1.2f, 300, 1e7f, 3500, 1e5f, 1500,
+            V3.UnitX, V3.UnitZ, V3.UnitX, V3.UnitZ);
+        List<ReplaySample> samples = flight.Actors[0].Segments[0].Samples;
+        samples[1] = samples[1] with { Nozzles = [burning, default] };
+        Expect(samples[0].Nozzles.Length == 0, "the example starts without engines");
+        ReplayFile.Save(path, flight);
+        ReplayFlight loaded = ReplayFile.Load(path);
+        List<ReplaySample> read = loaded.Actors[0].Segments[0].Samples;
+        Expect(read[0].Nozzles.Length == 0 && read[1].Nozzles.Length == 2 && read[1].Nozzles[0].DutyCycle == 1, "mixed engine lists");
+        Expect(ReplayFile.MeasureSample(read[0]) < ReplayFile.MeasureSample(read[1]), "an empty list is smaller");
+    }
+    finally
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+});
+
+#endregion
+
+#region Camera and settings rules
+
+Check("rules: a copy of a take keeps its world point as its own object", () =>
+{
+    var source = new Take
+    {
+        Name = "pad",
+        Anchor = new WorldAnchor { Body = "Earth", Latitude = 28.5, Longitude = -80.6, Altitude = 2.0 },
+    };
+    Take copy = ShotEdit.Clone(source, "pad-copy");
+    Expect(copy.Anchor != null && !ReferenceEquals(copy.Anchor, source.Anchor), "a new anchor object");
+    Expect(copy.Anchor!.Body == "Earth" && copy.Anchor.Latitude == 28.5 && copy.Anchor.Longitude == -80.6 && copy.Anchor.Altitude == 2.0, "the same point");
+    copy.Anchor.Latitude = 0.0;
+    Expect(source.Anchor!.Latitude == 28.5, "a change of the copy leaves the original");
+    Expect(ShotEdit.Clone(new Take { Name = "free" }, "free-copy").Anchor == null, "no anchor stays no anchor");
+
+    var session = new EditSession();
+    session.NewFromDefault(TempFile("anchor-copy.json"));
+    session.Take!.Anchor = new WorldAnchor { Body = "Moon", Latitude = 1.0, Longitude = 2.0 };
+    session.DuplicateTake();
+    Expect(session.Take!.Anchor is { Body: "Moon", Latitude: 1.0, Longitude: 2.0 }, "Duplicate take keeps the anchor");
+});
+
+Check("rules: an apsis counts only in free flight on a stable orbit", () =>
+{
+    VehicleSample Flight(double radial, bool engine = false, bool stable = true, bool outside = true) =>
+        new(engine, false, 0, 2e5, 7800, Body: "Moon", RadialSpeed: radial, StableOrbit: stable, OutsideAtmosphere: outside);
+
+    // A hop on a body without an atmosphere: the vehicle is outside the (missing) atmosphere and
+    // its orbit is closed, but the periapsis is under the ground, so the orbit is not stable.
+    var hop = new EventDetector(Array.Empty<EventName>());
+    hop.Update(0.0, Flight(30, stable: false));
+    Expect(hop.Update(10.0, Flight(-30, stable: false)).Count == 0, "the top of a hop on an airless body is no apoapsis");
+
+    // A circularization burn: the radial speed changes its sign while the engine runs.
+    var burn = new EventDetector(Array.Empty<EventName>());
+    burn.Update(0.0, Flight(5));
+    bool Apsis(IEnumerable<DetectedEvent> events) => events.Any(e => e.Name.Contains("apsis", StringComparison.Ordinal));
+    Expect(!Apsis(burn.Update(1.0, Flight(-2, engine: true))), "no apoapsis while the engine runs");
+    Expect(!Apsis(burn.Update(2.0, Flight(3, engine: true))), "no periapsis while the engine runs");
+    Expect(!Apsis(burn.Update(3.0, Flight(3))), "the end of the burn gives no apsis");
+    Expect(WorldNames(burn.Update(100.0, Flight(-3))).SequenceEqual(new[] { "apoapsis" }), "the first passage after the burn counts");
+    Expect(WorldNames(burn.Update(200.0, Flight(3))).SequenceEqual(new[] { "periapsis" }), "and the next one");
+});
+
+Check("rules: a drag on the timeline validates once at its end", () =>
+{
+    var session = new EditSession();
+    session.NewFromDefault(TempFile("drag.json"));
+    Expect(session.Validation.IsValid && session.Take!.Shots.Count > 0, "a valid file");
+    session.HoldValidation();
+    session.Take!.Shots[0].Duration = 0.0;
+    session.Changed();
+    Expect(session.Validation.IsValid && session.Dirty, "the result from before the drag stays during the drag");
+    session.ReleaseValidation();
+    Expect(!session.Validation.IsValid, "the end of the drag validates");
+    session.Take!.Shots[0].Duration = 4.0;
+    session.Changed();
+    Expect(session.Validation.IsValid, "without a hold every change validates");
+    session.ReleaseValidation();
+    Expect(session.Validation.IsValid, "a release without a hold does nothing");
+});
+
+Check("rules: a replay tick is measured before it is added", () =>
+{
+    long limit = ReplayFile.MaxBytes - ReplaySampling.SizeReserve;
+    Expect(ReplaySampling.TickFits(0, 1000), "a small tick fits");
+    Expect(!ReplaySampling.TickFits(limit - 100, 200), "a tick that crosses the limit does not fit");
+    Expect(ReplaySampling.TickFits(limit - 300, 200), "a tick under the limit fits");
+    Expect(!ReplaySampling.TickFits(0, limit), "one tick of new vehicle definitions as large as the limit does not fit");
 });
 
 #endregion
