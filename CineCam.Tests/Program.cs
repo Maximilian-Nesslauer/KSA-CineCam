@@ -1,5 +1,6 @@
 using System.Globalization;
 using CineCam.Director;
+using CineCam.Director.Quick;
 using CineCam.Editing;
 
 int failures = 0;
@@ -3895,6 +3896,166 @@ Check("window: the default file has no world point shots and every take is valid
 
     Expect(file.Site == null && file.KeepOut.Count == 0, "no site and no keep-out boxes");
     Expect(file.DefaultTake.PreRoll?.Until == "ignition", "the launch take loops until the ignition");
+});
+
+#endregion
+
+#region Quick
+
+QuickWorld QuickWorldAt(V3 surfaceVelocity, V3? inertialVelocity = null, double altitude = 1000.0)
+{
+    const double radius = 6_371_000.0;
+    return new QuickWorld
+    {
+        Vehicle = Basis3.Identity,
+        Centre = V3.Zero,
+        Length = 30.0,
+        Width = 4.0,
+        BodyCentre = new V3(-(radius + altitude), 0.0, 0.0),
+        Pole = V3.UnitZ,
+        SurfaceVelocity = surfaceVelocity,
+        InertialVelocity = inertialVelocity ?? surfaceVelocity,
+        Altitude = altitude,
+        AtmosphereHeight = 100_000.0,
+    };
+}
+
+Check("quick: the flyby point is fixed to the ground in the air and falls freely above it", () =>
+{
+    Expect(QuickMath.ChooseAnchor(5_000.0, 100_000.0, false) == FlybyAnchor.Ground, "in the atmosphere");
+    Expect(QuickMath.ChooseAnchor(200_000.0, 100_000.0, false) == FlybyAnchor.Orbit, "above the atmosphere");
+    Expect(QuickMath.ChooseAnchor(200_000.0, 100_000.0, true) == FlybyAnchor.Ground, "contact keeps the ground");
+    Expect(QuickMath.ChooseAnchor(5_000.0, 0.0, false) == FlybyAnchor.Ground, "low over a body without air");
+    Expect(QuickMath.ChooseAnchor(20_000.0, 0.0, false) == FlybyAnchor.Orbit, "high over a body without air");
+});
+
+Check("quick: a ground flyby point is ahead, to the side and above the line of flight", () =>
+{
+    QuickWorld world = QuickWorldAt(new V3(0.0, 0.0, 100.0));
+    FlybyPlan plan = QuickMath.PlaceFlyby(world, FlybyAnchor.Ground, new QuickOptions(), 1);
+    // 100 m/s for 6 s is 600 m ahead (north), 15 % of that to the side and 30 % of the side up.
+    Expect(Near3(plan.Position, new V3(63.0, 210.0, 600.0), 1e-6), $"position {plan.Position}");
+    Expect(Near3(plan.PointVelocity, V3.Zero), "a ground point has no velocity of its own");
+    Expect(Near(plan.Distance, plan.Position.Length, 1e-9), "distance");
+    FlybyPlan left = QuickMath.PlaceFlyby(world, FlybyAnchor.Ground, new QuickOptions(), -1);
+    Expect(Near(left.Position.Y, -210.0, 1e-6), "the other side");
+    FlybyPlan fixedSide = QuickMath.PlaceFlyby(world, FlybyAnchor.Ground, new QuickOptions { FlybySide = 40.0 }, 1);
+    Expect(Near(fixedSide.Position.Y, 40.0, 1e-6), "a set side distance");
+});
+
+Check("quick: an orbit flyby point starts with the vehicle velocity minus the pass speed", () =>
+{
+    QuickWorld world = QuickWorldAt(new V3(0.0, 0.0, 7000.0), new V3(0.0, 0.0, 7500.0), 200_000.0);
+    FlybyPlan plan = QuickMath.PlaceFlyby(world, FlybyAnchor.Orbit, new QuickOptions(), 1);
+    Expect(Near3(plan.PointVelocity, new V3(0.0, 0.0, 7485.0), 1e-9), $"velocity {plan.PointVelocity}");
+    Expect(Near(plan.Position.Z, 90.0, 1e-6), "15 m/s for 6 s ahead along the inertial velocity");
+    Expect(plan.Anchor == FlybyAnchor.Orbit, "anchor");
+});
+
+Check("quick: a standing or climbing vehicle still gets a usable flyby point", () =>
+{
+    QuickWorld standing = QuickWorldAt(V3.Zero);
+    FlybyPlan plan = QuickMath.PlaceFlyby(standing, FlybyAnchor.Ground, new QuickOptions(), 1);
+    // The nose points up, so the point goes north at the shortest distance: 2 sizes plus 10 m.
+    Expect(Near(plan.Position.Z, 70.0, 1e-6) && plan.Position.Y > 0.0, $"standing {plan.Position}");
+    QuickWorld climbing = QuickWorldAt(new V3(100.0, 0.0, 0.0));
+    FlybyPlan up = QuickMath.PlaceFlyby(climbing, FlybyAnchor.Ground, new QuickOptions(), 1);
+    Expect(Near(up.Position.X, 600.0, 1e-6), $"ahead is up {up.Position}");
+    Expect(Near(up.Position.Y, 210.0, 1e-6) && Near(up.Position.Z, 0.0, 1e-6), "the side is east with no lift");
+});
+
+Check("quick: a flyby is done only when the vehicle moves away and is far past", () =>
+{
+    V3 velocity = new(0.0, 0.0, 100.0);
+    Expect(!QuickMath.FlybyDone(new V3(0.0, -10.0, -500.0), velocity, 600.0), "approaching");
+    Expect(!QuickMath.FlybyDone(new V3(0.0, -10.0, 300.0), velocity, 600.0), "past but near");
+    Expect(QuickMath.FlybyDone(new V3(0.0, -10.0, 1000.0), velocity, 600.0), "far past");
+    Expect(!QuickMath.FlybyDone(new V3(0.0, -10.0, 1000.0), V3.Zero, 600.0), "a standing vehicle never ends it");
+});
+
+Check("quick: chase and orbit cameras sit in the local horizon frame", () =>
+{
+    QuickWorld world = QuickWorldAt(new V3(0.0, 0.0, 100.0));
+    var options = new QuickOptions { ChaseDistance = 2.0, ChaseHeight = 0.5 };
+    CameraPose chase = QuickMath.ChasePose(world, V3.UnitZ, options);
+    Expect(Near3(chase.Position, new V3(15.0, 0.0, -60.0), 1e-6), $"chase {chase.Position}");
+    Expect(Near3(chase.LookAt, V3.Zero) && Near3(chase.Up, V3.UnitX, 1e-9), "chase look and up");
+    CameraPose east = QuickMath.ChasePose(world, V3.UnitY, options);
+    Expect(Near3(east.Position, new V3(15.0, -60.0, 0.0), 1e-6), $"chase east {east.Position}");
+
+    var orbit = new QuickOptions { OrbitDistance = 2.0, OrbitElevation = 0.0 };
+    Expect(Near3(QuickMath.OrbitPose(world, 0.0, orbit).Position, new V3(0.0, 0.0, 60.0), 1e-6), "north");
+    Expect(Near3(QuickMath.OrbitPose(world, 90.0, orbit).Position, new V3(0.0, 60.0, 0.0), 1e-6), "east");
+    orbit.OrbitElevation = 30.0;
+    CameraPose high = QuickMath.OrbitPose(world, 45.0, orbit);
+    Expect(Near(high.Position.Length, 60.0, 1e-6) && Near(high.Position.X, 30.0, 1e-6), "elevation and distance");
+});
+
+Check("quick: the onboard camera sits outside the part and looks along the stack", () =>
+{
+    CameraPose down = QuickMath.OnboardPose(new V3(-1.0, -1.0, -1.0), new V3(3.0, 1.0, 1.0), 30.0, false, 70.0);
+    Expect(down.Frame == PoseFrame.Vehicle, "vehicle frame");
+    Expect(down.Position.Y > 1.0 && Near(down.Position.Z, 0.0) && down.Position.X > 2.0 && down.Position.X < 3.0, $"down {down.Position}");
+    Expect((down.LookAt - down.Position).X < -29.0 && Near3(down.Up, V3.UnitY), "looks to the base, up away from the hull");
+    CameraPose nose = QuickMath.OnboardPose(new V3(-1.0, -1.0, -1.0), new V3(3.0, 1.0, 1.0), 30.0, true, 70.0);
+    Expect(nose.Position.X < 0.0 && (nose.LookAt - nose.Position).X > 29.0, "looks to the nose from the base");
+    CameraPose booster = QuickMath.OnboardPose(new V3(0.0, -4.0, 2.0), new V3(10.0, -2.0, 4.0), 30.0, false, 70.0);
+    V3 across = new(0.0, booster.Position.Y, booster.Position.Z);
+    Expect(across.Length > new V3(0.0, -3.0, 3.0).Length + 1.0, $"a side part gets the camera on its outer side {booster.Position}");
+    Expect(PoseMath.ToSiteFrame(down, new Basis3(new V3(5.0, 0.0, 0.0), V3.UnitX, V3.UnitY, V3.UnitZ)).Position.X > 7.0, "the part shot maps it");
+});
+
+Check("quick: the ground tracker stands the set distance from the point under the vehicle", () =>
+{
+    QuickWorld world = QuickWorldAt(new V3(0.0, 0.0, 100.0));
+    V3 direction = QuickMath.TrackerDirection(world, V3.UnitZ, 1500.0);
+    Expect(Near(direction.Length, 1.0, 1e-12), "unit");
+    double ground = Math.Acos(Math.Clamp(V3.Dot(direction, V3.UnitX), -1.0, 1.0)) * world.BodyRadius;
+    Expect(Near(ground, 1500.0 * Math.Sqrt(1.0 + 1.0 / 16.0), 0.5), $"distance {ground}");
+    Expect(direction.Y > 0.0 && direction.Z < 0.0, "to the right of the flight and behind");
+    Expect(QuickMath.TrackerBlock(149_000.0) == null && QuickMath.TrackerBlock(151_000.0) != null, "range limit");
+});
+
+Check("quick: a camera point stays above the ground", () =>
+{
+    V3 centre = new(-1000.0, 0.0, 0.0);
+    V3 lifted = QuickMath.KeepAbove(new V3(-10.0, 0.0, 0.0), centre, 995.0);
+    Expect(Near3(lifted, new V3(-5.0, 0.0, 0.0), 1e-9), $"lifted {lifted}");
+    Expect(Near3(QuickMath.KeepAbove(new V3(10.0, 0.0, 0.0), centre, 995.0), new V3(10.0, 0.0, 0.0)), "high enough");
+});
+
+Check("quick: the auto-zoom is the fit math, and the long lens zooms further", () =>
+{
+    Expect(Near(QuickMath.AutoZoomFov(30.0, 4.0, 100.0, 0.35, QuickMath.NormalMinFov), PoseMath.FitFov(30.0, 4.0, 100.0, 0.35)), "near");
+    Expect(Near(QuickMath.AutoZoomFov(30.0, 4.0, 50_000.0, 0.35, QuickMath.NormalMinFov), PoseMath.FitMinFov), "normal lower limit");
+    double longLens = QuickMath.AutoZoomFov(30.0, 4.0, 2_000.0, 0.35, QuickMath.LongLensMinFov);
+    Expect(longLens < PoseMath.FitMinFov && longLens > QuickMath.LongLensMinFov, $"long lens {longLens}");
+    Expect(Near(QuickMath.AutoZoomFov(30.0, 4.0, 1e7, 0.35, QuickMath.LongLensMinFov), QuickMath.LongLensMinFov), "long lens limit");
+});
+
+Check("quick: a free-falling point stays on its orbit", () =>
+{
+    const double mu = 3.986004418e14;
+    const double r = 6_771_000.0;
+    double v = Math.Sqrt(mu / r);
+    var point = new FreeFallPoint(new V3(r, 0.0, 0.0), new V3(0.0, v, 0.0), mu);
+    for (int i = 0; i < 60; i++)
+        point.Advance(10.0);
+    double angle = v / r * 600.0;
+    V3 expected = new(r * Math.Cos(angle), r * Math.Sin(angle), 0.0);
+    Expect(Near(point.Position.Length, r, 1.0), $"radius {point.Position.Length - r}");
+    Expect(Near3(point.Position, expected, 1.0), $"position error {(point.Position - expected).Length}");
+    point.Advance(0.0);
+    point.Advance(-5.0);
+    var straight = new FreeFallPoint(new V3(1.0, 2.0, 3.0), new V3(1.0, 0.0, 0.0), 0.0);
+    straight.Advance(2.0);
+    Expect(Near3(straight.Position, new V3(3.0, 2.0, 3.0), 1e-9), "no gravity is a straight line");
+});
+
+Check("quick: the part list steps with wrap", () =>
+{
+    Expect(QuickMath.Step(0, -1, 5) == 4 && QuickMath.Step(4, 1, 5) == 0 && QuickMath.Step(2, 7, 5) == 4, "wrap");
+    Expect(QuickMath.Step(3, 1, 0) == 0, "empty list");
 });
 
 #endregion
