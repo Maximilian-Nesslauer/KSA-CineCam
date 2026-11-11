@@ -829,6 +829,91 @@ Check("shot file: hideUi and syncFlash are written back", () =>
 #endregion
 
 
+#region Autotest
+
+Check("autotest take A parses and builds a director", () =>
+{
+    ShotFile file = ShotFileJson.Parse(AutotestPlan.TakeAJson(30.0, "Engine \"One\"")).File;
+    Take take = file.FindTake(AutotestPlan.TakeAName)!;
+    Expect(take.Shots.Count == AutotestPlan.ShotNames.Length, "six shots");
+    for (int i = 0; i < take.Shots.Count; i++)
+        Expect(string.Equals(take.Shots[i].Type.ToString(), AutotestPlan.ShotNames[i], StringComparison.OrdinalIgnoreCase), "shot type " + i);
+    Expect(take.Shots[5].Part == "Engine \"One\"", "part id kept");
+    Expect(take.Shots[4].Transition.Kind == TransitionKind.Blend, "one blend");
+    Expect(take.Speed.Count == 2, "two speed keys");
+    _ = new TakeDirector(take, file);
+});
+
+Check("autotest take B parses with offline capture", () =>
+{
+    ShotFile file = ShotFileJson.Parse(AutotestPlan.TakeBJson(30.0, "sequence:2", "F:/a b/takeB")).File;
+    Take take = file.FindTake(AutotestPlan.TakeBName)!;
+    Expect(file.Capture.Mode == CaptureMode.Offline && file.CaptureFps == 15.0, "offline 15 fps");
+    Expect(file.Capture.Folder == "F:/a b/takeB", "folder " + file.Capture.Folder);
+    Expect(file.HideUi, "hideUi");
+    Expect(take.Shots.Count == 5 && take.Speed.Count == 3, "five shots, three keys");
+    Expect(take.Shots[4].At.Event == "sequence:2", "hold event");
+    _ = new TakeDirector(take, file);
+});
+
+Check("autotest csv reads quoted fields and judges a take", () =>
+{
+    string text = EventLogCsv.Header + "\n"
+        + "0.000,10.000,0.000,1,,take,start,\"a, b\"\n"
+        + "7.000,17.000,0.000,1,106,event,ignition,\n"
+        + "9.000,18.000,2.000,0.25,136,event,liftoff,\n"
+        + "7.000,17.000,0.000,1,106,shot,camera[1],type=Tripod\n"
+        + "7.000,17.000,0.000,1,106,speed,speed[0],to=0.25; ramp=0.5\n"
+        + "30.000,20.000,13.000,1,451,take,end,the last shot is done\n";
+    List<CsvRow> rows = AutotestAnalysis.ParseCsv(text);
+    Expect(rows.Count == 6 && rows[0].Detail == "a, b" && rows[1].Frame == 106, "rows");
+    Expect(AutotestAnalysis.EndReason(rows) == "the last shot is done", "end reason");
+    Expect(AutotestAnalysis.EventsSeen(rows, new[] { "ignition", "liftoff" }).Pass, "events");
+    Expect(!AutotestAnalysis.EventsSeen(rows, new[] { "ignition", "sequence:2" }).Pass, "missing event");
+    Expect(AutotestAnalysis.ShotsStarted(rows, new double?[] { null, 7.0 }, 0.25).Pass == false, "camera[0] is missing");
+    Expect(AutotestAnalysis.ShotsStarted(rows, new double?[] { 7.0 }, 0.25).Pass == false, "name is camera[0]");
+});
+
+Check("autotest sim speed and frame steps", () =>
+{
+    var samples = new List<AutotestSample>();
+    double game = 0.0;
+    for (int i = 0; i < 100; i++)
+    {
+        double speed = i < 10 ? 1.0 : 0.25;
+        game += (1.0 / 15.0) * (i < 11 ? 1.0 : 0.25);
+        samples.Add(new AutotestSample(i / 15.0, game, speed, speed, i >= 5));
+    }
+
+    var rows = new List<CsvRow> { new(0.33, 0, 0, 1, 5, "speed", "speed[0]", "to=0.25; ramp=0.1") };
+    Expect(AutotestAnalysis.SimSpeedFollowsTarget(samples, rows).Pass, "speed follows");
+    Expect(AutotestAnalysis.FrameSteps(samples, 15.0).Pass, "steps");
+    samples[50] = new AutotestSample(samples[50].TakeSeconds + 0.03, samples[50].GameSeconds, 0.25, 0.25, true);
+    Expect(!AutotestAnalysis.FrameSteps(samples, 15.0).Pass, "a wrong take step fails");
+    var slow = new List<AutotestSample>();
+    double slowGame = 0.0;
+    for (int i = 0; i < 100; i++)
+    {
+        slowGame += (1.0 / 15.0) * (i % 2 == 0 ? 0.3 : 1.0);
+        slow.Add(new AutotestSample(i / 15.0, slowGame, 1.0, 1.0, true));
+    }
+
+    Expect(!AutotestAnalysis.FrameSteps(slow, 15.0).Pass, "frames that run behind fail when there is no repeated frame");
+    Expect(AutotestAnalysis.FrameCount(300, 300, 20.0, 15.0, 150).Pass, "frame count");
+    Expect(!AutotestAnalysis.FrameCount(299, 300, 20.0, 15.0, 150).Pass, "frame count mismatch");
+});
+
+Check("autotest restored values", () =>
+{
+    var a = new ViewState("Orbit", "Rocket", 50.0, 1.0, true);
+    Expect(AutotestAnalysis.Restored(a, a with { FovDegrees = 50.01 }).Pass, "same");
+    Expect(!AutotestAnalysis.Restored(a, a with { DrawUi = false }).Pass, "DrawUI");
+    Expect(!AutotestAnalysis.Restored(a, a with { SimSpeed = 0.5 }).Pass, "speed");
+});
+
+#endregion
+
+
 #region Camera features: keep-out, look point blend, fit, flight frame, counted events
 
 KeepOutBox Box(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, string name = "deck") =>
