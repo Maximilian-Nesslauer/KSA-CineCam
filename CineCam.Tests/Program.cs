@@ -419,6 +419,161 @@ Check("Before the first event shot no shot is active", () =>
 
 #endregion
 
+#region Pose math
+
+Check("pose: roll turns the up direction about the view and survives a round trip", () =>
+{
+    var shot = MakeShot(ShotType.Tripod);
+    shot.Position = new V3(0, -10, 0);
+    shot.LookAt = new V3(0, 0, 0);
+    shot.Roll = 90.0;
+    CameraPose pose = PoseMath.Evaluate(shot, 0.5, new PoseInputs());
+    V3 forward = new V3(0, 1, 0);
+    Expect(Math.Abs(V3.Dot(pose.Up, forward)) < 1e-9, "the rolled up stays perpendicular to the view");
+    Expect(Math.Abs(V3.Dot(pose.Up, V3.UnitX)) < 1e-9, "90 deg turns the up away from the level up");
+    shot.Roll = 0.0;
+    Expect(Near3(PoseMath.Evaluate(shot, 0.5, new PoseInputs()).Up, V3.UnitX), "no roll keeps the level up");
+    const string json = "{ \"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2, \"roll\": -15 } ] }";
+    ShotFile again = ShotFileJson.Parse(ShotFileJson.Write(ShotFileJson.Parse(json).File)).File;
+    Expect(Near(again.DefaultTake.Shots[0].Roll, -15.0), "the roll is read and written");
+});
+
+Check("Orbit: angle sweep, height and radius", () =>
+{
+    Shot shot = MakeShot(ShotType.Orbit, 10.0);
+    shot.Radius = 100; shot.Height = 20; shot.StartDeg = 0; shot.DegPerSec = 9; shot.LookAt = new V3(30, 0, 0);
+    var inputs = new PoseInputs();
+    CameraPose p0 = PoseMath.Evaluate(shot, 0.0, inputs);
+    CameraPose p1 = PoseMath.Evaluate(shot, 1.0, inputs);
+    Expect(p0.Frame == PoseFrame.Site, "frame");
+    Expect(Near3(p0.Position, new V3(20, 0, 100)), "start at north: " + p0.Position);
+    double a = 90.0 * Math.PI / 180.0;
+    Expect(Near3(p1.Position, new V3(20, 100 * Math.Sin(a), 100 * Math.Cos(a)), 1e-9), "end after 90 degrees: " + p1.Position);
+    Expect(Near3(p1.LookAt, new V3(30, 0, 0)) && Near(p0.Fov, 40.0), "look at and fov");
+    shot.Target = ShotTarget.Vehicle;
+    Expect(PoseMath.Evaluate(shot, 0.5, inputs).Frame == PoseFrame.Vehicle, "vehicle target gives a vehicle frame pose");
+});
+
+Check("Crane: height from to along the axis, the look point is at the camera height", () =>
+{
+    Shot shot = MakeShot(ShotType.Crane, 6.0);
+    shot.Target = ShotTarget.Vehicle;
+    shot.From = 0; shot.To = 38; shot.Radius = 14; shot.Azimuth = 0;
+    var inputs = new PoseInputs();
+    CameraPose p0 = PoseMath.Evaluate(shot, 0.0, inputs);
+    CameraPose p1 = PoseMath.Evaluate(shot, 1.0, inputs);
+    Expect(Near3(p0.Position, new V3(0, 0, 14)) && Near3(p0.LookAt, V3.Zero), "start");
+    Expect(Near3(p1.Position, new V3(38, 0, 14)) && Near3(p1.LookAt, new V3(38, 0, 0)), "end");
+    Expect(p1.Frame == PoseFrame.Vehicle, "frame");
+});
+
+Check("Tripod: fixed pose", () =>
+{
+    Shot shot = MakeShot(ShotType.Tripod);
+    shot.Position = new V3(3, -60, -45); shot.LookAt = new V3(15, 0, 0); shot.Fov = 30;
+    var inputs = new PoseInputs();
+    CameraPose p0 = PoseMath.Evaluate(shot, 0.0, inputs), p1 = PoseMath.Evaluate(shot, 1.0, inputs);
+    Expect(p0 == p1 && p0.Position == shot.Position && p0.LookAt == shot.LookAt && p0.Fov == 30, "same at both ends");
+});
+
+Check("Track: looks at the middle of the vehicle and can keep its size", () =>
+{
+    Shot shot = MakeShot(ShotType.Track);
+    shot.Position = new V3(0, -100, 0); shot.Fov = 20;
+    var inputs = new PoseInputs
+    {
+        Vehicle = new Basis3(new V3(0, 0, 0), V3.UnitX, V3.UnitY, V3.UnitZ),
+        VehicleHeight = 40,
+    };
+    CameraPose p = PoseMath.Evaluate(shot, 0.0, inputs);
+    Expect(p.Frame == PoseFrame.Site && Near3(p.LookAt, new V3(20, 0, 0)), "look at the middle");
+    Expect(Near(p.Fov, 20.0), "no zoom without keepSize");
+
+    shot.KeepSize = true;
+    inputs.TrackReferenceDistance = (new V3(20, 0, 0) - shot.Position).Length;
+    Expect(Near(PoseMath.Evaluate(shot, 0.0, inputs).Fov, 20.0, 1e-9), "same distance, same fov");
+    inputs.Vehicle = new Basis3(new V3(1000, 0, 0), V3.UnitX, V3.UnitY, V3.UnitZ);
+    CameraPose far = PoseMath.Evaluate(shot, 1.0, inputs);
+    Expect(far.Fov < 20.0 && far.Fov > 0.5, "a farther vehicle narrows the fov: " + far.Fov);
+});
+
+Check("Chase and part: vehicle frame poses, part relative to the part position", () =>
+{
+    Shot chase = MakeShot(ShotType.Chase);
+    chase.Offset = new V3(-25, 8, -12); chase.LookAt = new V3(10, 0, 0);
+    var inputs = new PoseInputs { PartPosition = new V3(5, 1, 0) };
+    CameraPose c0 = PoseMath.Evaluate(chase, 0.0, inputs), c1 = PoseMath.Evaluate(chase, 1.0, inputs);
+    Expect(c0 == c1 && c0.Frame == PoseFrame.Vehicle && c0.Position == chase.Offset && c0.LookAt == chase.LookAt, "chase is constant");
+
+    Shot part = MakeShot(ShotType.Part);
+    part.Part = "EngineBay"; part.Offset = new V3(-6, 4, -4); part.LookAt = V3.Zero;
+    CameraPose p = PoseMath.Evaluate(part, 0.0, inputs);
+    Expect(Near3(p.Position, new V3(-1, 5, -4)) && Near3(p.LookAt, new V3(5, 1, 0)), "relative to the part");
+    CameraPose none = PoseMath.Evaluate(part, 1.0, new PoseInputs());
+    Expect(Near3(none.Position, part.Offset), "without the part the vehicle origin is used");
+});
+
+Check("A vehicle frame pose maps to the site frame", () =>
+{
+    // Nose along site +Y (east), vehicle +Y along site +X (up).
+    var vehicle = new Basis3(new V3(10, 0, 0), V3.UnitY, V3.UnitX, new V3(0, 0, -1));
+    var pose = new CameraPose(PoseFrame.Vehicle, new V3(1, 2, 3), new V3(0, 0, 0), V3.UnitX, 40);
+    CameraPose site = PoseMath.ToSiteFrame(pose, vehicle);
+    Expect(site.Frame == PoseFrame.Site && Near3(site.Position, new V3(12, 1, -3)), "position " + site.Position);
+    Expect(Near3(site.LookAt, new V3(10, 0, 0)) && Near3(site.Up, V3.UnitY), "look at and up");
+});
+
+Check("Blend: the ends return the inputs and the middle turns the look direction", () =>
+{
+    var a = new CameraPose(PoseFrame.Site, new V3(0, 0, 0), new V3(0, 10, 0), V3.UnitX, 30);
+    var b = new CameraPose(PoseFrame.Site, new V3(0, 10, 0), new V3(0, 10, 10), V3.UnitX, 50);
+    CameraPose start = PoseMath.Blend(a, b, 0.0), end = PoseMath.Blend(a, b, 1.0), mid = PoseMath.Blend(a, b, 0.5);
+    Expect(Near3(start.Position, a.Position) && Near3(start.LookAt, a.LookAt) && Near(start.Fov, 30), "weight 0");
+    Expect(Near3(end.Position, b.Position) && Near3(end.LookAt, b.LookAt) && Near(end.Fov, 50), "weight 1");
+    Expect(Near3(mid.Position, new V3(0, 5, 0)) && Near(mid.Fov, 40), "middle position and fov");
+    V3 look = (mid.LookAt - mid.Position).NormalizedOr(V3.Zero);
+    double s = Math.Sqrt(0.5);
+    Expect(Near3(look, new V3(0, s, s), 1e-9), "middle look direction " + look);
+    Expect(Near((mid.LookAt - mid.Position).Length, Math.Sqrt(50.0)), "look distance follows the blended look point");
+
+    var opposite = new CameraPose(PoseFrame.Site, V3.Zero, new V3(0, -10, 0), V3.UnitX, 30);
+    CameraPose turned = PoseMath.Blend(a, opposite, 0.5);
+    Expect(!double.IsNaN(turned.LookAt.X) && Near((turned.LookAt - turned.Position).Length, 10.0), "opposite looks stay defined");
+
+    bool threw = false;
+    try { PoseMath.Blend(a, a with { Frame = PoseFrame.Vehicle }, 0.5); } catch (ArgumentException) { threw = true; }
+    Expect(threw, "frames must match");
+});
+
+Check("The spring approaches the target without overshoot and the basis smoother follows a turn", () =>
+{
+    double velocity = 0.0, value = 0.0;
+    double max = 0.0;
+    for (int i = 0; i < 600; i++)
+    {
+        value = Spring.SmoothDamp(value, 1.0, ref velocity, 0.5, 1.0 / 60.0);
+        max = Math.Max(max, value);
+    }
+
+    Expect(max <= 1.0 + 1e-9 && Near(value, 1.0, 1e-4), "no overshoot, converged: " + value);
+    double v2 = 5.0;
+    Expect(Spring.SmoothDamp(0.0, 3.0, ref v2, 0.0, 0.016) == 3.0 && v2 == 0.0, "smooth time 0 jumps");
+
+    var smoother = new BasisSmoother();
+    Basis3 first = smoother.Update(Basis3.Identity, 1.0, 0.016);
+    Expect(first == Basis3.Identity, "the first call returns the target");
+    var turned = new Basis3(new V3(5, 5, 5), V3.UnitY, -V3.UnitX, V3.UnitZ);
+    Basis3 step = smoother.Update(turned, 1.0, 0.016);
+    Expect(step.Origin == turned.Origin, "the origin is not smoothed");
+    Expect(V3.Dot(step.X, V3.UnitX) > 0.9 && V3.Dot(step.X, V3.UnitY) > 0.0, "the axis turns a little");
+    Expect(Near(step.X.Length, 1.0) && Near(V3.Dot(step.X, step.Y), 0.0, 1e-9) && Near3(step.Z, V3.Cross(step.X, step.Y)), "orthonormal");
+    for (int i = 0; i < 600; i++)
+        step = smoother.Update(turned, 1.0, 0.016);
+    Expect(Near3(step.X, V3.UnitY, 1e-3), "converges");
+});
+
+#endregion
+
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;
 
