@@ -1,4 +1,5 @@
 using System.Globalization;
+using CineCam.Director;
 
 int failures = 0;
 
@@ -24,8 +25,16 @@ void Expect(bool condition, string message)
 
 bool Near(double a, double b, double tolerance = 1e-9) => Math.Abs(a - b) <= tolerance;
 
+bool Near3(V3 a, V3 b, double tolerance = 1e-9) => (a - b).Length <= tolerance;
+
 Dictionary<string, double> Events(params (string Name, double Time)[] seen) =>
     seen.ToDictionary(e => e.Name, e => e.Time);
+
+Shot MakeShot(ShotType type, double duration = 10.0)
+{
+    var shot = new Shot { Type = type, Duration = duration, Target = Shot.DefaultTarget(type) };
+    return shot;
+}
 
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;
