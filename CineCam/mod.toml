@@ -1,0 +1,4 @@
+name = "CineCam"
+
+[StarMap]
+EntryAssembly = "CineCam"

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CineCam.Tests/CineCam.Tests.csproj" />
+  <Project Path="CineCam/CineCam.csproj" />
+</Solution>
