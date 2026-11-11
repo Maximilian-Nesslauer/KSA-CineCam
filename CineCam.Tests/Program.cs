@@ -830,6 +830,304 @@ Check("shot file: hideUi and syncFlash are written back", () =>
 #endregion
 
 
+#region Editing
+
+string TempFile(string name)
+{
+    string folder = Path.Combine(Path.GetTempPath(), "cinecam-tests-" + Environment.ProcessId);
+    Directory.CreateDirectory(folder);
+    return Path.Combine(folder, name);
+}
+
+Check("editing: the fields of each shot type match what the writer saves", () =>
+{
+    var keys = new Dictionary<ShotField, string>
+    {
+        [ShotField.Center] = "center", [ShotField.Radius] = "radius",
+        [ShotField.Height] = "height", [ShotField.StartDeg] = "startDeg", [ShotField.DegPerSec] = "degPerSec",
+        [ShotField.LookAt] = "lookAt", [ShotField.From] = "from", [ShotField.To] = "to",
+        [ShotField.Azimuth] = "azimuth", [ShotField.Position] = "position", [ShotField.Offset] = "offset",
+        [ShotField.Smoothing] = "smoothing", [ShotField.KeepSize] = "keepSize", [ShotField.Part] = "part",
+    };
+    foreach (ShotType type in Enum.GetValues<ShotType>())
+    {
+        var file = new ShotFile();
+        var take = new Take { Name = "a", IsDefault = true };
+        Shot shot = ShotEdit.NewShot(type);
+        shot.Part = "p";
+        shot.KeepSize = true;
+        take.Shots.Add(shot);
+        file.Takes.Add(take);
+        string json = ShotFileJson.Write(file);
+        foreach (var pair in keys)
+        {
+            if (type == ShotType.Path && pair.Key is ShotField.LookAt or ShotField.Position)
+                continue;
+            bool written = json.Contains("\"" + pair.Value + "\"");
+            Expect(written == ShotFields.Uses(type, pair.Key), $"{type} {pair.Key}: written={written}");
+        }
+    }
+});
+
+Check("editing: a new shot of every type is valid", () =>
+{
+    foreach (ShotType type in Enum.GetValues<ShotType>())
+    {
+        var file = new ShotFile();
+        var take = new Take { Name = "a", IsDefault = true };
+        take.Shots.Add(ShotEdit.NewShot(type));
+        file.Takes.Add(take);
+        ValidationResult result = ShotFileValidator.Validate(file);
+        Expect(result.IsValid, type + ": " + string.Join("; ", result.Errors));
+    }
+});
+
+Check("editing: a type change keeps the shared fields and gives the new type a valid radius", () =>
+{
+    Shot shot = ShotEdit.NewShot(ShotType.Chase);
+    shot.Fov = 22.0;
+    shot.Duration = 3.0;
+    ShotEdit.ChangeType(shot, ShotType.Orbit);
+    Expect(shot.Type == ShotType.Orbit && shot.Fov == 22.0 && shot.Duration == 3.0, "shared fields");
+    Expect(shot.Radius > 0.0 && shot.Target == ShotTarget.Site, "radius and target of an orbit");
+    ShotEdit.ChangeType(shot, ShotType.Track);
+    Expect(shot.Target == Shot.DefaultTarget(ShotType.Track), "track target");
+    shot.Target = ShotTarget.Vehicle;
+    ShotEdit.ChangeType(shot, ShotType.Crane);
+    Expect(shot.Target == Shot.DefaultTarget(ShotType.Crane), "a type that takes a target gets the default of its type");
+});
+
+Check("editing: clones share nothing and keep unknown fields", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5, "note": "keep", "transition": { "type": "blend", "seconds": 2 }, "at": { "event": "ignition", "delay": 1 } } ],
+      "speed": [ { "at": 3, "to": 0.5, "ramp": 1, "extra": 7 } ] }
+    """).File;
+    Take copy = ShotEdit.Clone(file.DefaultTake, "copy");
+    copy.Shots[0].Position = new V3(9, 9, 9);
+    copy.Shots[0].At.Delay = 5.0;
+    copy.Shots[0].Transition.Seconds = 9.0;
+    copy.Speed[0].To = 3.0;
+    Shot original = file.DefaultTake.Shots[0];
+    Expect(original.Position == new V3(1, 2, 3) && original.At.Delay == 1.0 && original.Transition.Seconds == 2.0, "shot untouched");
+    Expect(file.DefaultTake.Speed[0].To == 0.5, "speed key untouched");
+    Expect(copy.Shots[0].Extras.ContainsKey("note") && copy.Speed[0].Extras.ContainsKey("extra"), "extras copied");
+    Expect(copy.Name == "copy" && !copy.IsDefault, "name and default flag");
+});
+
+Check("editing: move, unique names and descriptions", () =>
+{
+    var list = new List<int> { 1, 2, 3 };
+    Expect(ShotEdit.Move(list, 0, 1) == 1 && list.SequenceEqual(new[] { 2, 1, 3 }), "move down");
+    Expect(ShotEdit.Move(list, 0, -1) == 0 && list.SequenceEqual(new[] { 2, 1, 3 }), "no move above the top");
+    Expect(ShotEdit.Move(list, 2, 1) == 2, "no move below the end");
+    var takes = new[] { new Take { Name = "a" }, new Take { Name = "a-2" } };
+    Expect(ShotEdit.UniqueTakeName(takes, "a") == "a-3" && ShotEdit.UniqueTakeName(takes, "b") == "b", "unique name");
+    Shot shot = ShotEdit.NewShot(ShotType.Chase);
+    shot.At = Trigger.OnEvent("liftoff", 4);
+    Expect(ShotEdit.Describe(1, shot) == "2  chase  8 s  on liftoff +4 s", ShotEdit.Describe(1, shot));
+    Expect(ShotEdit.Describe(Trigger.AtTime(2.5)) == "at 2.5 s" && ShotEdit.Describe(Trigger.After()) == "after the one before", "triggers");
+});
+
+Check("editing: the validator names the bad field and the bad event", () =>
+{
+    ShotFile file = DefaultShotFile.Load().File;
+    Expect(ShotFileValidator.Validate(file).IsValid, "the default file is valid");
+    file.DefaultTake.Shots[0].Duration = 0.0;
+    ValidationResult zero = ShotFileValidator.Validate(file);
+    Expect(!zero.IsValid && zero.Errors[0].Contains("duration"), "duration: " + string.Join("; ", zero.Errors));
+    file.DefaultTake.Shots[0].Duration = 5.0;
+    file.DefaultTake.Shots[1].At = Trigger.OnEvent("not-an-event");
+    ValidationResult bad = ShotFileValidator.Validate(file);
+    Expect(!bad.IsValid && bad.Errors[0].Contains("event"), "event: " + string.Join("; ", bad.Errors));
+    file.DefaultTake.Shots[1].At = Trigger.OnEvent("ignition", -2.0);
+    ValidationResult warned = ShotFileValidator.Validate(file);
+    Expect(warned.IsValid && warned.Warnings.Count == 1, "a negative delay on ignition is a warning");
+    file.DefaultTake.Shots.Clear();
+    Expect(!ShotFileValidator.Validate(file).IsValid, "a take without a shot");
+});
+
+Check("editing: the copy for a run shares nothing with the document", () =>
+{
+    ShotFile file = DefaultShotFile.Load().File;
+    ShotFile copy = ShotFileValidator.Copy(file);
+    copy.DefaultTake.Shots[0].Duration = 99.0;
+    Expect(file.DefaultTake.Shots[0].Duration != 99.0, "the document is untouched");
+    Expect(copy.Takes.Count == file.Takes.Count, "same takes");
+});
+
+Check("editing: the session saves, keeps a backup and refuses a file with errors", () =>
+{
+    string path = TempFile("session.json");
+    File.WriteAllText(path, DefaultShotFile.Json);
+    var session = new EditSession();
+    Expect(session.Load(path) && !session.Dirty && session.Take != null, "loaded");
+    int shots = session.Take!.Shots.Count;
+    session.AddShot(ShotType.Tripod);
+    Expect(session.Dirty && session.Take!.Shots.Count == shots + 1 && session.ShotIndex == 1, "added after the selection");
+    session.MoveShot(-1);
+    Expect(session.ShotIndex == 0 && session.Take!.Shots[0].Type == ShotType.Tripod, "moved up");
+    session.DuplicateShot();
+    session.RemoveShot();
+    Expect(session.Take!.Shots.Count == shots + 1, "duplicate and remove");
+    Expect(session.Save() && !session.Dirty, "saved: " + session.Message);
+    Expect(File.Exists(path + ".bak"), "backup of the old file");
+    ShotFile again = ShotFileJson.Load(path).File;
+    Expect(again.Takes.Count == session.Document!.Takes.Count && again.Takes[0].Shots.Count == shots + 1, "the file reads again");
+
+    session.Take!.Shots[0].Duration = 0.0;
+    session.Changed();
+    Expect(!session.Validation.IsValid, "invalid");
+    Expect(!session.Save(), "not saved");
+    Expect(ShotFileJson.Load(path).File.Takes[0].Shots[0].Duration > 0.0, "the file on disk is untouched");
+    Expect(session.MessageIsError, "an error message");
+});
+
+Check("editing: the session handles takes", () =>
+{
+    var session = new EditSession();
+    session.NewFromDefault(TempFile("takes.json"));
+    Expect(session.Dirty && session.Document!.Takes.Count == 2, "default file");
+    session.AddTake();
+    Expect(session.Document!.Takes.Count == 3 && session.TakeIndex == 2 && session.Validation.IsValid, "added");
+    session.RenameTake("third");
+    session.SetTakeSite("PadA");
+    session.MakeDefault();
+    Expect(session.Document!.Takes.Count(t => t.IsDefault) == 1 && session.Take!.IsDefault, "one default");
+    session.DuplicateTake();
+    Expect(session.Take!.Name == "third-copy" && !session.Take.IsDefault && session.Take.Site == "PadA", "duplicate");
+    session.RemoveTake();
+    session.RemoveTake();
+    session.RemoveTake();
+    Expect(session.Document!.Takes.Count == 1, "the last take stays");
+    Expect(session.Document.Takes.Count(t => t.IsDefault) == 1, "a default remains");
+    ShotFile copy = session.CopyForRun();
+    Expect(copy.Takes.Count == 1, "copy for a run");
+});
+
+Check("editing: a renamed single take keeps its name in the file", () =>
+{
+    string path = TempFile("single.json");
+    File.WriteAllText(path, minimal);
+    var session = new EditSession();
+    Expect(session.Load(path), "loaded");
+    session.RenameTake("opening");
+    Expect(session.Save(), "saved");
+    ShotFile again = ShotFileJson.Load(path).File;
+    Expect(again.Takes[0].Name == "opening", "the name survives: " + again.Takes[0].Name);
+});
+
+Check("editing: a failed load keeps the old document and says why", () =>
+{
+    var session = new EditSession();
+    session.NewFromDefault(TempFile("keep.json"));
+    string bad = TempFile("bad.json");
+    File.WriteAllText(bad, "{ \"camera\": [ { \"type\": \"tripod\" } ] }");
+    Expect(!session.Load(bad), "bad file");
+    Expect(session.Document != null && session.MessageIsError && session.Message.Contains("camera[0]"), session.Message);
+    Expect(!session.Load(TempFile("missing.json")) && session.MessageIsError, "missing file");
+});
+
+Basis3 TiltedVehicle() => Basis3.FromXAndHint(new V3(2, 5, -3), new V3(1, 0.3, 0.2), new V3(0, 1, 0));
+
+CapturedCamera CameraOf(CameraPose pose) =>
+    new(pose.Position, (pose.LookAt - pose.Position).NormalizedOr(V3.UnitX), pose.Fov);
+
+Check("capture: a chase shot written from its own camera gives the same camera", () =>
+{
+    Basis3 vehicle = TiltedVehicle();
+    Shot shot = ShotEdit.NewShot(ShotType.Chase);
+    var inputs = new PoseInputs { Vehicle = vehicle, VehicleHeight = 30 };
+    CameraPose pose = PoseMath.ToSiteFrame(PoseMath.Evaluate(shot, 0, inputs), vehicle);
+    Shot other = ShotEdit.NewShot(ShotType.Chase);
+    other.Offset = new V3(1, 1, 1);
+    other.LookAt = new V3(5, 5, 5);
+    other.Fov = 70;
+    Expect(ShotCapture.Apply(other, CameraOf(pose), vehicle, 30, null, out _), "applied");
+    CameraPose again = PoseMath.ToSiteFrame(PoseMath.Evaluate(other, 0, inputs), vehicle);
+    Expect(Near3(again.Position, pose.Position, 0.02), "position " + again.Position + " vs " + pose.Position);
+    V3 d1 = (again.LookAt - again.Position).NormalizedOr(V3.UnitX);
+    V3 d2 = (pose.LookAt - pose.Position).NormalizedOr(V3.UnitX);
+    Expect(Near3(d1, d2, 1e-3), "direction " + d1 + " vs " + d2);
+    Expect(Near(other.Fov, shot.Fov, 0.06), "fov");
+});
+
+Check("capture: tripod in the site frame and in the vehicle frame", () =>
+{
+    Basis3 vehicle = TiltedVehicle();
+    var camera = new CapturedCamera(new V3(4, -50, -30), new V3(0.1, 0.8, 0.6).NormalizedOr(V3.UnitY), 33.3);
+    Shot site = ShotEdit.NewShot(ShotType.Tripod);
+    Expect(ShotCapture.Apply(site, camera, vehicle, 30, null, out _), "site");
+    Expect(Near3(site.Position, camera.Position, 0.01) && site.Fov == 33.3, "site position");
+    V3 look = (site.LookAt - site.Position).NormalizedOr(V3.UnitX);
+    Expect(Near3(look, camera.Forward, 1e-3), "site direction");
+
+    Shot onVehicle = ShotEdit.NewShot(ShotType.Tripod);
+    onVehicle.Target = ShotTarget.Vehicle;
+    Expect(ShotCapture.Apply(onVehicle, camera, vehicle, 30, null, out _), "vehicle");
+    Expect(Near3(vehicle.ToParent(onVehicle.Position), camera.Position, 0.02), "vehicle position maps back");
+    Expect(Near3(vehicle.ToParent(onVehicle.LookAt), site.LookAt, 0.03), "look point maps back");
+});
+
+Check("capture: track takes the position only, part uses the part position", () =>
+{
+    Basis3 vehicle = TiltedVehicle();
+    var camera = new CapturedCamera(new V3(10, -40, 20), new V3(0, 1, -0.5).NormalizedOr(V3.UnitY), 25);
+    Shot track = ShotEdit.NewShot(ShotType.Track);
+    V3 offsetBefore = track.Offset;
+    Expect(ShotCapture.Apply(track, camera, vehicle, 30, null, out string message), "track");
+    Expect(Near3(track.Position, camera.Position, 0.01) && track.Offset == offsetBefore && message.Contains("looks at the vehicle"), "track fields");
+
+    Shot part = ShotEdit.NewShot(ShotType.Part);
+    part.Part = "engine";
+    Expect(!ShotCapture.Apply(part, camera, vehicle, 30, null, out string missing) && missing.Contains("engine"), "missing part");
+    V3 partAt = new V3(3, 0.5, 0.5);
+    Expect(ShotCapture.Apply(part, camera, vehicle, 30, partAt, out _), "part");
+    CameraPose pose = PoseMath.ToSiteFrame(PoseMath.Evaluate(part, 0, new PoseInputs { Vehicle = vehicle, PartPosition = partAt }), vehicle);
+    Expect(Near3(pose.Position, camera.Position, 0.03), "part position " + pose.Position);
+
+    Shot orbit = ShotEdit.NewShot(ShotType.Orbit);
+    Expect(!ShotCapture.Apply(orbit, camera, vehicle, 30, null, out _) && !ShotCapture.CanCapture(ShotType.Crane), "orbit and crane");
+});
+
+Check("capture: the look point is at the vehicle depth when it is ahead, else at the fallback distance", () =>
+{
+    var vehicle = new Basis3(new V3(0, 0, 0), V3.UnitX, V3.UnitY, V3.UnitZ);
+    var camera = new CapturedCamera(new V3(10, -100, 0), V3.UnitY, 30);
+    Shot tripod = ShotEdit.NewShot(ShotType.Tripod);
+    ShotCapture.Apply(tripod, camera, vehicle, 20, null, out _);
+    Expect(Near(tripod.LookAt.Y, 0.0, 0.01), "the look point is at the depth of the vehicle: " + tripod.LookAt);
+    var behind = new CapturedCamera(new V3(10, 100, 0), V3.UnitY, 30);
+    ShotCapture.Apply(tripod, behind, vehicle, 20, null, out _);
+    Expect(Near(tripod.LookAt.Y, 150.0, 0.01), "a vehicle behind the camera gives the fallback distance: " + tripod.LookAt);
+});
+
+Check("preview: one shot gives its pose with no shot list", () =>
+{
+    var file = new ShotFile();
+    var empty = new Take { Name = "preview" };
+    var director = new TakeDirector(empty, file);
+    Basis3 vehicle = TiltedVehicle();
+    Shot shot = ShotEdit.NewShot(ShotType.Chase);
+    var world = new WorldSample { VehicleFrame = vehicle, VehicleHeight = 30 };
+    var warnings = new List<string>();
+    Basis3 smoothed = director.SmoothVehicle(world.VehicleFrame, shot.Smoothing, 0.0);
+    CameraPose pose = director.ShotPoseInSite(shot, 0, 0.5, world, smoothed, warnings);
+    Expect(Near3(pose.Position, vehicle.ToParent(shot.Offset), 1e-6), "chase position in the site frame");
+    Shot track = ShotEdit.NewShot(ShotType.Track);
+    track.KeepSize = true;
+    CameraPose first = director.ShotPoseInSite(track, 1, 0.0, world, smoothed, warnings);
+    Expect(Near(first.Fov, track.Fov, 1e-6), "first track pose has the shot field of view");
+    track.Position = new V3(3, -400, -300);
+    CameraPose far = director.ShotPoseInSite(track, 1, 0.0, world, smoothed, warnings);
+    Expect(far.Fov < track.Fov, "the field of view narrows with the distance");
+    director.ForgetTrackReference();
+    CameraPose forgot = director.ShotPoseInSite(track, 1, 0.0, world, smoothed, warnings);
+    Expect(Near(forgot.Fov, track.Fov, 1e-6), "after the reset the distance is measured again");
+});
+
+#endregion
+
 #region Offline capture
 
 string CaptureFile(string capture) =>
@@ -1210,6 +1508,237 @@ Check("autotest restored values", () =>
 
 #endregion
 
+
+#region Checkpoint and reset
+
+Check("checkpoint names follow the save name rules of the game", () =>
+{
+    Expect(CheckpointName.Sanitize("a  b/c:d ") == "a bcd", "invalid characters go and spaces collapse");
+    Expect(CheckpointName.Sanitize("  x") == "x", "no leading space");
+    Expect(CheckpointName.Sanitize("CON") == "CON_", "device name");
+    Expect(CheckpointName.Sanitize(new string('a', 100)).Length == 64, "length");
+    Expect(CheckpointName.Sanitize("") == "" && CheckpointName.Sanitize("///") == "", "empty result");
+    Expect(CheckpointName.IsValid("CineCam Launch-1_b") && !CheckpointName.IsValid("a/b") && !CheckpointName.IsValid("a ") && !CheckpointName.IsValid(""), "IsValid");
+    Expect(CheckpointName.ForTake("Launch pad", Array.Empty<string?>()) == "CineCam Launch pad", "take name");
+    Expect(CheckpointName.ForTake("???", Array.Empty<string?>()) == "CineCam", "a take name without usable characters");
+});
+
+Check("two takes never share a checkpoint name", () =>
+{
+    string first = CheckpointName.ForTake("a.b", Array.Empty<string?>());
+    string second = CheckpointName.ForTake("a:b", new string?[] { first, null });
+    Expect(first == "CineCam ab" && second == "CineCam ab 2", $"second is {second}");
+    string longName = CheckpointName.ForTake(new string('x', 80), Array.Empty<string?>());
+    string longSecond = CheckpointName.ForTake(new string('x', 80), new string?[] { longName });
+    Expect(longName.Length == 64 && longSecond.Length <= 64 && longSecond != longName && CheckpointName.IsValid(longSecond), "long names");
+    Expect(CheckpointName.ForTake("A", new string?[] { "cinecam a" }) == "CineCam A 2", "case is ignored");
+});
+
+Check("the checkpoint fields are read, written and kept", () =>
+{
+    const string json = """
+    { "takes": [ { "name": "t", "checkpoint": "CineCam t", "autoStart": true, "autoStartDelay": 5.5,
+      "camera": [ { "type": "orbit", "radius": 50, "duration": 3 } ] },
+      { "name": "u", "camera": [ { "type": "orbit", "radius": 50, "duration": 3 } ] } ] }
+    """;
+    ShotFile file = ShotFileJson.Parse(json).File;
+    Take t = file.Takes[0];
+    Take u = file.Takes[1];
+    Expect(t.Checkpoint == "CineCam t" && t.AutoStart && t.AutoStartDelay == 5.5, "read");
+    Expect(u.Checkpoint == null && !u.AutoStart && u.AutoStartDelay == 2.0, "defaults");
+    string text = ShotFileJson.Write(file);
+    ShotFile again = ShotFileJson.Parse(text).File;
+    Expect(again.Takes[0].Checkpoint == "CineCam t" && again.Takes[0].AutoStart && again.Takes[0].AutoStartDelay == 5.5, "round trip");
+    Expect(text.Split("\"autoStart\"").Length == 2 && text.Split("\"checkpoint\"").Length == 2, "the second take writes none of the fields");
+});
+
+Check("a single take form keeps the checkpoint fields", () =>
+{
+    const string json = """{ "checkpoint": "CineCam default", "autoStart": true, "camera": [ { "type": "orbit", "radius": 50, "duration": 3 } ] }""";
+    ShotFile file = ShotFileJson.Parse(json).File;
+    Expect(file.Takes[0].Checkpoint == "CineCam default" && file.Takes[0].AutoStart, "read");
+    ShotFile again = ShotFileJson.Parse(ShotFileJson.Write(file)).File;
+    Expect(!again.UsesTakeList && again.Takes[0].Checkpoint == "CineCam default" && again.Takes[0].AutoStart, "written back in the same form");
+});
+
+Check("a bad checkpoint name or delay is refused with the field path", () =>
+{
+    ShotFileException name = ExpectInvalid("""{ "takes": [ { "name": "t", "checkpoint": "a/b", "camera": [ { "type": "orbit", "radius": 50, "duration": 3 } ] } ] }""");
+    Expect(name.FieldPath == "takes[0].checkpoint", name.FieldPath);
+    ShotFileException delay = ExpectInvalid("""{ "takes": [ { "name": "t", "autoStartDelay": -1, "camera": [ { "type": "orbit", "radius": 50, "duration": 3 } ] } ] }""");
+    Expect(delay.FieldPath == "takes[0].autoStartDelay", delay.FieldPath);
+});
+
+Check("a duplicated take has no checkpoint and keeps the start options", () =>
+{
+    var take = new Take { Name = "a", Checkpoint = "CineCam a", AutoStart = true, AutoStartDelay = 4.0, HideUiAt = "ignition" };
+    Take copy = ShotEdit.Clone(take, "b");
+    Expect(copy.Checkpoint == null && copy.AutoStart && copy.AutoStartDelay == 4.0 && copy.HideUiAt == "ignition", "copy");
+});
+
+Check("the checkpoint is recorded in the editor session and on disk", () =>
+{
+    var session = new EditSession();
+    session.NewFromDefault("unused.json");
+    string take = session.Document!.DefaultTake.Name;
+    Expect(session.RecordCheckpoint(take, "CineCam x") == CheckpointRecord.Stored && session.Take!.Checkpoint == "CineCam x" && session.Dirty, "unsaved session keeps it as a change");
+    Expect(session.RecordCheckpoint("missing", "CineCam y") == CheckpointRecord.NoTake, "unknown take");
+
+    string folder = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(folder);
+    try
+    {
+        string path = Path.Combine(folder, "shots.json");
+        File.WriteAllText(path, DefaultShotFile.Json);
+        Expect(CheckpointFile.Record(path, take, "CineCam disk", out string error), error);
+        Expect(ShotFileJson.Load(path).File.DefaultTake.Checkpoint == "CineCam disk" && File.Exists(path + ".bak"), "file and backup");
+        Expect(!CheckpointFile.Record(path, "missing", "CineCam z", out _), "unknown take on disk");
+
+        var clean = new EditSession();
+        Expect(clean.Load(path), "load");
+        Expect(clean.RecordCheckpoint(take, "CineCam saved") == CheckpointRecord.Stored && !clean.Dirty, "a clean session writes the file at once");
+        Expect(ShotFileJson.Load(path).File.DefaultTake.Checkpoint == "CineCam saved", "written");
+    }
+    finally
+    {
+        Directory.Delete(folder, recursive: true);
+    }
+});
+
+Check("the run counter counts earlier folders of the same take", () =>
+{
+    var folders = new[] { "20261107-101010-Launch_pad", "20261107-111111-Launch_pad~2", "20261107-121212-Other", "20261107-131313-x-Launch_pad", "notes" };
+    Expect(TakeFolders.NextRun(folders, "Launch pad") == 3, "two earlier runs");
+    Expect(TakeFolders.NextRun(folders, "Other") == 2 && TakeFolders.NextRun(folders, "New") == 1, "other takes");
+    Expect(TakeFolders.FolderName(new DateTime(2026, 11, 7, 8, 9, 10), "a b") == "20261107-080910-a_b", "folder name");
+    Expect(TakeFolders.Unique("x", n => n == "x" || n == "x~2") == "x~3", "unique");
+    Expect(TakeFolders.Unique("x", _ => false) == "x", "free name");
+});
+
+ResetStep Run(ResetFlow flow, double now, bool take, bool ready) => flow.Step(new ResetInput(now, take, ready));
+
+Check("a reset without a running take loads at once, waits for the vehicle and then waits for the player", () =>
+{
+    var flow = new ResetFlow();
+    Expect(!flow.IsActive && !flow.HoldsSim, "idle");
+    flow.Begin("t", "CineCam t", autoStart: false, delaySeconds: 2.0, now: 0.0);
+    Expect(flow.IsActive && !flow.HoldsSim, "active");
+    Expect(Run(flow, 0.1, false, false).Action == ResetAction.LoadSave, "load");
+    Expect(Run(flow, 0.2, false, false).Action == ResetAction.None && flow.Phase == ResetPhase.Loading, "waits for the report of the load");
+    Expect(flow.LoadReturned(true, 0.3).Length > 0 && flow.Phase == ResetPhase.WaitingVehicle, "load reported");
+    Expect(Run(flow, 0.4, false, true).Action == ResetAction.None && flow.Phase == ResetPhase.WaitingVehicle, "frame 1");
+    Run(flow, 0.5, false, true);
+    ResetStep ready = Run(flow, 0.6, false, true);
+    Expect(flow.Phase == ResetPhase.Done && ready.Action == ResetAction.None && !flow.IsActive, "ready after three frames");
+    Expect(Run(flow, 9.0, false, true).Action == ResetAction.None, "nothing more happens");
+});
+
+Check("a running take ends before the load", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", false, 2.0, 0.0);
+    Expect(Run(flow, 0.0, true, true).Action == ResetAction.EndTake && flow.Phase == ResetPhase.EndingTake, "end");
+    Expect(Run(flow, 0.1, true, true).Action == ResetAction.None, "still running");
+    Expect(Run(flow, 0.2, false, true).Action == ResetAction.LoadSave, "load after the end");
+});
+
+Check("a take that does not end fails the reset", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", false, 2.0, 0.0);
+    Run(flow, 0.0, true, false);
+    Run(flow, ResetFlow.EndTimeoutSeconds + 1.0, true, false);
+    Expect(flow.Phase == ResetPhase.Failed && flow.Outcome.Contains("did not end"), flow.Outcome);
+});
+
+Check("a refused load fails the reset", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", false, 2.0, 0.0);
+    Run(flow, 0.0, false, false);
+    string message = flow.LoadReturned(false, 0.1);
+    Expect(flow.Phase == ResetPhase.Failed && message.Contains("did not load"), message);
+    Expect(flow.LoadReturned(true, 0.2).Length == 0 && flow.Phase == ResetPhase.Failed, "a late report changes nothing");
+});
+
+Check("a vehicle that is not ready fails the reset after the time out and a gap restarts the frame count", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", false, 2.0, 0.0);
+    Run(flow, 0.0, false, false);
+    flow.LoadReturned(true, 0.0);
+    Run(flow, 0.1, false, true);
+    Run(flow, 0.2, false, true);
+    Run(flow, 0.3, false, false);
+    Run(flow, 0.4, false, true);
+    Expect(flow.Phase == ResetPhase.WaitingVehicle, "a gap restarts the count");
+    Run(flow, ResetFlow.VehicleTimeoutSeconds + 1.0, false, false);
+    Expect(flow.Phase == ResetPhase.Failed, "time out");
+});
+
+Check("an automatic start waits for the delay and holds the sim", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", autoStart: true, delaySeconds: 2.0, now: 0.0);
+    Expect(flow.HoldsSim, "holds");
+    Run(flow, 0.0, false, false);
+    flow.LoadReturned(true, 1.0);
+    for (int i = 0; i < ResetFlow.ReadyFrames; i++)
+        Run(flow, 1.1 + i * 0.1, false, true);
+    Expect(flow.IsCountingDown && flow.HoldsSim, "counting");
+    double? left = flow.SecondsToStart(1.5);
+    Expect(left is > 1.5 and < 2.0, $"seconds to start {left}");
+    Expect(Run(flow, 3.0, false, true).Action == ResetAction.None, "before the end of the delay");
+    ResetStep start = Run(flow, 3.4, false, true);
+    Expect(start.Action == ResetAction.StartTake && flow.Phase == ResetPhase.Done && !flow.HoldsSim, "start");
+});
+
+Check("a failed automatic start turns the outcome into a failure", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", true, 0.0, 0.0);
+    Run(flow, 0.0, false, false);
+    flow.LoadReturned(true, 0.0);
+    for (int i = 0; i < ResetFlow.ReadyFrames; i++)
+        Run(flow, 0.1, false, true);
+    Expect(Run(flow, 0.1, false, true).Action == ResetAction.StartTake, "start asked");
+    Expect(flow.StartFailed("no site").Length > 0 && flow.Phase == ResetPhase.Failed, "failed");
+    Expect(flow.Outcome.Contains("did not start"), flow.Outcome);
+    Expect(new ResetFlow().StartFailed("x").Length == 0, "idle flow ignores it");
+});
+
+Check("a delay of zero starts at the next step and a changed vehicle cancels the countdown", () =>
+{
+    var zero = new ResetFlow();
+    zero.Begin("t", "s", true, 0.0, 0.0);
+    Run(zero, 0.0, false, false);
+    zero.LoadReturned(true, 0.0);
+    for (int i = 0; i < ResetFlow.ReadyFrames; i++)
+        Run(zero, 0.1, false, true);
+    Expect(Run(zero, 0.1, false, true).Action == ResetAction.StartTake, "zero delay");
+
+    var gone = new ResetFlow();
+    gone.Begin("t", "s", true, 5.0, 0.0);
+    Run(gone, 0.0, false, false);
+    gone.LoadReturned(true, 0.0);
+    for (int i = 0; i < ResetFlow.ReadyFrames; i++)
+        Run(gone, 0.1, false, true);
+    Run(gone, 0.2, false, false);
+    Expect(gone.Phase == ResetPhase.Failed, "vehicle gone");
+});
+
+Check("a cancel ends an active reset only", () =>
+{
+    var flow = new ResetFlow();
+    Expect(flow.Cancel("x").Length == 0 && flow.Phase == ResetPhase.Idle, "nothing to cancel");
+    flow.Begin("t", "s", true, 5.0, 0.0);
+    Expect(flow.Cancel("stopped by the player").Contains("cancelled") && flow.Phase == ResetPhase.Cancelled && !flow.IsActive && !flow.HoldsSim, "cancelled");
+    Expect(Run(flow, 1.0, false, true).Action == ResetAction.None, "no more actions");
+    flow.Begin("t", "s", false, 5.0, 2.0);
+    Expect(flow.Phase == ResetPhase.Requested && flow.Outcome.Length == 0, "a new reset starts clean");
+});
+
+#endregion
 
 #region Local horizon and fired sequences
 
@@ -2297,6 +2826,193 @@ Check("separated: the shot follows the picked vehicle, falls back to the control
 
 #endregion
 
+#region Timeline dock layout
+
+var tlNoAliases = new Dictionary<string, string>();
+
+Shot TlShot(double duration, Trigger? at = null)
+{
+    Shot shot = MakeShot(ShotType.Tripod, duration);
+    if (at != null)
+        shot.At = at;
+    return shot;
+}
+
+Check("timeline layout: after and time triggers give exact blocks and blends", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0));
+    Shot second = TlShot(4.0);
+    second.Transition = new Transition { Kind = TransitionKind.Blend, Seconds = 2.0 };
+    take.Shots.Add(second);
+    take.Shots.Add(TlShot(3.0, Trigger.AtTime(20.0)));
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases);
+    Expect(Near(layout.Shots[0].Start, 0.0) && Near(layout.Shots[0].End, 5.0) && layout.Shots[0].BlendSeconds == 0.0, "first");
+    Expect(Near(layout.Shots[1].Start, 5.0) && Near(layout.Shots[1].End, 9.0) && Near(layout.Shots[1].BlendSeconds, 2.0), "second blends");
+    Expect(Near(layout.Shots[2].Start, 20.0) && Near(layout.Duration, 23.0), "time trigger and duration");
+    Expect(!layout.HasEstimates && layout.Events.Count == 0 && layout.Shots.All(s => !s.Estimated), "nothing estimated");
+});
+
+Check("timeline layout: an event of the running take beats the last run, and the last run beats an estimate", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0));
+    take.Shots.Add(TlShot(4.0, Trigger.OnEvent("ignition", 1.0)));
+    take.Shots.Add(TlShot(4.0, Trigger.OnEvent("liftoff", 0.5)));
+    var lastRun = Events(("ignition", 12.0), ("liftoff", 18.0));
+    var live = Events(("ignition", 14.0));
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases, lastRun, live, now: 15.0);
+    Expect(Near(layout.Shots[1].Start, 15.0) && !layout.Shots[1].Estimated, "live ignition plus delay");
+    Expect(Near(layout.Shots[2].Start, 18.5) && !layout.Shots[2].Estimated, "liftoff from the last run");
+    Expect(layout.Events.Single(e => e.Key == "ignition").Source == EventTimeSource.Live, "ignition source");
+    Expect(layout.Events.Single(e => e.Key == "liftoff").Source == EventTimeSource.LastRun, "liftoff source");
+    Expect(!layout.HasEstimates, "no estimate");
+});
+
+Check("timeline layout: unknown events are spaced evenly and keep the shots in order", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0));
+    take.Shots.Add(TlShot(4.0, Trigger.OnEvent("ignition")));
+    take.Shots.Add(TlShot(30.0, Trigger.OnEvent("liftoff")));
+    take.Shots.Add(TlShot(3.0, Trigger.OnEvent("burnout", 2.0)));
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases);
+    Expect(layout.HasEstimates, "estimates");
+    Expect(Near(layout.Shots[1].Start, TimelineLayout.EstimateSpacing) && layout.Shots[1].Estimated, "first estimate at one spacing");
+    Expect(Near(layout.Shots[2].Start, 2.0 * TimelineLayout.EstimateSpacing) && layout.Shots[2].Estimated, "second estimate one spacing later");
+    Expect(Near(layout.Shots[3].Start, layout.Shots[2].End), "a long shot pushes the next estimate so the blocks keep their order");
+    Expect(layout.Events.Select(e => e.Key).SequenceEqual(new[] { "ignition", "liftoff", "burnout" }), "events in order");
+    Expect(layout.Events.All(e => e.Estimated), "all estimated");
+});
+
+Check("timeline layout: estimates of a running take come after its take time", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0, Trigger.OnEvent("liftoff")));
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases, null, Events(), now: 50.0);
+    Expect(Near(layout.Shots[0].Start, 50.0 + TimelineLayout.EstimateSpacing), "after now");
+});
+
+Check("timeline layout: aliases resolve, a bad name still shows, and seen events that no item names show", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0, Trigger.OnEvent("go")));
+    take.Shots.Add(TlShot(5.0, Trigger.OnEvent("nonsense:x")));
+    var aliases = new Dictionary<string, string> { ["go"] = "sequence:2" };
+    TimelineLayout layout = TimelineLayout.Build(take, aliases, Events(("sequence:2", 7.0), ("liftoff", 3.0)));
+    Expect(Near(layout.Shots[0].Start, 7.0) && !layout.Shots[0].Estimated, "alias");
+    Expect(layout.Shots[1].Estimated && layout.Events.Any(e => e.Key == "nonsense:x" && e.Estimated), "bad name estimated");
+    Expect(layout.Events.Any(e => e.Key == "liftoff" && e.Source == EventTimeSource.LastRun), "unnamed seen event");
+    Expect(layout.Events[0].Key == "liftoff", "events sorted by time");
+    Expect(TimelineLayout.EventKey(" Liftoff ", tlNoAliases) == "liftoff", "canonical key");
+});
+
+Check("timeline layout: speed keys chain like the runner, actions take their own trigger", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0));
+    take.Speed.Add(new SpeedKey { At = Trigger.AtTime(2.0), To = 4.0, Ramp = 3.0 });
+    take.Speed.Add(new SpeedKey { At = Trigger.After(), To = 1.0, Ramp = 1.0 });
+    take.Speed.Add(new SpeedKey { At = Trigger.OnEvent("liftoff", 1.0), To = 2.0, Ramp = 0.0 });
+    take.Actions.Add(new TakeAction { At = Trigger.AtTime(6.0) });
+    take.Actions.Add(new TakeAction { At = Trigger.OnEvent("liftoff", -1.0) });
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases, Events(("liftoff", 9.0)));
+    Expect(Near(layout.Keys[0].Time, 2.0) && Near(layout.Keys[0].RampEnd, 5.0), "first key");
+    Expect(Near(layout.Keys[1].Time, 5.0) && Near(layout.Keys[1].RampEnd, 6.0), "after the ramp before");
+    Expect(Near(layout.Keys[2].Time, 10.0), "event key");
+    Expect(Near(layout.Actions[0].Time, 6.0) && Near(layout.Actions[1].Time, 8.0), "actions");
+    Expect(Near(layout.Duration, 10.0), "duration covers keys and events");
+});
+
+Check("timeline layout: the shots of a pre-roll loop are marked", () =>
+{
+    var take = new Take { PreRoll = new PreRoll { Until = "ignition" } };
+    take.Shots.Add(TlShot(5.0));
+    take.Shots.Add(TlShot(5.0));
+    take.Shots.Add(TlShot(5.0, Trigger.OnEvent("ignition")));
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases, Events(("ignition", 30.0)));
+    Expect(layout.Shots[0].Loop && layout.Shots[1].Loop && !layout.Shots[2].Loop, "loop flags");
+    Expect(Near(layout.Shots[2].Start, 30.0), "the waiting shot starts on the event");
+});
+
+Check("timeline layout: the event log gives the first time of each event and tells a finished run", () =>
+{
+    string csv = EventLogCsv.Header + "\n"
+        + "0.000,100.000,0.000,1,,take,start,\"a, quoted\nline\"\n"
+        + "4.250,104.250,0.000,1,,event,ignition,\"engines \"\"on\"\"\"\n"
+        + "6.500,106.500,2.250,1,,event,liftoff,\n"
+        + "7.000,107.000,2.750,1,,event,ignition,again\n"
+        + "9.000,109.000,4.750,1,,take,end,the last shot is done\n";
+    Dictionary<string, double> times = TimelineLayout.ReadEventTimes(new StringReader(csv), out bool finished);
+    Expect(finished, "finished");
+    Expect(times.Count == 2 && Near(times["ignition"], 4.25) && Near(times["liftoff"], 6.5), "first times");
+
+    var writer = new StringWriter();
+    using (var log = new EventLogCsv(writer))
+        log.Write(1.5, 0, 0, 1, -1, "event", "liftoff", "with, comma");
+    times = TimelineLayout.ReadEventTimes(new StringReader(writer.ToString()), out finished);
+    Expect(!finished && Near(times["liftoff"], 1.5), "a log of the writer without an end");
+});
+
+Check("timeline layout: the take folders of a take, newest first", () =>
+{
+    string[] names =
+    {
+        "20261110-120000-launch_one", "20261111-090000-launch_one", "20261111-090000-launch_one~2",
+        "20261112-080000-other", "notes", "20261109-235959-Launch_One",
+    };
+    IReadOnlyList<string> runs = TimelineLayout.RunFoldersNewestFirst(names, "launch one");
+    Expect(runs.SequenceEqual(new[]
+    {
+        "20261111-090000-launch_one~2", "20261111-090000-launch_one", "20261110-120000-launch_one", "20261109-235959-Launch_One",
+    }), "order: " + string.Join(", ", runs));
+});
+
+Check("timeline layout: snapping, zoom around the cursor and ruler steps", () =>
+{
+    Expect(Near(TimelineLayout.SnapDuration(2.349), 2.3) && Near(TimelineLayout.SnapDuration(0.01), 0.1)
+        && Near(TimelineLayout.SnapDuration(-5.0), 0.1), "duration");
+    Expect(Near(TimelineLayout.SnapTime(3.06), 3.1) && Near(TimelineLayout.SnapTime(-1.0), 0.0), "time");
+    (double start, double span) = TimelineLayout.ZoomAround(10.0, 20.0, 15.0, 0.5, 0.5, 100.0);
+    Expect(Near(span, 10.0) && Near(start, 12.5), "the anchor stays at the same share of the view");
+    (start, span) = TimelineLayout.ZoomAround(0.0, 20.0, 5.0, 100.0, 0.5, 60.0);
+    Expect(Near(span, 60.0) && Near(start, 0.0), "the span and the start are limited");
+    (_, span) = TimelineLayout.ZoomAround(0.0, 1.0, 0.5, 0.01, 0.5, 60.0);
+    Expect(Near(span, 0.5), "the smallest span");
+    Expect(TimelineLayout.TickStep(100.0, 70.0) == 1.0 && TimelineLayout.TickStep(1.0, 70.0) == 120.0
+        && TimelineLayout.TickStep(1000.0, 70.0) == 0.1 && TimelineLayout.TickStep(0.001, 70.0) == 3600.0, "steps");
+});
+
+Check("timeline layout: the session edits of the dock mark the file and keep other triggers", () =>
+{
+    var session = new EditSession();
+    session.NewFromDefault(TempFile("timeline.json"));
+    Take take = session.Take!;
+    take.Speed.Clear();
+    take.Speed.Add(new SpeedKey { At = Trigger.AtTime(2.0) });
+    take.Speed.Add(new SpeedKey { At = Trigger.OnEvent("liftoff") });
+    take.Actions.Clear();
+    take.Actions.Add(new TakeAction { At = Trigger.AtTime(1.0) });
+    session.Save();
+    Expect(!session.Dirty, "saved first: " + session.Message);
+
+    Expect(session.SetShotDuration(0, 7.26) && Near(take.Shots[0].Duration, 7.3) && session.Dirty, "duration snapped");
+    Expect(!session.SetShotDuration(0, 7.3), "same duration is no change");
+    Expect(session.SetShotDuration(0, 0.0) && Near(take.Shots[0].Duration, TimelineLayout.MinDuration), "shortest duration");
+    Expect(!session.SetShotDuration(99, 3.0), "bad index");
+
+    Expect(session.SetKeyTime(0, 4.04) && Near(take.Speed[0].At.Time, 4.0), "key time");
+    Expect(!session.SetKeyTime(1, 4.0) && take.Speed[1].At.Kind == TriggerKind.Event, "an event key stays");
+    Expect(session.SetActionTime(0, -3.0) && Near(take.Actions[0].At.Time, 0.0), "action time not below 0");
+
+    take.Shots[0].Transition = new Transition();
+    Expect(session.SetShotTransition(0, TransitionKind.Blend) && Near(take.Shots[0].Transition.Seconds, Transition.DefaultSeconds), "blend gets the default length");
+    Expect(session.SetShotTransition(0, TransitionKind.Cut) && take.Shots[0].Transition.Seconds == 0.0, "cut has no length");
+    Expect(!session.SetShotTransition(0, TransitionKind.Cut), "same kind is no change");
+});
+
+#endregion
+
 #region World
 
 const string WorldShots = "\"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2 } ]";
@@ -2515,6 +3231,233 @@ Check("world: events have plain names for the player", () =>
 
 #endregion
 
+#region Window
+
+ValidationResult ValidateShots(params Shot[] shots)
+{
+    var file = new ShotFile();
+    var take = new Take { Name = "t", IsDefault = true };
+    take.Shots.AddRange(shots);
+    file.Takes.Add(take);
+    return ShotFileValidator.Validate(file);
+}
+
+Check("window: every preset makes a valid shot for a small and a large vehicle", () =>
+{
+    var vehicle = new Basis3(new V3(5.0, 100.0, -20.0), V3.UnitX, V3.UnitY, V3.UnitZ);
+    foreach (double length in new[] { 0.0, 12.0, 90.0 })
+    {
+        foreach (ShotPreset preset in ShotPresets.All)
+        {
+            Shot shot = ShotPresets.Make(preset, new PresetInput(length, length / 8.0, vehicle, new V3(50.0, 0.0, 10.0)));
+            ValidationResult result = ValidateShots(shot);
+            Expect(result.IsValid, $"{preset} at {length} m: " + string.Join("; ", result.Errors));
+            Expect(ShotPresets.Label(preset).Length > 0 && ShotPresets.Help(preset).Length > 0, $"{preset} has a label and a help line");
+        }
+    }
+});
+
+Check("window: presets scale with the vehicle and stand where the vehicle is", () =>
+{
+    var origin = new V3(1000.0, -50.0, 20.0);
+    var vehicle = new Basis3(origin, V3.UnitX, V3.UnitY, V3.UnitZ);
+    Shot small = ShotPresets.Make(ShotPreset.OrbitReveal, new PresetInput(10.0, 2.0, vehicle, V3.Zero));
+    Shot large = ShotPresets.Make(ShotPreset.OrbitReveal, new PresetInput(100.0, 10.0, vehicle, V3.Zero));
+    Expect(large.Radius > small.Radius * 5.0 && small.Target == ShotTarget.Vehicle, "orbit radius follows the length");
+    Shot tower = ShotPresets.Make(ShotPreset.TowerCam, new PresetInput(40.0, 4.0, vehicle, V3.Zero));
+    Expect(tower.Target == ShotTarget.Site && (tower.Position - origin).Length < 30.0, "tower cam stands close to the vehicle");
+    Expect(tower.LookAt.X > tower.Position.X + 20.0, "tower cam looks up");
+    Shot tracker = ShotPresets.Make(ShotPreset.GroundTracker, new PresetInput(40.0, 4.0, vehicle, V3.Zero));
+    Expect(tracker.Type == ShotType.Track && tracker.Fit.HasValue && (tracker.Position - origin).Length > 400.0, "tracker is far away with a fit");
+    Shot onboard = ShotPresets.Make(ShotPreset.OnboardStack, new PresetInput(40.0, 4.0, vehicle, V3.Zero));
+    Expect(onboard.Type == ShotType.Part && onboard.Offset.X > 40.0 && onboard.LookAt.X == 0.0, "onboard looks down from the top");
+    Shot chase = ShotPresets.Make(ShotPreset.ChaseLow, new PresetInput(40.0, 4.0, vehicle, V3.Zero));
+    Expect(chase.Frame == ShotFrame.Flight && chase.Offset.Z < 0.0 && chase.Aim == ShotAim.Vehicle, "chase follows behind along the flight");
+});
+
+Check("window: a flyby stands at the point that the vehicle reaches at the middle of the shot", () =>
+{
+    var vehicle = new Basis3(V3.Zero, V3.UnitX, V3.UnitY, V3.UnitZ);
+    var velocity = new V3(0.0, 0.0, 200.0);
+    Shot shot = ShotPresets.Make(ShotPreset.Flyby, new PresetInput(30.0, 3.0, vehicle, velocity));
+    Expect(shot.Type == ShotType.Track && shot.Aim == ShotAim.Vehicle, "a track shot that looks at the vehicle");
+    double along = V3.Dot(shot.Position, V3.UnitZ);
+    Expect(Near(along, 200.0 * shot.Duration * 0.5, 1.0), "ahead by half the flight of the shot: " + along);
+    double side = Math.Sqrt(shot.Position.X * shot.Position.X + shot.Position.Y * shot.Position.Y);
+    Expect(side > 20.0, "beside the path");
+    Shot standing = ShotPresets.Make(ShotPreset.Flyby, new PresetInput(30.0, 3.0, vehicle, V3.Zero));
+    Expect(standing.Position.X > 60.0, "a standing vehicle uses its axis as the direction");
+});
+
+Check("window: the frame choice maps to the target and the frame of each shot type", () =>
+{
+    foreach (ShotType type in Enum.GetValues<ShotType>())
+    {
+        foreach (FrameChoice choice in ShotLabels.Choices(type))
+        {
+            Shot shot = ShotEdit.NewShot(type);
+            Expect(ShotLabels.SetFrame(shot, choice), $"{type} takes {choice}");
+            Expect(ShotLabels.FrameOf(shot) == choice, $"{type} {choice} reads back as {ShotLabels.FrameOf(shot)}");
+            Expect(ValidateShots(shot).IsValid, $"{type} {choice} is valid");
+            Expect(ShotLabels.Frame(choice, type).Length > 0 && ShotLabels.FrameHelp(choice).Length > 0, "label");
+        }
+
+        Expect(ShotLabels.Type(type).Length > 0 && ShotLabels.TypeHelp(type).Length > 0, $"{type} label");
+    }
+
+    Shot track = ShotEdit.NewShot(ShotType.Track);
+    Expect(!ShotLabels.SetFrame(track, FrameChoice.Vehicle) && ShotLabels.FrameOf(track) == FrameChoice.World, "a track shot has one frame");
+    Shot chase = ShotEdit.NewShot(ShotType.Chase);
+    Expect(!ShotLabels.SetFrame(chase, FrameChoice.World), "a chase shot has no world frame");
+    Expect(ShotLabels.Frame(FrameChoice.Horizon, ShotType.Part) == "Part, horizon level", "part words");
+    Expect(ShotLabels.Frame(FrameChoice.World, ShotType.Tripod) == "World point" && ShotLabels.Type(ShotType.Tripod) == "Fixed", "plain words");
+});
+
+Check("window: add key here makes each kind of shot from the camera pose", () =>
+{
+    var vehicle = new Basis3(new V3(10.0, 0.0, 0.0), V3.UnitX, V3.UnitY, V3.UnitZ);
+    var position = new V3(15.0, 30.0, 40.0);
+    V3 forward = (new V3(25.0, 0.0, 0.0) - position).NormalizedOr(V3.UnitX);
+    var camera = new CapturedCamera(position, forward, 35.0);
+    foreach (KeyKind kind in Enum.GetValues<KeyKind>())
+    {
+        Expect(ShotCapture.KeyLabel(kind).Length > 0 && ShotCapture.KeyHelp(kind).Length > 0, $"{kind} label");
+        if (kind == KeyKind.PathPoint)
+            continue;
+        Shot? shot = ShotCapture.NewKey(kind, camera, vehicle, 30.0, out string message);
+        Expect(shot != null, $"{kind}: {message}");
+        Expect(Near(shot!.Fov, 35.0), $"{kind} takes the field of view");
+        Expect(ValidateShots(shot).IsValid, $"{kind} is valid");
+    }
+
+    Shot fixedShot = ShotCapture.NewKey(KeyKind.Fixed, camera, vehicle, 30.0, out _)!;
+    Expect(fixedShot.Type == ShotType.Tripod && fixedShot.Target == ShotTarget.Site && Near3(fixedShot.Position, position), "fixed at the world point");
+    Shot mount = ShotCapture.NewKey(KeyKind.PartMount, camera, vehicle, 30.0, out _)!;
+    Expect(mount.Type == ShotType.Part && Near3(mount.Offset, position - vehicle.Origin), "part mount in the vehicle frame");
+    Shot orbit = ShotCapture.NewKey(KeyKind.Orbit, camera, vehicle, 30.0, out _)!;
+    Expect(orbit.Target == ShotTarget.Vehicle && Near(orbit.Radius, 50.0, 0.01) && Near(orbit.Height, 5.0, 0.01), "orbit through the camera");
+    Expect(ShotCapture.NewKey(KeyKind.PathPoint, camera, vehicle, 30.0, out _) == null, "a path point is no new key");
+    var onAxis = new CapturedCamera(new V3(20.0, 0.0, 0.0), V3.UnitX, 40.0);
+    Expect(ShotCapture.NewKey(KeyKind.Orbit, onAxis, vehicle, 30.0, out string axis) == null && axis.Length > 0, "no orbit on the axis");
+});
+
+Check("window: path points from the camera start a path and add to its end", () =>
+{
+    var vehicle = new Basis3(V3.Zero, V3.UnitX, V3.UnitY, V3.UnitZ);
+    var first = new CapturedCamera(new V3(5.0, 20.0, 0.0), new V3(0.0, -1.0, 0.0), 40.0);
+    Shot path = ShotCapture.NewPath(first, vehicle, 30.0);
+    Expect(path.Type == ShotType.Path && path.Points.Count == 1 && path.Points[0].T == 0.0, "one point at the start");
+    Expect(ValidateShots(path).IsValid, "a one point path is valid");
+    var second = new CapturedCamera(new V3(5.0, 0.0, 20.0), new V3(0.0, 0.0, -1.0), 30.0);
+    Expect(ShotCapture.AppendPathPoint(path, second, vehicle, 30.0, out _), "append");
+    Expect(path.Points.Count == 2 && path.Points[0].T == 0.0 && path.Points[1].T == 1.0, "two points");
+    Expect(ShotCapture.AppendPathPoint(path, first, vehicle, 30.0, out _), "append again");
+    Expect(path.Points.Count == 3 && Near(path.Points[1].T, 0.667, 0.001) && path.Points[2].T == 1.0, "earlier points move to the start");
+    Expect(PathMath.CheckTimes(path.Points) == null && ValidateShots(path).IsValid, "times in order");
+    Expect(!ShotCapture.AppendPathPoint(ShotEdit.NewShot(ShotType.Chase), first, vehicle, 30.0, out _), "only a path takes a point");
+});
+
+Check("window: the session inserts a shot after the selection and makes a take without a file", () =>
+{
+    var session = new EditSession();
+    session.AddTake();
+    Expect(session.Document != null && session.Document.Takes.Count == 1 && session.Take!.IsDefault, "a new document with a default take");
+    Expect(session.Take!.Shots.Count == 1 && session.Take.Shots[0].Aim == ShotAim.Vehicle && session.Validation.IsValid, "one generic shot");
+    session.InsertShot(ShotEdit.NewShot(ShotType.Orbit));
+    Expect(session.ShotIndex == 1 && session.Take.Shots[1].Type == ShotType.Orbit, "after the selection");
+    session.ShotIndex = 0;
+    session.InsertShot(ShotEdit.NewShot(ShotType.Tripod));
+    Expect(session.ShotIndex == 1 && session.Take.Shots[1].Type == ShotType.Tripod && session.Take.Shots[2].Type == ShotType.Orbit, "between");
+    session.ShotIndex = -1;
+    session.InsertShot(ShotEdit.NewShot(ShotType.Track));
+    Expect(session.ShotIndex == 3 && session.Take.Shots[3].Type == ShotType.Track && session.Dirty, "at the end");
+    session.AddTake();
+    Expect(session.Document!.Takes.Count == 2 && session.Document.Takes.Count(t => t.IsDefault) == 1, "a second take is not the default");
+});
+
+Check("window: the default file has no world point shots and every take is valid", () =>
+{
+    ShotFile file = DefaultShotFile.Load().File;
+    Expect(ShotFileValidator.Validate(file).IsValid, "valid");
+    foreach (Take take in file.Takes)
+    {
+        Expect(take.Site == null, take.Name + " names no site");
+        foreach (Shot shot in take.Shots)
+            Expect(shot.Target == ShotTarget.Vehicle && shot.Type != ShotType.Track, $"{take.Name} {shot.Type} follows the vehicle");
+        Expect(take.Shots.Count(s => s.Fit.HasValue) >= 3, take.Name + " frames the vehicle with a fit");
+    }
+
+    Expect(file.Site == null && file.KeepOut.Count == 0, "no site and no keep-out boxes");
+    Expect(file.DefaultTake.PreRoll?.Until == "ignition", "the launch take loops until the ignition");
+});
+
+#endregion
+
+#region Replay dock
+
+Check("replay dock: recorded event times are exact and nothing is estimated", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0));
+    take.Shots.Add(TlShot(4.0, Trigger.OnEvent("ignition", 1.0)));
+    take.Shots.Add(TlShot(3.0));
+    var recorded = Events(("ignition", 7.5), ("liftoff", 9.0));
+    var lastRun = Events(("ignition", 2.0));
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases, lastRun, null, 0.0, recorded);
+    Expect(Near(layout.Shots[1].Start, 8.5) && !layout.Shots[1].Estimated, "ignition from the recording, not the last run");
+    Expect(Near(layout.Shots[2].Start, 12.5), "the after shot follows");
+    Expect(!layout.HasEstimates && layout.Unreached.Count == 0, "nothing estimated or unreached");
+    Expect(layout.Events.All(e => e.Source == EventTimeSource.Recording), "all events from the recording");
+    Expect(layout.Events.Any(e => e.Key == "liftoff" && Near(e.Time, 9.0)), "an event that no item names still shows");
+});
+
+Check("replay dock: an item that waits for an event the recording lacks never starts, and nor does what follows it", () =>
+{
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0));
+    take.Shots.Add(TlShot(4.0, Trigger.OnEvent("burnout")));
+    take.Shots.Add(TlShot(3.0));
+    take.Shots.Add(TlShot(2.0, Trigger.AtTime(30.0)));
+    take.Speed.Add(new SpeedKey { At = Trigger.OnEvent("burnout"), To = 0.5, Ramp = 1.0 });
+    take.Speed.Add(new SpeedKey { At = Trigger.After(), To = 2.0, Ramp = 0.0 });
+    take.Speed.Add(new SpeedKey { At = Trigger.AtTime(3.0), To = 1.0, Ramp = 0.0 });
+    take.Actions.Add(new TakeAction { At = Trigger.OnEvent("burnout") });
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases, recorded: Events(("liftoff", 2.0)));
+    Expect(layout.Shots.Select(s => s.Index).SequenceEqual(new[] { 0, 3 }), "shots 2 and 3 are left out, the time shot stays");
+    Expect(layout.Keys.Select(k => k.Index).SequenceEqual(new[] { 2 }), "only the speed key at a time stays");
+    Expect(layout.Actions.Count == 0, "the action is left out");
+    Expect(layout.Unreached.Count == 3 && layout.Unreached.All(u => u.EventKey == "burnout"), "the three items that wait for burnout");
+    Expect(layout.Unreached.Select(u => u.Kind).SequenceEqual(new[] { TimelineItemKind.Shot, TimelineItemKind.Key, TimelineItemKind.Action }), "kinds in order");
+    Expect(!layout.HasEstimates && layout.Events.All(e => e.Key != "burnout"), "no estimated burnout");
+});
+
+Check("replay dock: the marks of a recording are sorted, extend the duration, and stop at the end of the take", () =>
+{
+    var marks = TimelineLayout.MarkersBefore(new[]
+    {
+        ("Separation: B", 40.0, 20.0),
+        ("Separation: A", 10.0, 6.0),
+        ("Separation: C", 90.0, 25.0),
+    }, recordingEnd: 60.0);
+    Expect(marks.Select(m => m.Label).SequenceEqual(new[] { "Separation: A", "Separation: B" }), "a mark after the end is left out");
+    var take = new Take();
+    take.Shots.Add(TlShot(5.0));
+    TimelineLayout layout = TimelineLayout.Build(take, tlNoAliases, recorded: Events(), markers: marks);
+    Expect(layout.Markers.Count == 2 && Near(layout.Markers[0].Time, 6.0), "markers in the layout");
+    Expect(Near(layout.Duration, 20.0), "the last mark sets the duration");
+});
+
+Check("replay dock: a scrub stays inside the replay and a playing replay keeps its play head in view", () =>
+{
+    Expect(Near(TimelineLayout.ScrubTime(-3.0, 50.0), 0.0) && Near(TimelineLayout.ScrubTime(70.0, 50.0), 50.0), "clamped");
+    Expect(Near(TimelineLayout.ScrubTime(12.5, 50.0), 12.5) && Near(TimelineLayout.ScrubTime(double.NaN, 50.0), 0.0), "inside and NaN");
+    Expect(Near(TimelineLayout.FollowStart(10.0, 20.0, 15.0), 10.0), "play head in view, the view stays");
+    Expect(Near(TimelineLayout.FollowStart(10.0, 20.0, 29.5), 27.5), "near the right edge, the view turns a page");
+    Expect(Near(TimelineLayout.FollowStart(10.0, 20.0, 1.0), 0.0), "behind the view, it never starts before 0");
+});
+
+#endregion
+
 #region Labels
 
 Check("labels: the frame labels are short", () =>
@@ -2523,6 +3466,32 @@ Check("labels: the frame labels are short", () =>
         foreach (FrameChoice choice in new[] { FrameChoice.Vehicle, FrameChoice.Horizon, FrameChoice.Flight })
             Expect(ShotLabels.Frame(choice, type).Length <= 22, $"{type} {choice} label fits a combo");
     Expect(ShotLabels.Frame(FrameChoice.Flight, ShotType.Chase) == "Vehicle, along flight", "flight frame words");
+});
+
+#endregion
+
+#region Release checks
+
+Check("release: a checkpoint in a clean document with errors is kept as an unsaved change", () =>
+{
+    string folder = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(folder);
+    try
+    {
+        string path = Path.Combine(folder, "shots.json");
+        File.WriteAllText(path, DefaultShotFile.Json);
+        var session = new EditSession();
+        Expect(session.Load(path), "load");
+        Take take = session.Document!.DefaultTake;
+        take.Shots[0].Duration = 0.0;
+        Expect(session.RecordCheckpoint(take.Name, "CineCam broken") == CheckpointRecord.NotSaved, "the refused save is reported");
+        Expect(session.Dirty && take.Checkpoint == "CineCam broken", "the name stays as an unsaved change");
+        Expect(ShotFileJson.Load(path).File.DefaultTake.Checkpoint != "CineCam broken", "the file is not written");
+    }
+    finally
+    {
+        Directory.Delete(folder, recursive: true);
+    }
 });
 
 #endregion
