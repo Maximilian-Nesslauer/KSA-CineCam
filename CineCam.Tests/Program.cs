@@ -27,8 +27,28 @@ bool Near(double a, double b, double tolerance = 1e-9) => Math.Abs(a - b) <= tol
 
 bool Near3(V3 a, V3 b, double tolerance = 1e-9) => (a - b).Length <= tolerance;
 
+ShotFileException ExpectInvalid(string json)
+{
+    try
+    {
+        ShotFileJson.Parse(json);
+    }
+    catch (ShotFileException ex)
+    {
+        return ex;
+    }
+
+    throw new InvalidOperationException("the file was accepted");
+}
+
 Dictionary<string, double> Events(params (string Name, double Time)[] seen) =>
     seen.ToDictionary(e => e.Name, e => e.Time);
+
+Take ParseTake(string json, out ShotFile file)
+{
+    file = ShotFileJson.Parse(json).File;
+    return file.DefaultTake;
+}
 
 Shot MakeShot(ShotType type, double duration = 10.0)
 {
