@@ -1740,6 +1740,327 @@ Check("a cancel ends an active reset only", () =>
 
 #endregion
 
+#region Rehearsal edit
+
+Check("clock: the take time stops during a pause and goes on after it", () =>
+{
+    var clock = new TakeClock(100.0);
+    Expect(Near(clock.Seconds(103.0), 3.0), "runs before the pause");
+    Expect(clock.Pause(103.0) && clock.IsPaused, "pauses");
+    Expect(!clock.Pause(105.0), "a second pause is refused");
+    Expect(Near(clock.Seconds(103.0), 3.0) && Near(clock.Seconds(160.0), 3.0), "constant during the pause");
+    Expect(Near(clock.PausedSeconds(113.0), 10.0), "the running pause counts");
+    Expect(Near(clock.Resume(113.0), 10.0) && !clock.IsPaused, "the real length of the pause");
+    Expect(Near(clock.Seconds(113.0), 3.0), "no gap after the resume");
+    Expect(Near(clock.Seconds(115.0), 5.0), "goes on from the frozen time");
+    Expect(Near(clock.Resume(120.0), 0.0), "a resume without a pause does nothing");
+});
+
+Check("clock: several pauses add up and the time never goes back", () =>
+{
+    var clock = new TakeClock(0.0);
+    clock.Pause(10.0);
+    clock.Resume(30.0);
+    clock.Pause(40.0);
+    clock.Resume(45.0);
+    Expect(clock.PauseCount == 2 && Near(clock.PausedSeconds(50.0), 25.0), "two pauses, 25 s");
+    Expect(Near(clock.LastPauseSeconds, 5.0), "last pause");
+    Expect(Near(clock.Seconds(50.0), 25.0), "50 - 25");
+    Expect(clock.Seconds(-5.0) == 0.0, "never below 0");
+});
+
+Check("director: a pause freezes the take, and an event seen in it keeps the frozen time", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 4, "fov": 30 },
+                  { "type": "tripod", "position": [4,5,6], "lookAt": [0,0,0], "duration": 4, "fov": 50, "at": { "event": "ignition", "delay": 1 } } ],
+      "speed": [ { "at": { "event": "ignition" }, "to": 0.5, "ramp": 2 } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    var clock = new TakeClock(1000.0);
+    director.Update(clock.Seconds(1001.0), World(Sample()));
+    clock.Pause(1002.0);
+    double frozen = clock.Seconds(1002.0);
+    var before = director.Update(frozen, World(Sample()));
+    var during = director.Update(clock.Seconds(1050.0), World(Sample(engine: true)));
+    Expect(Near(frozen, 2.0), "frozen time");
+    Expect(during.NewEvents.Single().Name == "ignition" && Near(during.NewEvents[0].TakeTime, 2.0), "the event has the frozen time");
+    Expect(Near(director.Events.Seen["ignition"], 2.0), "seen time");
+    Expect(before.ShotIndex == 0 && during.ShotIndex == 0 && Near(during.LocalTime, 2.0), "the shot does not advance");
+    Expect(Near(during.TargetSpeed, 1.0), "the speed ramp has not moved");
+    clock.Resume(1060.0);
+    var after = director.Update(clock.Seconds(1062.0), World(Sample(engine: true)));
+    Expect(Near(clock.Seconds(1062.0), 4.0), "the take time went on from 2 s");
+    Expect(after.ShotIndex == 1 && Near(director.Timeline.ShotStart(1)!.Value, 3.0), "the shot with a delay of 1 s started at 3 s of take time");
+    Expect(Near(director.Timeline.SpeedKeyStart(0)!.Value, 2.0), "the speed key starts at the frozen event time");
+});
+
+Check("director: the frame holds the progress of the shot", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "orbit", "radius": 50, "duration": 10, "degPerSec": 10 } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    var frame = director.Update(4.0, World(Sample()));
+    Expect(Near(frame.LocalTime, 4.0) && Near(frame.Progress, 0.4), "local time and progress");
+});
+
+Check("rehearsal: the speed to remember skips a stopped sim", () =>
+{
+    Expect(Near(RehearsalEdit.SpeedToRemember(0.25, 4.0, 1.0), 0.25), "the current speed");
+    Expect(Near(RehearsalEdit.SpeedToRemember(0.0, 4.0, 1.0), 4.0), "the last written speed");
+    Expect(Near(RehearsalEdit.SpeedToRemember(0.0, null, 2.0), 2.0), "the speed before the take");
+    Expect(Near(RehearsalEdit.SpeedToRemember(0.0, 0.0, 0.0), 1.0), "1x as the last resort");
+});
+
+Check("rehearsal: the trigger is the latest seen event plus the seconds since it", () =>
+{
+    var none = new Dictionary<string, string>();
+    var seen = Events(("ignition", 38.1), ("liftoff", 39.8), ("sequence:2", 210.3));
+    Trigger t = RehearsalEdit.TriggerHere(seen, none, 214.55);
+    Expect(t.Kind == TriggerKind.Event && t.Event == "sequence:2" && Near(t.Delay, 4.2), "sequence:2 +4.2: " + t.Event + " " + t.Delay);
+    Trigger early = RehearsalEdit.TriggerHere(seen, none, 39.0);
+    Expect(early.Event == "ignition" && Near(early.Delay, 0.9), "an event in the future is ignored");
+    Trigger noEvent = RehearsalEdit.TriggerHere(Events(), none, 12.34);
+    Expect(noEvent.Kind == TriggerKind.Time && Near(noEvent.Time, 12.3), "a take time without an event");
+});
+
+Check("rehearsal: an alias of the file names the event", () =>
+{
+    var aliases = new Dictionary<string, string> { ["fairing"] = "sequence:3", ["stage2"] = "sequence:2" };
+    Trigger t = RehearsalEdit.TriggerHere(Events(("sequence:3", 100.0)), aliases, 102.0);
+    Expect(t.Event == "fairing" && Near(t.Delay, 2.0), "alias: " + t.Event);
+});
+
+Check("rehearsal: a speed key is added or moved and the file stays valid", () =>
+{
+    ShotFile file = ShotFileJson.Parse(DirectorFile).File;
+    Take take = file.DefaultTake;
+    int index = RehearsalEdit.AddSpeedKey(take, Trigger.OnEvent("liftoff", 12.5), 4.0, 2.0);
+    Expect(index == take.Speed.Count - 1 && Near(take.Speed[index].To, 4.0) && Near(take.Speed[index].Ramp, 2.0), "added");
+    Expect(RehearsalEdit.MoveSpeedKey(take, index, Trigger.OnEvent("burnout", 1.0), 0.5), "moved");
+    Expect(take.Speed[index].At.Event == "burnout" && Near(take.Speed[index].To, 0.5) && Near(take.Speed[index].Ramp, 2.0), "ramp stays");
+    Expect(!RehearsalEdit.MoveSpeedKey(take, 99, Trigger.AtTime(1), 1.0), "bad index");
+    Expect(ShotFileValidator.Validate(file).IsValid, "the file is valid");
+});
+
+Check("capture: an orbit passes through the camera at this moment and keeps its turn", () =>
+{
+    var shot = new Shot { Type = ShotType.Orbit, Duration = 10.0, Radius = 100.0, Height = 5.0, DegPerSec = 6.0, StartDeg = 0.0, Fov = 40.0, Target = ShotTarget.Site };
+    var vehicle = new Basis3(V3.Zero, V3.UnitX, V3.UnitY, V3.UnitZ);
+    var camera = new CapturedCamera(new V3(30.0, 60.0, 80.0), new V3(0.0, -0.6, -0.8), 25.0);
+    Expect(ShotCapture.ApplyAtProgress(shot, camera, vehicle, 40.0, null, 0.5, out string message), message);
+    Expect(Near(shot.Radius, 100.0) && Near(shot.Height, 30.0) && Near(shot.DegPerSec, 6.0) && Near(shot.Fov, 25.0), "radius, height, turn, fov");
+    CameraPose pose = PoseMath.Evaluate(shot, 0.5, new PoseInputs());
+    Expect(Near3(pose.Position, camera.Position, 0.02), "the orbit is at the camera at 50 percent: " + pose.Position);
+});
+
+Check("capture: an orbit in the vehicle frame is written in that frame", () =>
+{
+    var shot = new Shot { Type = ShotType.Orbit, Duration = 8.0, Radius = 20.0, DegPerSec = -10.0, Target = ShotTarget.Vehicle };
+    var vehicle = new Basis3(new V3(1000.0, 0, 0), V3.UnitX, V3.UnitY, V3.UnitZ);
+    var camera = new CapturedCamera(new V3(1010.0, 30.0, -40.0), new V3(0, -0.6, 0.8), 40.0);
+    Expect(ShotCapture.ApplyAtProgress(shot, camera, vehicle, 40.0, null, 0.25, out string message), message);
+    CameraPose pose = PoseMath.Evaluate(shot, 0.25, new PoseInputs());
+    Expect(Near3(pose.Position, new V3(10.0, 30.0, -40.0), 0.02), "local position: " + pose.Position);
+    Expect(shot.StartDeg >= 0.0 && shot.StartDeg < 360.0, "the start angle is wrapped");
+});
+
+Check("capture: an orbit refuses a camera on its axis", () =>
+{
+    var shot = new Shot { Type = ShotType.Orbit, Duration = 8.0, Radius = 20.0, Target = ShotTarget.Site };
+    var camera = new CapturedCamera(new V3(50.0, 0.0, 0.1), V3.UnitZ, 40.0);
+    Expect(!ShotCapture.ApplyAtProgress(shot, camera, Basis3.Identity, 40.0, null, 0.0, out string message) && message.Length > 0, "refused with a reason");
+    Expect(Near(shot.Radius, 20.0), "the shot did not change");
+});
+
+Check("capture: a crane keeps its rise and passes through the camera height", () =>
+{
+    var shot = new Shot { Type = ShotType.Crane, Duration = 10.0, From = 0.0, To = 30.0, Radius = 14.0, Azimuth = 200.0, Target = ShotTarget.Site };
+    var camera = new CapturedCamera(new V3(25.0, 0.0, -40.0), V3.UnitZ, 40.0);
+    Expect(ShotCapture.ApplyAtProgress(shot, camera, Basis3.Identity, 40.0, null, 0.5, out string message), message);
+    Expect(Near(shot.To - shot.From, 30.0), "the rise stays");
+    CameraPose pose = PoseMath.Evaluate(shot, 0.5, new PoseInputs());
+    Expect(Near3(pose.Position, camera.Position, 0.02), "the crane is at the camera: " + pose.Position);
+});
+
+Check("capture: the other types still use the fixed pose", () =>
+{
+    var shot = new Shot { Type = ShotType.Tripod, Duration = 5.0, Target = ShotTarget.Site };
+    var camera = new CapturedCamera(new V3(3.0, -60.0, -45.0), new V3(0.0, 0.8, 0.6), 30.0);
+    Expect(ShotCapture.ApplyAtProgress(shot, camera, Basis3.Identity, 40.0, null, 0.7, out string message), message);
+    Expect(Near3(shot.Position, camera.Position, 0.01) && Near(shot.Fov, 30.0), "position and fov");
+});
+
+#endregion
+
+#region Actions
+
+const string actionFile = """
+{
+  "events": { "fairing": "sequence:3" },
+  "takes": [
+    {
+      "name": "launch",
+      "camera": [ { "type": "tripod", "position": [1, 2, 3], "lookAt": [4, 5, 6], "duration": 50 } ],
+      "actions": [
+        { "at": { "event": "sequence:2", "delay": 12.5 }, "action": "stage", "sequence": 3, "note": "fairing" },
+        { "at": 30, "action": "Stage" },
+      ],
+    },
+  ],
+}
+""";
+
+Check("actions: the reader reads the track and keeps unknown fields", () =>
+{
+    Take take = ShotFileJson.Parse(actionFile).File.DefaultTake;
+    Expect(take.Actions.Count == 2, "two actions");
+    Expect(take.Actions[0].Kind == ActionKind.Stage && take.Actions[0].Sequence == 3, "kind and sequence");
+    Expect(take.Actions[0].At.Kind == TriggerKind.Event && Near(take.Actions[0].At.Delay, 12.5), "event trigger");
+    Expect(take.Actions[0].Extras["note"].GetString() == "fairing", "extra kept");
+    Expect(take.Actions[1].Sequence == null && take.Actions[1].At.Kind == TriggerKind.Time, "time trigger, any sequence");
+});
+
+Check("actions: the file round trips with the same text", () =>
+{
+    ShotFile file = ShotFileJson.Parse(actionFile).File;
+    string first = ShotFileJson.Write(file);
+    string second = ShotFileJson.Write(ShotFileJson.Parse(first).File);
+    Expect(first == second, "stable text");
+    Expect(first.Contains("\"actions\"") && first.Contains("\"action\": \"stage\""), "written");
+});
+
+Check("actions: a take without actions writes no actions field", () =>
+{
+    ShotFile file = ShotFileJson.Parse(minimal).File;
+    Expect(file.DefaultTake.Actions.Count == 0 && !ShotFileJson.Write(file).Contains("actions"), "no field");
+});
+
+Check("actions: bad actions name the field", () =>
+{
+    string Wrap(string action) => "{ \"camera\": [ { \"type\": \"tripod\", \"position\": [1,2,3], \"lookAt\": [4,5,6], \"duration\": 5 } ], \"actions\": [ " + action + " ] }";
+    Expect(ExpectInvalid(Wrap("{ \"action\": \"stage\" }")).FieldPath == "actions[0].at", "missing trigger");
+    Expect(ExpectInvalid(Wrap("{ \"at\": 5 }")).FieldPath == "actions[0].action", "missing kind");
+    Expect(ExpectInvalid(Wrap("{ \"at\": 5, \"action\": \"launch\" }")).FieldPath == "actions[0].action", "unknown kind");
+    Expect(ExpectInvalid(Wrap("{ \"at\": 5, \"action\": \"stage\", \"sequence\": 2.5 }")).FieldPath == "actions[0].sequence", "fraction");
+    Expect(ExpectInvalid(Wrap("{ \"at\": 5, \"action\": \"stage\", \"sequence\": 0 }")).FieldPath == "actions[0].sequence", "range");
+    Expect(ExpectInvalid(Wrap("{ \"at\": { \"event\": \"nonsense\" }, \"action\": \"stage\" }")).FieldPath == "actions[0].at.event", "event name");
+});
+
+Check("actions: the validator finds an unknown event in an action", () =>
+{
+    ShotFile file = ShotFileJson.Parse(actionFile).File;
+    Expect(ShotFileValidator.Validate(file).IsValid, "valid");
+    file.DefaultTake.Actions[0].At = Trigger.OnEvent("nonsense");
+    Expect(!ShotFileValidator.Validate(file).IsValid, "invalid");
+});
+
+Check("actions: the timeline starts an action once, at the event time plus the delay", () =>
+{
+    Take take = ShotFileJson.Parse(actionFile).File.DefaultTake;
+    var runner = new TimelineRunner(take, new Dictionary<string, string>());
+    Expect(runner.Update(10.0, Events()).StartedActions.Count == 0, "the event action waits");
+    Expect(runner.ActionStart(0) is null && !runner.ActionStarted(0), "waiting");
+    TimelineState s = runner.Update(40.0, Events(("sequence:2", 20.0)));
+    Expect(Near(runner.ActionStart(0)!.Value, 32.5), "start is event time plus delay");
+    Expect(s.StartedActions.Contains(0) && s.StartedActions.Contains(1), "both started");
+    Expect(runner.Update(41.0, Events(("sequence:2", 20.0))).StartedActions.Count == 0, "reported once");
+    Expect(runner.ActionStarted(0), "marked started");
+});
+
+Check("actions: an action before its time does not start", () =>
+{
+    Take take = ShotFileJson.Parse(actionFile).File.DefaultTake;
+    var runner = new TimelineRunner(take, new Dictionary<string, string>());
+    TimelineState s = runner.Update(29.9, Events());
+    Expect(s.StartedActions.Count == 0, "not yet");
+    s = runner.Update(30.0, Events());
+    Expect(s.StartedActions.Count == 1 && s.StartedActions[0] == 1, "time action at 30 s");
+});
+
+Check("actions: the director reports started actions and watches their events", () =>
+{
+    ShotFile file = ShotFileJson.Parse(actionFile).File;
+    Take take = file.DefaultTake;
+    take.Actions.Add(new TakeAction { At = Trigger.OnEvent("altitude:90000", -3.0), Sequence = 4 });
+    Expect(EventDetector.Watched(take, file.Events).Any(e => e.Kind == EventKind.Altitude && e.Value == 90000.0), "altitude watched");
+    var director = new TakeDirector(take, file);
+    var world = new WorldSample { VehicleHeight = 10.0 };
+    DirectorFrame frame = director.Update(31.0, world);
+    Expect(frame.StartedActions.Contains(1), "the time action started");
+});
+
+Check("actions: the editor helpers add, clone and describe actions", () =>
+{
+    var take = new Take();
+    int index = RehearsalEdit.AddStageAction(take, Trigger.OnEvent("sequence:2", 4.0), 3);
+    Expect(index == 0 && take.Actions[0].Sequence == 3, "added");
+    Expect(RehearsalEdit.AddStageAction(take, Trigger.AtTime(1.0), 0) == 1 && take.Actions[1].Sequence == null, "zero means any");
+    TakeAction copy = ShotEdit.Clone(take.Actions[0]);
+    copy.At.Delay = 9.0;
+    Expect(Near(take.Actions[0].At.Delay, 4.0), "the clone shares nothing");
+    Expect(ShotEdit.Describe(0, take.Actions[0]).Contains("stage sequence 3"), "describe: " + ShotEdit.Describe(0, take.Actions[0]));
+    Take taken = ShotEdit.Clone(take, "copy");
+    Expect(taken.Actions.Count == 2, "a duplicated take keeps its actions");
+});
+
+Check("actions: the session adds, moves and removes actions", () =>
+{
+    var session = new EditSession();
+    session.NewFromDefault("x.json");
+    int before = session.Take!.Actions.Count;
+    session.AddAction();
+    session.AddAction();
+    Expect(session.Take!.Actions.Count == before + 2 && session.ActionIndex == before + 1, "added");
+    session.MoveAction(-1);
+    Expect(session.ActionIndex == before, "moved");
+    session.RemoveAction();
+    Expect(session.Take!.Actions.Count == before + 1, "removed");
+    Expect(ShotFileValidator.Validate(session.Document!).IsValid, "the default action is valid");
+});
+
+Check("stage guard: fires the wanted sequence once and waits for the key to take effect", () =>
+{
+    var guard = new StageGuard();
+    StageDecision a = guard.Decide(3, 3, 2, 10.0);
+    Expect(a.Verdict == StageVerdict.Fire, a.Reason);
+    StageDecision b = guard.Decide(null, 3, 2, 10.02);
+    Expect(b.Verdict == StageVerdict.Wait, "a second key waits while the first is queued");
+    StageDecision c = guard.Decide(null, 4, 3, 10.1);
+    Expect(c.Verdict == StageVerdict.Fire, "after the sequence changed the next one may fire");
+});
+
+Check("stage guard: skips a wrong number or an empty list", () =>
+{
+    var guard = new StageGuard();
+    Expect(guard.Decide(3, 4, 3, 5.0).Verdict == StageVerdict.Skip, "3 is already done");
+    Expect(guard.Decide(null, -1, 3, 5.0).Verdict == StageVerdict.Skip, "none left");
+    Expect(guard.Decide(2, 2, 1, 5.0).Verdict == StageVerdict.Fire, "the wanted one fires after skips");
+});
+
+Check("stage guard: waits for an earlier sequence, then gives up", () =>
+{
+    var guard = new StageGuard();
+    Expect(guard.Decide(3, 2, 1, 100.0).Verdict == StageVerdict.Wait, "the next one is 2, so 3 waits");
+    Expect(guard.Decide(3, 2, 1, 105.0).Verdict == StageVerdict.Wait, "still waits");
+    Expect(guard.Decide(3, 3, 2, 106.0).Verdict == StageVerdict.Fire, "fires when 3 is next");
+    var late = new StageGuard();
+    Expect(late.Decide(3, 2, 1, 0.0).Verdict == StageVerdict.Wait, "start of the wait");
+    Expect(late.Decide(3, 2, 1, StageGuard.EarlierSequenceTimeoutSeconds + 1.0).Verdict == StageVerdict.Skip, "gives up after the timeout");
+    Expect(late.Decide(3, 2, 1, StageGuard.EarlierSequenceTimeoutSeconds + 1.5).Verdict == StageVerdict.Wait, "a new wait starts after the skip");
+});
+
+Check("stage guard: a key that never took effect times out", () =>
+{
+    var guard = new StageGuard();
+    Expect(guard.Decide(null, 3, 2, 1.0).Verdict == StageVerdict.Fire, "first");
+    Expect(guard.Decide(null, 3, 2, 2.0).Verdict == StageVerdict.Wait, "still queued");
+    Expect(guard.Decide(null, 3, 2, 1.0 + StageGuard.PendingTimeoutSeconds + 0.5).Verdict == StageVerdict.Fire, "lost key, fire again");
+});
+
+#endregion
+
 #region Local horizon and fired sequences
 
 V3 BodyCentre = new(-6.4e6, 0, 0);
