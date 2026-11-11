@@ -2515,6 +2515,18 @@ Check("world: events have plain names for the player", () =>
 
 #endregion
 
+#region Labels
+
+Check("labels: the frame labels are short", () =>
+{
+    foreach (ShotType type in new[] { ShotType.Chase, ShotType.Part })
+        foreach (FrameChoice choice in new[] { FrameChoice.Vehicle, FrameChoice.Horizon, FrameChoice.Flight })
+            Expect(ShotLabels.Frame(choice, type).Length <= 22, $"{type} {choice} label fits a combo");
+    Expect(ShotLabels.Frame(FrameChoice.Flight, ShotType.Chase) == "Vehicle, along flight", "flight frame words");
+});
+
+#endregion
+
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;
 
