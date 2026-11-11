@@ -574,6 +574,117 @@ Check("The spring approaches the target without overshoot and the basis smoother
 
 #endregion
 
+#region Event detector
+
+Check("json: hideUiAt takes an event or an alias and survives a round trip", () =>
+{
+    const string json = "{ \"hideUi\": true, \"hideUiAt\": \"go\", \"events\": { \"go\": \"ignition\" }, \"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2 } ] }";
+    ShotFile file = ShotFileJson.Parse(json).File;
+    Expect(file.HideUiAt == "go", "the alias is kept");
+    ShotFile again = ShotFileJson.Parse(ShotFileJson.Write(file)).File;
+    Expect(again.HideUiAt == "go" && again.HideUi, "round trip");
+    const string perTake = "{ \"hideUi\": true, \"hideUiAt\": \"ignition\", \"takes\": [ { \"name\": \"pad\", \"hideUiAt\": \"start\", \"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2 } ] }, { \"name\": \"flight\", \"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2 } ] } ] }";
+    ShotFile split = ShotFileJson.Parse(ShotFileJson.Write(ShotFileJson.Parse(perTake).File)).File;
+    Expect(ShotFile.IsHideUiAtStart(split.HideUiAtFor(split.Takes[0])), "the pad take hides at its start");
+    Expect(split.HideUiAtFor(split.Takes[1]) == "ignition", "the flight take uses the file value");
+    ShotFileException bad = ExpectInvalid("{ \"hideUi\": true, \"hideUiAt\": \"nope\", \"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2 } ] }");
+    Expect(bad.FieldPath == "hideUiAt", "the bad field is named: " + bad.FieldPath);
+});
+
+VehicleSample Sample(bool engine = false, bool contact = true, int sequence = 0, double altitude = 0, double speed = 0) =>
+    new(engine, contact, sequence, altitude, speed);
+
+Check("detector: ignition, liftoff and burnout come once and in order", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    Expect(detector.Update(0.0, Sample()).Count == 0, "no event on the pad");
+    var first = detector.Update(1.0, Sample(engine: true));
+    Expect(first.Count == 1 && first[0].Name == "ignition", "ignition");
+    var second = detector.Update(2.0, Sample(engine: true, contact: false, altitude: 1.0));
+    Expect(second.Count == 1 && second[0].Name == "liftoff", "liftoff");
+    Expect(detector.Update(3.0, Sample(engine: true, contact: false, altitude: 5.0)).Count == 0, "nothing new");
+    var end = detector.Update(4.0, Sample(engine: false, contact: false, altitude: 9.0));
+    Expect(end.Count == 1 && end[0].Name == "burnout", "burnout");
+    Expect(Near(detector.Seen["liftoff"], 2.0), "the time of the event is kept");
+    var again = detector.Update(5.0, Sample(engine: true, contact: false));
+    Expect(again.Count == 1 && again[0].Name == "ignition:2", "a second ignition is counted");
+    Expect(detector.Seen.Count(p => p.Key.StartsWith("ignition", StringComparison.Ordinal)) == 2, "each ignition is kept once");
+});
+
+Check("detector: a contact flicker on the pad is not a liftoff", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, Sample(altitude: 26.5));
+    Expect(detector.Update(0.1, Sample(contact: false, altitude: 26.52)).Count == 0, "a lost contact without a rise");
+    detector.Update(0.2, Sample(altitude: 26.5));
+    var up = detector.Update(1.0, Sample(engine: true, contact: false, altitude: 27.2));
+    Expect(up.Any(e => e.Name == "liftoff"), "a rise of 0.7 m is a liftoff");
+});
+
+Check("detector: a short engine blip is not a burnout", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, Sample());
+    detector.Update(1.0, Sample(engine: true));
+    var off = detector.Update(1.4, Sample(engine: false));
+    Expect(off.Count == 0, "no burnout after 0.4 s");
+});
+
+Check("detector: a take that starts in flight sees the past events at once", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    var found = detector.Update(0.0, Sample(engine: true, contact: false));
+    Expect(found.Select(e => e.Name).OrderBy(n => n).SequenceEqual(new[] { "ignition", "liftoff" }), "both events at once");
+    Expect(found.All(e => e.Detail.Length > 0), "the detail says why");
+});
+
+Check("detector: a skipped sequence number reports each number", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, Sample(sequence: 1));
+    var found = detector.Update(1.0, Sample(sequence: 4));
+    Expect(found.Select(e => e.Name).SequenceEqual(new[] { "sequence:2", "sequence:3", "sequence:4" }), "2, 3 and 4");
+    Expect(detector.Update(2.0, Sample(sequence: 4)).Count == 0, "no repeat");
+});
+
+Check("detector: altitude and speed give a prediction and then the event", () =>
+{
+    var watched = new[] { new EventName(EventKind.Altitude, 1000), new EventName(EventKind.Speed, 500) };
+    var detector = new EventDetector(watched);
+    for (int i = 0; i <= 99; i++)
+        detector.Update(i * 0.1, Sample(altitude: i * 10.0, speed: i * 3.0));
+
+    Expect(detector.Predictions.TryGetValue("altitude:1000", out double seconds), "altitude prediction");
+    Expect(seconds is > 0.0 and < 1.5, "close to the real 1.0 s left: " + seconds);
+    Expect(!detector.Seen.ContainsKey("altitude:1000"), "not reached yet");
+    var found = detector.Update(10.1, Sample(altitude: 1005, speed: 303));
+    Expect(found.Any(e => e.Name == "altitude:1000"), "altitude reached");
+    Expect(!detector.Predictions.ContainsKey("altitude:1000"), "the prediction is dropped");
+    Expect(detector.Predictions.ContainsKey("speed:500"), "speed prediction stays");
+});
+
+Check("detector: no prediction when the value does not rise", () =>
+{
+    var detector = new EventDetector(new[] { new EventName(EventKind.Altitude, 1000) });
+    for (int i = 0; i < 10; i++)
+        detector.Update(i * 0.1, Sample(altitude: 5));
+    Expect(!detector.Predictions.ContainsKey("altitude:1000"), "no prediction");
+});
+
+Check("detector: watched events come from the triggers and aliases", () =>
+{
+    Take take = ParseTake("""
+    { "events": { "stage": "sequence:2" },
+      "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5, "at": { "event": "stage" } },
+                  { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5, "at": { "event": "altitude:900" } } ],
+      "speed": [ { "at": { "event": "speed:300" }, "to": 2, "ramp": 1 } ] }
+    """, out ShotFile file);
+    var watched = EventDetector.Watched(take, file.Events).Select(n => n.Canonical).ToList();
+    Expect(watched.SequenceEqual(new[] { "sequence:2", "altitude:900", "speed:300" }), string.Join(",", watched));
+});
+
+#endregion
+
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;
 
