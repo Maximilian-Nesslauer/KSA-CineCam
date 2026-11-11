@@ -3779,6 +3779,150 @@ Check("replay dock: a scrub stays inside the replay and a playing replay keeps i
 
 #endregion
 
+#region Key placement
+Take PlacementTake()
+{
+    var take = new Take { Name = "launch", PreRoll = new PreRoll { Until = "liftoff" } };
+    take.Shots.Add(new Shot { Type = ShotType.Orbit, Duration = 10.0 });
+    take.Shots.Add(new Shot { Type = ShotType.Tripod, Duration = 15.0, At = Trigger.OnEvent("liftoff") });
+    take.Shots.Add(new Shot { Type = ShotType.Chase, Duration = 8.0 });
+    return take;
+}
+
+double?[] PlacementStarts(Take take, double liftoff)
+{
+    var runner = new TimelineRunner(take, new Dictionary<string, string>());
+    runner.Update(100.0, new Dictionary<string, double> { ["liftoff"] = liftoff });
+    return runner.Starts.Shots;
+}
+
+Check("key placement: a key after the lift-off goes after the shot that shows then, not into the pre-roll loop", () =>
+{
+    Take take = PlacementTake();
+    var aliases = new Dictionary<string, string>();
+    double?[] starts = PlacementStarts(take, 20.0);
+    var seen = new Dictionary<string, double> { ["liftoff"] = 20.0 };
+    Trigger at = Trigger.OnEvent("liftoff", 10.0);
+    double start = ShotPlacer.StartOf(at, seen, aliases)!.Value;
+    Expect(Near(start, 30.0), $"start {start}");
+    int loop = ShotPlacer.LoopShots(take, aliases);
+    Expect(loop == 1, $"loop shots {loop}");
+    ShotPlacement place = ShotPlacer.Place(take, start, starts, loop, selected: 0);
+    Expect(place.Index == 2 && !place.InPreRoll, $"index {place.Index}");
+    Expect(place.Duration is double d && Near(d, 5.0), $"fills the time until the chase starts: {place.Duration}");
+    take.Shots.Insert(place.Index, new Shot { Type = ShotType.Track, Duration = place.Duration!.Value, At = at });
+    double?[] after = PlacementStarts(take, 20.0);
+    Expect(Near(after[2]!.Value, 30.0) && Near(after[3]!.Value, 35.0), "the new shot starts at its time and the chase keeps its start");
+});
+
+Check("key placement: a key during the pre-roll loop goes after the shot that ends the loop", () =>
+{
+    Take take = PlacementTake();
+    double?[] starts = PlacementStarts(take, 20.0);
+    ShotPlacement place = ShotPlacer.Place(take, 5.0, starts, 1, selected: 0);
+    Expect(place.Index == 2 && place.InPreRoll, $"index {place.Index}, in pre-roll {place.InPreRoll}");
+    Expect(place.Duration is double d && Near(d, 30.0), $"duration {place.Duration}");
+    take.Shots.Insert(place.Index, new Shot { Type = ShotType.Track, Duration = place.Duration!.Value, At = Trigger.AtTime(5.0) });
+    double?[] after = PlacementStarts(take, 20.0);
+    Expect(Near(after[3]!.Value, 35.0), "the chase keeps its start");
+});
+
+Check("key placement: a key before a shot with its own start keeps its duration", () =>
+{
+    var take = new Take { Name = "plain" };
+    take.Shots.Add(new Shot { Type = ShotType.Orbit, Duration = 10.0 });
+    take.Shots.Add(new Shot { Type = ShotType.Tripod, Duration = 10.0, At = Trigger.AtTime(40.0) });
+    double?[] starts = PlacementStarts(take, 0.0);
+    ShotPlacement place = ShotPlacer.Place(take, 4.0, starts, 0, selected: 1);
+    Expect(place.Index == 1 && place.Duration == null && !place.InPreRoll, $"index {place.Index}, duration {place.Duration}");
+    ShotPlacement late = ShotPlacer.Place(take, 45.0, starts, 0, selected: 0);
+    Expect(late.Index == 2 && late.Duration == null, $"after the last shot: {late.Index}");
+    ShotPlacement early = ShotPlacer.Place(take, -1.0, starts, 0, selected: 1);
+    Expect(early.Index == 0, $"before every shot: {early.Index}");
+});
+
+Check("key placement: without known starts the key goes after the selected shot, behind the pre-roll loop", () =>
+{
+    Take take = PlacementTake();
+    Expect(ShotPlacer.Place(take, 30.0, null, 1, selected: 0).Index == 2, "behind the loop");
+    Expect(ShotPlacer.Place(take, 30.0, null, 1, selected: 2).Index == 3, "after the selected shot");
+    Expect(ShotPlacer.Place(take, 30.0, new double?[1], 0, selected: 0).Index == 1, "starts of another take count as unknown");
+    Expect(ShotPlacer.LoopShots(new Take(), new Dictionary<string, string>()) == 0, "no loop");
+    Expect(ShotPlacer.StartOf(Trigger.OnEvent("ignition"), new Dictionary<string, double>(), new Dictionary<string, string>()) == null, "an event not seen waits");
+    Expect(ShotPlacer.StartOf(Trigger.OnEvent("go", 2.0), new Dictionary<string, double> { ["liftoff"] = 3.0 },
+        new Dictionary<string, string> { ["go"] = "liftoff" }) is double s && Near(s, 5.0), "an alias resolves");
+});
+
+Check("key placement: the edit session inserts at an index and selects the shot", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-place-" + Guid.NewGuid().ToString("N") + ".json");
+    var session = new EditSession();
+    session.NewFromDefault(path);
+    try
+    {
+        int count = session.Take!.Shots.Count;
+        var shot = new Shot { Type = ShotType.Tripod, Duration = 3.0 };
+        session.InsertShot(shot, 0);
+        Expect(session.ShotIndex == 0 && ReferenceEquals(session.Take.Shots[0], shot), "inserted at 0 and selected");
+        session.InsertShot(new Shot { Type = ShotType.Tripod, Duration = 3.0 }, 999);
+        Expect(session.ShotIndex == count + 1, "an index past the end goes to the end");
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+});
+#endregion
+
+#region Key placement in a pause
+
+Check("key placement: a key in a live pause during the pre-roll loop goes behind the shots that wait for the lift-off", () =>
+{
+    Take take = PlacementTake();
+    var aliases = new Dictionary<string, string>();
+    double?[]? starts = ShotPlacer.StartsAt(take, 5.0, new Dictionary<string, double>(), aliases);
+    Expect(starts != null && starts[1] == null && starts[2] == null, "the lift-off has not come, so the waiting shot and the chase have no start");
+    ShotPlacement place = ShotPlacer.Place(take, 5.0, starts, ShotPlacer.LoopShots(take, aliases), selected: 0);
+    Expect(place.Index == 3 && place.Duration == null && place.InPreRoll, $"index {place.Index}, duration {place.Duration}, in pre-roll {place.InPreRoll}");
+    take.Shots.Insert(place.Index, new Shot { Type = ShotType.Track, Duration = 5.0, At = Trigger.AtTime(5.0) });
+    double?[] after = PlacementStarts(take, 20.0);
+    Expect(Near(after[1]!.Value, 20.0) && Near(after[2]!.Value, 35.0) && Near(after[3]!.Value, 5.0),
+        $"the chase stays behind the lift-off shot: {string.Join(", ", after)}");
+});
+
+Check("key placement: a second key in one pause uses the starts of the take as the first key changed it", () =>
+{
+    var take = new Take { Name = "plain" };
+    take.Shots.Add(new Shot { Type = ShotType.Orbit, Duration = 10.0 });
+    take.Shots.Add(new Shot { Type = ShotType.Chase, Duration = 10.0 });
+    take.Shots.Add(new Shot { Type = ShotType.Tripod, Duration = 10.0 });
+    var aliases = new Dictionary<string, string>();
+    var seen = new Dictionary<string, double>();
+
+    ShotPlacement first = ShotPlacer.Place(take, 12.0, ShotPlacer.StartsAt(take, 12.0, seen, aliases), 0, selected: 0);
+    Expect(first.Index == 2 && first.Duration is double d1 && Near(d1, 8.0), $"first: index {first.Index}, duration {first.Duration}");
+    take.Shots.Insert(first.Index, new Shot { Type = ShotType.Track, Duration = first.Duration!.Value, At = Trigger.AtTime(12.0) });
+
+    double?[]? starts = ShotPlacer.StartsAt(take, 12.0, seen, aliases);
+    Expect(starts is { Length: 4 }, "one start per shot of the changed take");
+    ShotPlacement second = ShotPlacer.Place(take, 15.03, starts, 0, selected: 2);
+    Expect(second.Index == 3 && second.Duration is double d2 && Near(d2, 4.97, 1e-9), $"second: index {second.Index}, duration {second.Duration}");
+    take.Shots.Insert(second.Index, new Shot { Type = ShotType.Track, Duration = second.Duration!.Value, At = Trigger.AtTime(15.03) });
+
+    double?[] after = PlacementStarts(take, 0.0);
+    Expect(Near(after[2]!.Value, 12.0) && Near(after[3]!.Value, 15.03) && Near(after[4]!.Value, 20.0, 1e-9),
+        $"both keys start at their times and the tripod keeps its exact start: {string.Join(", ", after)}");
+});
+
+Check("key placement: the starts of a take with errors are unknown", () =>
+{
+    var take = new Take { Name = "broken", PreRoll = new PreRoll { Until = "liftoff" } };
+    take.Shots.Add(new Shot { Type = ShotType.Orbit, Duration = 10.0 });
+    Expect(ShotPlacer.StartsAt(take, 1.0, new Dictionary<string, double>(), new Dictionary<string, string>()) == null, "no shot ends the loop");
+});
+
+#endregion
+
 #region Labels
 
 Check("labels: the frame labels are short", () =>
