@@ -4261,6 +4261,590 @@ Check("rules: a replay tick is measured before it is added", () =>
 
 #endregion
 
+#region Replay takes
+
+const double TakeBodyRadius = 600000.0;
+
+// A launch on the pad at (R, 0, 0) of the body-fixed frame: the engine starts at 1 s, the vehicle
+// leaves the pad at 2 s and climbs at 10 m/s^2, drifts east and pitches from 4 s. A stage separates
+// 20 m under it at 10 s, and a far vehicle shows up 500 m away at 12 s. The samples are 1/32 s
+// apart, and the events come from the event detector on the states, as the recorder makes them.
+ReplayFlight TakeFlight()
+{
+    const double step = 1.0 / 32.0;
+    V3 Position(double t) => t < 2.0
+        ? new V3(TakeBodyRadius, 0.0, 0.0)
+        : new V3(TakeBodyRadius + 5.0 * (t - 2.0) * (t - 2.0), 0.3 * (t - 2.0) * (t - 2.0), 0.0);
+    ReplayRotation Rotation(double t)
+    {
+        double angle = t < 4.0 ? 0.0 : 0.05 * (t - 4.0);
+        return new ReplayRotation(0.0, 0.0, Math.Sin(angle / 2.0), Math.Cos(angle / 2.0));
+    }
+
+    var primary = new List<ReplaySample>();
+    var detector = new EventDetector([]);
+    var events = new List<ReplayEvent>();
+    for (int i = 0; i <= 640; i++)
+    {
+        double t = i * step;
+        V3 p = Position(t);
+        double speed = t < 2.0 ? 0.0 : new V3(10.0 * (t - 2.0), 0.6 * (t - 2.0), 0.0).Length;
+        int flags = (t >= 1.0 ? ReplayStateFlags.EngineOn : 0) | (t < 2.0 ? ReplayStateFlags.Contact : 0);
+        var state = new ReplayState(flags, t >= 10.0 ? 1 : 0, 0, (float)(p.X - TakeBodyRadius), (float)speed, (float)(10.0 * Math.Max(t - 2.0, 0.0)));
+        primary.Add(new ReplaySample(t, p, Rotation(t), [], State: state));
+        var vehicle = new VehicleSample(state.Has(ReplayStateFlags.EngineOn), state.Has(ReplayStateFlags.Contact), state.Sequence,
+            state.Altitude, state.Speed, Body: "body", RadialSpeed: state.Radial);
+        foreach (DetectedEvent seen in detector.Update(t, vehicle))
+            events.Add(new ReplayEvent(t, seen.Name));
+    }
+
+    var stage = new List<ReplaySample>();
+    for (int i = 320; i <= 640; i++)
+    {
+        double t = i * step;
+        stage.Add(new ReplaySample(t, Position(10.0) - new V3(20.0 + 2.0 * (t - 10.0), 0.0, 0.0), Rotation(10.0), []));
+    }
+
+    var far = new List<ReplaySample>();
+    for (int i = 384; i <= 640; i++)
+        far.Add(new ReplaySample(i * step, new V3(TakeBodyRadius, 500.0, 0.0), new ReplayRotation(0, 0, 0, 1), []));
+
+    return new ReplayFlight("game", "system", "body", 1000.0,
+        new()
+        {
+            new ReplayActor(0, "rocket", new()
+            {
+                new ReplaySegment(0.0, "<first/>", primary.Where(s => s.Time < 10.0).ToList()) { CenterOfMass = new V3(5.0, 0.1, 0.0) },
+                new ReplaySegment(10.0, "<upper/>", primary.Where(s => s.Time >= 10.0).ToList()) { CenterOfMass = new V3(15.0, 0.1, 0.0) },
+            }),
+            new ReplayActor(1, "rocket stage", new() { new ReplaySegment(10.0, "<stage/>", stage) }),
+            new ReplayActor(2, "far away", new() { new ReplaySegment(12.0, "<far/>", far) }),
+        },
+        new() { new ReplayMarker(10.0, "Separation: rocket stage") })
+    {
+        Events = events,
+    };
+}
+
+ReplayShape TakeShape(ReplaySegment segment) => segment.Definition == "<upper/>"
+    ? ReplayShape.FromBounds(new V3(9.0, -2.0, -2.0), new V3(29.0, 2.0, 2.0), segment.CenterOfMass,
+        id => id == "nose" ? new V3(29.0, 0.0, 0.0) : null)
+    : ReplayShape.FromBounds(new V3(-1.0, -2.0, -2.0), new V3(29.0, 2.0, 2.0), segment.CenterOfMass,
+        id => id == "nose" ? new V3(29.0, 0.0, 0.0) : id == "engine" ? new V3(0.0, 0.0, 0.0) : null);
+
+ReplayWorld TakeWorld(ReplayFlight flight) =>
+    new(flight, TakeBodyRadius, TakeShape, _ => new V3(1.5e11, 2e10, 3e10));
+
+ReplaySite TakeSite() => ReplaySite.At(new V3(TakeBodyRadius, 0.0, 0.0));
+
+const string replayTakeFile = """
+{
+  "preRoll": { "until": "liftoff" },
+  "camera": [
+    { "type": "orbit", "target": "vehicle", "radius": 40, "height": 10, "degPerSec": 20, "lookAt": [15, 0, 0], "duration": 0.75, "avoidSun": 30 },
+    { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 0.5 },
+    { "type": "chase", "offset": [-10, 20, 5], "lookAt": [15, 0, 0], "smoothing": 0.5, "duration": 5, "at": { "event": "liftoff", "delay": 0.5 }, "transition": { "type": "blend", "seconds": 1 } },
+    { "type": "track", "position": [20, -100, 0], "keepSize": true, "duration": 5, "at": { "time": 8 } },
+    { "type": "part", "part": "nose", "offset": [2, 3, 0], "lookAt": [-5, 0, 0], "duration": 2 },
+    { "type": "chase", "target": "separated", "offset": [-5, 10, 0], "lookAt": [5, 0, 0], "smoothing": 1, "duration": 6, "at": { "time": 14 } },
+  ],
+  "speed": [ { "at": { "time": 5 }, "to": 0.5, "ramp": 0 } ],
+  "actions": [ { "at": { "event": "liftoff" }, "action": "stage" } ],
+}
+""";
+
+Check("replay file: version 2 keeps the events, the vehicle states and the centers of mass", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        ReplayFlight flight = TakeFlight();
+        ReplayFile.Save(path, flight);
+        ReplayFlight loaded = ReplayFile.Load(path);
+        Expect(loaded.FormatVersion == 2, "version");
+        Expect(loaded.Events.Select(e => e.Name).SequenceEqual(flight.Events.Select(e => e.Name)), "events");
+        Expect(loaded.Actors[0].Segments[1].CenterOfMass == new V3(15.0, 0.1, 0.0), "center of mass");
+        ReplaySample sample = loaded.Actors[0].Segments[0].Samples[100];
+        Expect(sample.State is { } state && state.Has(ReplayStateFlags.EngineOn) && !state.Has(ReplayStateFlags.Contact), "state");
+        Expect(loaded.Actors[1].Segments[0].Samples[0].State == null && loaded.Actors[1].Segments[0].CenterOfMass == null, "no state for other vehicles");
+    }
+    finally
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+});
+
+Check("replay file: a version 1 file stays readable and its markers become events", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        // A file of version 1: no events, no states, the markers of its recorder and an embedded view.
+        string json = """
+        {"Version":1,"Flight":{"GameVersion":"game","SystemId":"system","BodyId":"body","StartTime":5,
+          "Actors":[{"Id":0,"Name":"rocket","Segments":[{"Start":0,"Definition":"<a/>","Samples":[
+            {"Time":0,"Position":{"X":600000,"Y":0,"Z":0},"Rotation":{"X":0,"Y":0,"Z":0,"W":1},"Nozzles":[],"AmbientPressure":0,"AirDensity":0,"AirVelocity":{"X":0,"Y":0,"Z":0}},
+            {"Time":4,"Position":{"X":600080,"Y":0,"Z":0},"Rotation":{"X":0,"Y":0,"Z":0,"W":1},"Nozzles":[],"AmbientPressure":0,"AirDensity":0,"AirVelocity":{"X":40,"Y":0,"Z":0}}]}]}],
+          "Markers":[{"Time":1,"Label":"Ignition"},{"Time":2,"Label":"Lift-off"},{"Time":3,"Label":"Separation: stage"},{"Time":3.5,"Label":"Ignition:2"}],
+          "Views":[{"Name":"close","Time":1,"Position":{"X":1,"Y":0,"Z":0},"Rotation":{"X":0,"Y":0,"Z":0,"W":1},"Fov":45,"ActorId":0,"Mount":null,"Id":null,"Cut":false}]}}
+        """;
+        using (var file = File.Create(path))
+        using (var gzip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionLevel.Fastest))
+            gzip.Write(System.Text.Encoding.UTF8.GetBytes(json));
+        ReplayFlight flight = ReplayFile.Load(path);
+        Expect(flight.FormatVersion == 1, "version 1");
+        Expect(string.Join(",", flight.Events.Select(e => e.Name)) == "ignition,liftoff,ignition:2"
+            && flight.Events.Select(e => e.Time).SequenceEqual([1.0, 2.0, 3.5]), string.Join(",", flight.Events.Select(e => e.Name)));
+        Expect(flight.Views.Single().Name == "close", "the view stays for the import");
+        double? altitude = ReplayEvents.Crossing(flight, s => ReplayEvents.Altitude(s, 600000), 40);
+        Expect(altitude is double a && Near(a, 2.0, 1e-9), $"altitude from the position: {altitude}");
+        var world = new ReplayWorld(flight, 600000, s => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), s.CenterOfMass));
+        Expect(Near(world.VehicleAt(4).Speed, 40.0, 1e-9) && Near(world.VehicleAt(4).Altitude, 80.0, 1e-9), "speed from the velocity of the air");
+        ReplayFile.Save(path, flight);
+        Expect(ReplayFile.Load(path).FormatVersion == 2, "a save writes version 2");
+    }
+    finally
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+});
+
+Check("replay file: the size limits hold with the state of the first vehicle", () =>
+{
+    var state = new ReplayState(ReplayStateFlags.EngineOn | ReplayStateFlags.StableOrbit, 12, 1, 123456.789f, 2345.6789f, -12.345678f);
+    var coast = new ReplaySample(812.345678901234, new V3(-6378137.123456789, 1234567.98765432, -2345678.12345678),
+        new ReplayRotation(-0.123456789012345, 0.234567890123456, -0.345678901234567, 0.901234567890123), [],
+        12345.678f, 0.12345678f, new V3(-1234.56789012345, 2345.67890123456, -345.678901234567));
+    long plain = ReplayFile.MeasureSample(coast);
+    long primary = ReplayFile.MeasureSample(coast with { State = state });
+    long bytes = (primary + plain * (ReplaySampling.ActorLimit - 1)) * ReplaySampling.SamplesPerActor;
+    Console.WriteLine($"  replay sample cost: {plain} bytes, {primary} bytes with the vehicle state, {bytes / (1024 * 1024)} MiB for 16 vehicles at the length limit");
+    Expect(primary - plain <= 160, $"the state costs {primary - plain} bytes");
+    Expect(!ReplaySampling.SizeReached(bytes), $"16 coasting vehicles need {bytes} bytes");
+
+    ReplayFlight flight = TakeFlight();
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        bool Rejects(ReplayFlight bad)
+        {
+            try { ReplayFile.Save(path, bad); } catch (InvalidDataException) { return true; }
+            return false;
+        }
+
+        List<ReplaySample> samples = flight.Actors[0].Segments[0].Samples;
+        ReplaySample first = samples[0];
+        samples[0] = first with { State = state with { Altitude = float.NaN } };
+        Expect(Rejects(flight), "a state that is not finite");
+        samples[0] = first;
+        Expect(Rejects(flight with { Events = [new ReplayEvent(1, "Lift-off")] }), "an event name that is not canonical");
+        Expect(Rejects(flight with { Events = [new ReplayEvent(99, "liftoff")] }), "an event after the end");
+        Expect(Rejects(flight with { Events = Enumerable.Range(0, ReplayFile.EventLimit + 1).Select(i => new ReplayEvent(1, "liftoff")).ToList() }), "too many events");
+        Expect(!Rejects(flight), "the flight itself");
+    }
+    finally
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+});
+
+Check("replay events: the recorder events and the thresholds of a take come from the samples", () =>
+{
+    ReplayFlight flight = TakeFlight();
+    var names = flight.Events.ToDictionary(e => e.Name, e => e.Time);
+    Expect(Near(names["ignition"], 1.0) && Near(names["liftoff"], 2.34375) && Near(names["sequence:1"], 10.0), string.Join(",", names.Keys));
+    EventName.TryParse("altitude:100", out EventName altitude, out _);
+    EventName.TryParse("speed:50", out EventName speed, out _);
+    List<ReplayEvent> events = ReplayEvents.ForTake(flight, [altitude, speed, altitude], TakeBodyRadius);
+    double up = events.Single(e => e.Name == "altitude:100").Time;
+    double fast = events.Single(e => e.Name == "speed:50").Time;
+    Expect(Near(up, 2.0 + Math.Sqrt(20.0), 2e-3), $"altitude crossing {up}");
+    Expect(Near(fast, 2.0 + 50.0 / new V3(10, 0.6, 0).Length, 2e-3), $"speed crossing {fast}");
+    Expect(events.Select(e => e.Time).SequenceEqual(events.Select(e => e.Time).Order()), "in the order of time");
+});
+
+Check("replay world: the vehicle frame, its size, the body and the parts", () =>
+{
+    ReplayWorld world = TakeWorld(TakeFlight());
+    WorldSample sample = world.Build(0.0, TakeSite());
+    Expect(Near3(sample.VehicleFrame.Origin, new V3(-1.0, 0.1, 0.0)), $"base {sample.VehicleFrame.Origin}");
+    Expect(Near3(sample.VehicleFrame.X, V3.UnitX) && Near3(sample.VehicleFrame.Y, V3.UnitY), "axes");
+    Expect(Near(sample.VehicleHeight, 30.0) && Near(sample.VehicleWidth, 4.0), "size");
+    Expect(Near3(sample.BodyCentre!.Value, new V3(-TakeBodyRadius, 0, 0)) && Near3(sample.Pole!.Value, V3.UnitZ), "body");
+    Expect(Near(sample.BodyRadius, TakeBodyRadius) && sample.SunDirection is V3 sun && Near(sun.Length, 1.0), "radius and sun");
+    Expect(Near3(sample.PartLookup!("nose")!.Value, new V3(30.0, -0.1, 0.0)) && sample.PartLookup("wing") == null, "part lookup");
+    Expect(sample.Vehicle.Contact && !sample.Vehicle.EngineOn && sample.Vehicle.Body == "body", "vehicle state");
+
+    WorldSample turned = world.Build(8.0, TakeSite());
+    double angle = 0.05 * 4.0;
+    Expect(Near3(turned.VehicleFrame.X, new V3(Math.Cos(angle), Math.Sin(angle), 0.0), 1e-9), "the frame turns with the recorded rotation");
+    // The base moves 10 m along the nose, and the old segment holds its last sample at 9.96875 s.
+    double rise = world.Build(10.0, TakeSite()).VehicleFrame.Origin.X - world.Build(9.99, TakeSite()).VehicleFrame.Origin.X;
+    double expected = 10.0 * Math.Cos(0.3) + 5.0 * (64.0 - 7.96875 * 7.96875);
+    Expect(Near(rise, expected, 1e-3), $"a new segment moves the base to the new lowest point: {rise}");
+});
+
+Check("replay world: the surface velocity is the change of the body-fixed position of the center of mass", () =>
+{
+    ReplayFlight flight = TakeFlight();
+    ReplayWorld world = TakeWorld(flight);
+    V3 velocity = world.Build(6.0, TakeSite()).SurfaceVelocity!.Value;
+    // The origin climbs at (40, 2.4, 0), and the center of mass 5 m up the axis also turns with the vehicle at 0.05 rad/s.
+    Expect(Near3(velocity, new V3(39.970, 2.648, 0.0), 0.01), $"climb {velocity}");
+    Expect(Near3(world.Build(1.0, TakeSite()).SurfaceVelocity!.Value, V3.Zero, 1e-9), "standing on the pad");
+    V3 edge = ReplayWorld.SurfaceVelocityCcf(flight.Actors[0], 10.0);
+    Expect(Near3(edge, new V3(80.0, 4.8, 0.0), 1.0), $"one sided at the start of a segment {edge}");
+});
+
+Check("replay world: the separated vehicles come from the other recorded actors", () =>
+{
+    ReplayWorld world = TakeWorld(TakeFlight());
+    WorldSample before = world.Build(9.0, TakeSite());
+    Expect(before.SeparatedNewest == null && before.SeparatedNearest == null, "none before the separation");
+    WorldSample after = world.Build(13.0, TakeSite());
+    Expect(after.SeparatedNewest?.Name == "rocket stage" && after.SeparatedNearest?.Name == "rocket stage", "the stage, not the far vehicle");
+    Expect(after.SeparatedNewest!.Distance > 20.0 && Near(after.SeparatedNewest.Height, 30.0), "distance and size");
+    Expect(world.Build(13.0, TakeSite(), separated: false).SeparatedNewest == null, "only when a shot needs it");
+});
+
+Check("replay plan: the timeline comes from the recorded event times and the speed track maps the time", () =>
+{
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    ReplayFlight flight = TakeFlight();
+    var plan = ReplayTakePlan.Resolve(take, file, ReplayEvents.ForTake(flight, EventDetector.Watched(take, file.Events), TakeBodyRadius), 20.0);
+    Expect(Near(plan.EventTimes["liftoff"], 2.34375, 1e-9), "lift-off before the speed key");
+    Expect(Near(plan.EventTimes["sequence:1"], 15.0, 1e-9), $"the stage event at half speed {plan.EventTimes["sequence:1"]}");
+    Expect(Near(plan.Starts!.Shots[2]!.Value, 2.84375, 1e-9), "the shot that waits for the event starts at the event plus its delay");
+    Expect(Near(plan.Starts.Shots[3]!.Value, 8.0) && Near(plan.Starts.Shots[4]!.Value, 13.0), "time and after");
+    Expect(Near(plan.Starts.Actions[0]!.Value, 2.34375, 1e-9), "the action start is known, the replay does not run it");
+    Expect(Near(plan.Duration, 35.0, 1e-9), $"duration {plan.Duration}");
+    Expect(Near(plan.RecordingTime(4.0), 4.0, 1e-9) && Near(plan.RecordingTime(9.0), 7.0, 1e-9), "recording time");
+    Expect(Near(plan.TakeTime(7.0), 9.0, 1e-9) && Near(plan.RecordingRate(9.0), 0.5, 1e-9), "take time and rate");
+    Expect(plan.FirstShown[2] is double shown && shown >= 2.84375 && shown < 2.84375 + plan.Step, "first shown on the step after the start");
+
+    var identity = ReplayTakePlan.Identity(20.0);
+    Expect(identity.CreateDirector() == null && Near(identity.RecordingTime(7.5), 7.5) && Near(identity.Duration, 20.0), "a plan without a take");
+});
+
+Check("replay take: a replay gives the poses of a live run on the same recording", () =>
+{
+    const double dt = 1.0 / 64.0;
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    ReplayFlight flight = TakeFlight();
+    ReplayWorld world = TakeWorld(flight);
+    ReplaySite site = TakeSite();
+    var plan = ReplayTakePlan.Resolve(take, file, ReplayEvents.ForTake(flight, EventDetector.Watched(take, file.Events), TakeBodyRadius), 20.0, dt);
+    TakeDirector replay = plan.CreateDirector()!;
+    var live = new TakeDirector(take, file);
+    double recording = 0.0;
+    int compared = 0;
+    var shots = new HashSet<int>();
+    for (int k = 0; k * dt < plan.Duration - dt; k++)
+    {
+        double t = k * dt;
+        DirectorFrame a = live.Update(t, world.Build(recording, site));
+        DirectorFrame b = replay.Update(t, world.Build(plan.RecordingTime(t), site));
+        Expect(Near(recording, plan.RecordingTime(t), 1e-9), $"recording time at {t}: {recording} and {plan.RecordingTime(t)}");
+        Expect(a.ShotIndex == b.ShotIndex, $"shot at {t}: {a.ShotIndex} and {b.ShotIndex}");
+        if (a.Pose is CameraPose p && b.Pose is CameraPose q)
+        {
+            Expect(Near3(p.Position, q.Position, 1e-9) && Near3(p.LookAt, q.LookAt, 1e-9) && Near3(p.Up, q.Up, 1e-9) && Near(p.Fov, q.Fov, 1e-9),
+                $"pose at {t}: {p.Position} and {q.Position}");
+            compared++;
+            shots.Add(b.ShotIndex);
+        }
+        else
+        {
+            Expect(a.Pose == null && b.Pose == null, $"both without a pose at {t}");
+        }
+
+        recording = Math.Min(recording + Math.Max(a.TargetSpeed, 0.0) * dt, 20.0);
+    }
+
+    Expect(shots.SetEquals([0, 1, 2, 3, 4, 5]) && compared > 2000, $"{compared} poses of shots {string.Join(",", shots)}");
+});
+
+Check("replay take: a seek gives the pose of a play from the start", () =>
+{
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    ReplayWorld world = TakeWorld(TakeFlight());
+    var played = new ReplayTakePlayer(world);
+    played.Load(take, file, TakeSite());
+    Expect(played.Problem.Length == 0 && Near(played.Duration, 35.0, 1e-6), "loaded");
+    played.Seek(0.0);
+    played.SetPlaying(true);
+    var seeker = new ReplayTakePlayer(world);
+    seeker.Load(take, file, TakeSite());
+    foreach (double target in new[] { 4.0, 6.5, 10.0, 15.0, 19.0 })
+    {
+        while (played.Time < target)
+            played.Advance(1.0 / 60.0);
+        CameraPose p = played.Frame!.Pose!.Value;
+        seeker.Seek(played.Time);
+        CameraPose q = seeker.Frame!.Pose!.Value;
+        Expect(seeker.Frame.ShotIndex == played.Frame.ShotIndex, $"shot at {played.Time}");
+        Expect(Near3(p.Position, q.Position, 1e-3) && Near3(p.LookAt, q.LookAt, 1e-3) && Near(p.Fov, q.Fov, 1e-6),
+            $"pose at {played.Time}: {p.Position} {q.Position}");
+    }
+
+    double back = seeker.Time;
+    CameraPose there = seeker.Frame!.Pose!.Value;
+    seeker.Seek(3.0);
+    seeker.Seek(back);
+    Expect(seeker.Frame!.Pose!.Value == there, "a seek back and forth gives the same pose");
+    played.Advance(100.0);
+    Expect(!played.IsPlaying && Near(played.Time, played.Duration), "the play stops at the end");
+});
+
+Check("replay take: the speed track and the preview speed drive the playback", () =>
+{
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var player = new ReplayTakePlayer(TakeWorld(TakeFlight()));
+    player.Load(take, file, TakeSite());
+    player.Seek(6.0);
+    player.PreviewSpeed = 2.0;
+    player.SetPlaying(true);
+    player.Advance(1.0);
+    Expect(Near(player.Time, 8.0, 1e-9) && Near(player.RecordingTime, 6.5, 1e-9), $"time {player.Time}, flight {player.RecordingTime}");
+    player.PreviewSpeed = 100.0;
+    Expect(player.PreviewSpeed == ReplayTakePlayer.MaxPreviewSpeed, "limit");
+});
+
+Check("replay take: an edit resolves the take again at the same moment of the flight", () =>
+{
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var player = new ReplayTakePlayer(TakeWorld(TakeFlight()));
+    player.Load(take, file, TakeSite());
+    player.Seek(9.0);
+    double flight = player.RecordingTime;
+    take.Speed[0].To = 0.25;
+    player.Load(take, file, TakeSite());
+    Expect(Near(player.RecordingTime, flight, 1e-6) && Near(player.Time, 5.0 + 2.0 / 0.25, 1e-6), $"time {player.Time}");
+    take.Shots[2].At = Trigger.OnEvent("nothing");
+    player.Load(take, file, TakeSite());
+    Expect(player.Problem.Length > 0 && player.Plan.Take == null && player.Frame == null, "a take that the timeline rejects plays no take");
+    player.Load(null, null, TakeSite());
+    Expect(player.Problem.Length == 0 && Near(player.Duration, 20.0), "no take");
+});
+
+Check("replay legacy: old views and speed keys become a take", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        ReplayFlight flight = TakeFlight() with { Views = [new ReplayView("embedded", 1, V3.UnitX, new ReplayRotation(0, 0, 0, 1), 40)] };
+        var notes = new List<string>();
+        Expect(ReplayLegacy.Read(flight, root, "Flight A", notes).Single().Name == "main", "the embedded views without a project file");
+        Directory.CreateDirectory(Path.Combine(root, "Flight A"));
+        File.WriteAllText(Path.Combine(root, "Flight A", "main.json"), """
+        { "version": 1, "project": { "recordingId": "Flight A",
+          "views": [ { "name": "a", "time": 1, "position": { "x": 1, "y": 2, "z": 3 }, "rotation": { "x": 0, "y": 0, "z": 0, "w": 1 }, "fov": 50, "actorId": 0, "id": "a" } ],
+          "speedKeys": [ { "time": 2, "speed": 0.5 } ] } }
+        """);
+        File.WriteAllText(Path.Combine(root, "Flight A", "broken.json"), "{ not json");
+        List<ReplayLegacyProject> projects = ReplayLegacy.Read(flight, root, "Flight A", notes);
+        Expect(projects.Single().Name == "main" && projects[0].Views.Single().Fov == 50 && projects[0].SpeedKeys.Single().Speed == 0.5, "the project file replaces the embedded views");
+        Expect(notes.Count == 1 && notes[0].Contains("broken"), "a broken file gives a note");
+
+        var keys = new List<ReplaySpeedKey> { new(2.0, 0.5) };
+        Expect(Near(ReplayLegacy.TakeTimeOf(1.0, keys), 1.0) && Near(ReplayLegacy.TakeTimeOf(3.0, keys), 4.0), "take time of the old speed keys");
+        ReplayWorld world = TakeWorld(flight);
+        ReplaySite site = TakeSite();
+        var cameras = new List<LegacyCamera>
+        {
+            new(5.0, new V3(TakeBodyRadius + 50, 0, 0), new V3(0, 0, 1), 40, false, true),
+            new(1.0, new V3(TakeBodyRadius + 10, 30, 0), new V3(0, -1, 0), 50, true, false),
+            new(3.0, new V3(TakeBodyRadius + 15, 30, 0), new V3(0, -1, 0), 45, true, false),
+        };
+        Take take = ReplayLegacy.ToTake("Replay Flight A main", cameras, keys, world, site);
+        Expect(take.Shots.Count == 3, "one shot per view");
+        Shot path = take.Shots[0], hold = take.Shots[1], fixedView = take.Shots[2];
+        Expect(path.Type == ShotType.Path && path.Target == ShotTarget.Vehicle && path.Points.Count == 2, "a path to the next view of the same anchor");
+        Expect(Near(path.At.Time, 1.0) && Near(path.Duration, 3.0), $"path time {path.At.Time} {path.Duration}");
+        Expect(Near3(path.Points[0].Position, new V3(11, 29.9, 0), 0.01), $"point in the vehicle frame {path.Points[0].Position}");
+        Expect(hold.Type == ShotType.Tripod && hold.Target == ShotTarget.Vehicle && Near(hold.At.Time, 4.0) && Near(hold.Duration, 4.0), "a hold before a cut");
+        Expect(fixedView.Type == ShotType.Tripod && fixedView.Target == ShotTarget.Site && Near3(fixedView.Position, new V3(50, 0, 0), 0.01)
+            && Near(fixedView.At.Time, 8.0) && Near(fixedView.Duration, 30.0), $"a world view in the site frame {fixedView.Position}");
+        Expect(take.Speed.Single() is { To: 0.5, Ramp: 0.0 } key && Near(key.At.Time, 2.0), "speed key");
+        _ = new TakeDirector(take, new ShotFile());
+        var file = new ShotFile();
+        file.Takes.Add(take);
+        Expect(ShotFileValidator.Validate(ShotFileValidator.Copy(file)).IsValid, "the take is valid");
+    }
+    finally
+    {
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+    }
+});
+
+Check("replay timeline: preset starts play like the starts that the events fixed", () =>
+{
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var runner = new TimelineRunner(take, file.Events);
+    runner.Update(0.0, Events());
+    runner.Update(3.0, Events(("liftoff", 2.5)));
+    TimelineStarts starts = runner.Starts;
+    var preset = new TimelineRunner(take, file.Events);
+    preset.Preset(starts);
+    TimelineState a = runner.Update(4.0, Events(("liftoff", 2.5)));
+    TimelineState b = preset.Update(4.0, Events());
+    Expect(a.ShotIndex == b.ShotIndex && Near(a.Progress, b.Progress) && a.PreviousShotIndex == b.PreviousShotIndex && Near(a.BlendWeight, b.BlendWeight), "same state");
+    Expect(b.StartedShots.Contains(2), "the preset starts count as new");
+    bool rejected = false;
+    try { preset.Preset(starts with { Shots = new double?[1] }); } catch (ArgumentException) { rejected = true; }
+    Expect(rejected, "starts of another take");
+});
+
+#endregion
+
+#region Replay render
+
+Check("replay render: the pictures of a range and their take times", () =>
+{
+    var job = new ReplayRenderJob(0.0, 10.0, 30.0);
+    Expect(job.Total == 300 && Near(job.VideoDuration, 10.0), $"total {job.Total}");
+    Expect(job.TakeTime(150) == 5.0 && Near(job.TakeTime(299), 299.0 / 30.0) && job.TakeTime(400) == 10.0, "times");
+    Expect(new ReplayRenderJob(0.0, 10.01, 30.0).Total == 301 && new ReplayRenderJob(2.0, 2.0, 30.0).Total == 1, "partial and empty steps");
+    Expect(ReplayRenderJob.TryCreate(ReplayRenderRange.FromCurrent, 4.0, 10.0, 30.0, out ReplayRenderJob? from, out _)
+        && from!.Start == 4.0 && from.Total == 180 && from.TakeTime(0) == 4.0, "from the replay time");
+    Expect(ReplayRenderJob.TryCreate(ReplayRenderRange.Whole, 4.0, 10.0, 24.0, out ReplayRenderJob? whole, out _)
+        && whole!.Start == 0.0 && whole.Total == 240, "the whole take");
+    Expect(!ReplayRenderJob.TryCreate(ReplayRenderRange.FromCurrent, 10.0, 10.0, 30.0, out _, out string end) && end.Contains("end"), "at the end");
+    Expect(!ReplayRenderJob.TryCreate(ReplayRenderRange.Whole, 0.0, 10.0, 0.0, out _, out _), "no fps");
+    Expect(!ReplayRenderJob.TryCreate(ReplayRenderRange.Whole, 0.0, 0.0, 30.0, out _, out _), "no time");
+
+    // A take time computed from the index does not drift like a sum of steps.
+    double sum = 0.0;
+    for (int i = 0; i < 100000; i++)
+        sum += 1.0 / 60.0;
+    var longJob = new ReplayRenderJob(0.0, 2000.0, 60.0);
+    Expect(longJob.TakeTime(100000) == 100000.0 / 60.0 && sum != longJob.TakeTime(100000), "no drift");
+});
+
+Check("replay render: the picture of a moment is the first one that shows it", () =>
+{
+    Expect(ReplayRenderJob.PictureAt(0.0, 30.0) == 1 && ReplayRenderJob.PictureAt(-1.0, 30.0) == 1, "start");
+    Expect(ReplayRenderJob.PictureAt(1.0 / 30.0, 30.0) == 2 && ReplayRenderJob.PictureAt(0.02, 30.0) == 2, "second picture");
+    Expect(ReplayRenderJob.PictureAt(1.0, 30.0) == 31 && ReplayRenderJob.PictureAt(1.0001, 30.0) == 32, "one second");
+});
+
+Check("replay render: progress, time left and the log lines", () =>
+{
+    var none = new ReplayRenderProgress(0, 400, 3.0);
+    Expect(none.SecondsLeft == null && none.Percent == 0.0 && !none.Text().Contains("left"), "before the first picture");
+    var quarter = new ReplayRenderProgress(100, 400, 50.0);
+    Expect(quarter.SecondsLeft is double left && Near(left, 150.0) && Near(quarter.Percent, 25.0), "a quarter");
+    Expect(quarter.Text() == "picture 100 of 400 (25%), about 2 min 30 s left", quarter.Text());
+    Expect(new ReplayRenderProgress(400, 400, 9.0).SecondsLeft == 0.0 && new ReplayRenderProgress(399, 400, 1).Text().Contains("(99%)"), "end");
+    Expect(ReplayRenderProgress.PassedTenth(39, 40, 400) && !ReplayRenderProgress.PassedTenth(40, 41, 400)
+        && ReplayRenderProgress.PassedTenth(399, 400, 400) && !ReplayRenderProgress.PassedTenth(5, 5, 400), "tenths");
+    Expect(ReplayRenderProgress.Span(45.4) == "45 s" && ReplayRenderProgress.Span(125) == "2 min 05 s"
+        && ReplayRenderProgress.Span(3725) == "1 h 02 min" && ReplayRenderProgress.Span(double.NaN) == "?", "spans");
+});
+
+Check("replay render: folder name and disk estimate", () =>
+{
+    string name = ReplayRenderLog.FolderName("Flight 2026-11-11 12-00-00 ab12", "Launch: main");
+    Expect(name == "Flight_2026-11-11_12-00-00_ab12-Launch__main" || !OperatingSystem.IsWindows(), name);
+    Expect(ReplayRenderLog.EstimateBytes(1000, 1920, 1080) == 1000L * 1920 * 1080 * 2 && ReplayRenderLog.EstimateBytes(-1, 10, 10) == 0, "estimate");
+    Expect(ReplayRenderLog.MinFreeBytes > ReplayRenderLog.StopFreeBytes, "limits");
+});
+
+Check("replay render: the event rows come from the plan with their exact video time and picture", () =>
+{
+    ReplayFlight flight = TakeFlight();
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var plan = ReplayTakePlan.Resolve(take, file, ReplayEvents.ForTake(flight, EventDetector.Watched(take, file.Events), TakeBodyRadius), 20.0);
+    var job = new ReplayRenderJob(0.0, plan.Duration, 30.0);
+    List<ReplayRenderRow> rows = ReplayRenderLog.EventRows(plan.EventTimes, job);
+    Expect(rows.Count == plan.EventTimes.Count(e => e.Value <= plan.Duration + 1e-9) && rows.Count > 0, $"{rows.Count} rows");
+    ReplayRenderRow lift = rows.Single(r => r.Name == "liftoff");
+    Expect(Near(lift.VideoSeconds, plan.EventTimes["liftoff"]) && lift.Picture == ReplayRenderJob.PictureAt(lift.VideoSeconds, 30.0)
+        && lift.Kind == "event", $"liftoff {lift.VideoSeconds} {lift.Picture}");
+    Expect(rows.Select(r => r.VideoSeconds).SequenceEqual(rows.Select(r => r.VideoSeconds).Order()), "in the order of time");
+    var late = new ReplayRenderJob(plan.EventTimes["liftoff"] + 0.01, plan.Duration, 30.0);
+    List<ReplayRenderRow> after = ReplayRenderLog.EventRows(plan.EventTimes, late);
+    Expect(after.All(r => r.Name != "liftoff" && r.TakeSeconds >= late.Start && Near(r.VideoSeconds, r.TakeSeconds - late.Start))
+        && after.All(r => r.Picture >= 1 && r.Picture <= late.Total), "a render from a later time");
+
+    var text = new StringWriter();
+    using (var log = new EventLogCsv(text))
+        ReplayRenderLog.Write(log, lift, plan, 1000.0);
+    string[] fields = text.ToString().Split('\n')[1].Split(',');
+    double recording = plan.RecordingTime(lift.TakeSeconds);
+    Expect(fields[0] == lift.VideoSeconds.ToString("0.000", CultureInfo.InvariantCulture)
+        && fields[1] == (1000.0 + recording).ToString("0.000", CultureInfo.InvariantCulture)
+        && fields[4] == lift.Picture.ToString(CultureInfo.InvariantCulture) && fields[5] == "event" && fields[6] == "liftoff", text.ToString());
+    double mission = double.Parse(fields[2], CultureInfo.InvariantCulture);
+    Expect(Near(mission, recording - flight.Events.Single(e => e.Name == "ignition").Time, 2e-3), $"mission {mission}");
+});
+
+Check("replay render: a picture step per frame gives the shot and speed rows of a live take and the same poses on every run", () =>
+{
+    ReplayWorld world = TakeWorld(TakeFlight());
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var runs = new List<(List<ReplayRenderRow> Rows, List<CameraPose?> Poses)>();
+    for (int run = 0; run < 2; run++)
+    {
+        var player = new ReplayTakePlayer(world);
+        player.Load(take, file, TakeSite());
+        var job = new ReplayRenderJob(0.0, player.Duration, 30.0);
+        player.Seek(job.Start);
+        var rows = new List<ReplayRenderRow>();
+        var poses = new List<CameraPose?>();
+        for (int i = 0; i < job.Total; i++)
+        {
+            player.MoveTo(job.TakeTime(i));
+            rows.AddRange(ReplayRenderLog.FrameRows(take, player.Frame!, job, i, out bool cut));
+            // The settle frames of the second run move to the same time again, which must change nothing.
+            if (run == 1 && cut)
+                player.MoveTo(job.TakeTime(i));
+            poses.Add(player.Frame!.Pose);
+        }
+
+        runs.Add((rows, poses));
+    }
+
+    Expect(runs[0].Poses.SequenceEqual(runs[1].Poses), "the same poses");
+    Expect(runs[0].Rows.Select(r => (r.Name, r.Picture)).SequenceEqual(runs[1].Rows.Select(r => (r.Name, r.Picture))), "the same rows");
+    List<ReplayRenderRow> shots = runs[0].Rows.Where(r => r.Kind == "shot").ToList();
+    var planned = new ReplayTakePlayer(world);
+    planned.Load(take, file, TakeSite());
+    double chase = planned.Plan.Starts!.Shots[2]!.Value;
+    ReplayRenderRow chaseRow = shots.Single(r => r.Name == "camera[2]");
+    Expect(chaseRow.Picture == ReplayRenderJob.PictureAt(chase, 30.0) && chaseRow.Detail.StartsWith("type=Chase; duration=5", StringComparison.Ordinal),
+        $"chase at {chase}: picture {chaseRow.Picture}, {chaseRow.Detail}");
+    Expect(shots.Count(r => r.Name == "camera[0]") >= 2, "the pre-roll loop shows its passes");
+    ReplayRenderRow speed = runs[0].Rows.Single(r => r.Kind == "speed");
+    Expect(speed.Name == "speed[0]" && speed.Detail == "to=0.5; ramp=0" && speed.Picture == ReplayRenderJob.PictureAt(5.0, 30.0), $"{speed.Picture} {speed.Detail}");
+    Expect(shots.Select(r => r.Picture).SequenceEqual(shots.Select(r => r.Picture).Order()), "in the order of the pictures");
+});
+
+Check("replay render: a render from the middle names the running shot at its first picture", () =>
+{
+    ReplayWorld world = TakeWorld(TakeFlight());
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var player = new ReplayTakePlayer(world);
+    player.Load(take, file, TakeSite());
+    var job = new ReplayRenderJob(6.0, player.Duration, 24.0);
+    player.Seek(job.Start);
+    player.MoveTo(job.TakeTime(0));
+    List<ReplayRenderRow> rows = ReplayRenderLog.FrameRows(take, player.Frame!, job, 0, out _);
+    Expect(rows.Count == 1 && rows[0].Picture == 1 && rows[0].VideoSeconds == 0.0 && rows[0].Name == $"camera[{player.Frame!.ShotIndex}]"
+        && rows[0].Detail.EndsWith("running at the render start", StringComparison.Ordinal), string.Join(" | ", rows));
+    Expect(Near(player.Time, 6.0), $"time {player.Time}");
+    player.MoveTo(job.TakeTime(1));
+    Expect(Near(player.Time, 6.0 + 1.0 / 24.0, 1e-12), "one picture step");
+    player.MoveTo(5.0);
+    Expect(Near(player.Time, 5.0) && player.Frame != null, "a move back seeks");
+});
+
+#endregion
+
 #region Replay dock
 
 Check("replay dock: recorded event times are exact and nothing is estimated", () =>
@@ -4322,6 +4906,623 @@ Check("replay dock: a scrub stays inside the replay and a playing replay keeps i
     Expect(Near(TimelineLayout.FollowStart(10.0, 20.0, 15.0), 10.0), "play head in view, the view stays");
     Expect(Near(TimelineLayout.FollowStart(10.0, 20.0, 29.5), 27.5), "near the right edge, the view turns a page");
     Expect(Near(TimelineLayout.FollowStart(10.0, 20.0, 1.0), 0.0), "behind the view, it never starts before 0");
+});
+
+#endregion
+
+#region Replay record
+
+Check("replay record: a channel stores a key only on a change and holds a flat value up to the change", () =>
+{
+    var writer = new ReplayChannelWriter([ReplayChannelKind.Animation, ReplayChannelKind.Light]);
+    double step = ReplaySampling.Interval;
+    for (int i = 0; i <= 90; i++)
+    {
+        double t = 10.0 + i * step;
+        float animation = i < 60 ? 0f : (float)((i - 60) * step);
+        float switched = i >= 30 ? 1f : 0f;
+        writer.Prepare(t, [animation, switched]);
+        writer.Commit();
+    }
+    ReplayChannel anim = writer.Channels[0], light = writer.Channels[1];
+    Expect(anim.Times[0] == 10.0 && anim.Values[0] == 0f, "first key at the segment start");
+    Expect(anim.Times.Count == 2 + 30 && Near(anim.Times[1], Math.Round(10.0 + 60 * step, 4)), $"hold key before the change, {anim.Times.Count} keys");
+    Expect(light.Times.Count == 2, $"a switch stores one key per change, {light.Times.Count}");
+    Expect(anim.ValueAt(10.0 + 30 * step) == 0f && Near(anim.ValueAt(10.0 + 75 * step), 15 * step, 2e-3), "linear between keys, flat before the change");
+    Expect(light.ValueAt(10.0 + 29.5 * step) == 0f && light.ValueAt(10.0 + 30 * step) == 1f && light.ValueAt(100.0) == 1f, "step channel");
+    Expect(anim.ValueAt(0.0) == 0f && Near(anim.ValueAt(1000.0), 30 * step, 2e-3), "before the first and after the last key");
+});
+
+Check("replay record: the prepared bytes are the growth of the saved channel list", () =>
+{
+    var writer = new ReplayChannelWriter([ReplayChannelKind.GimbalY, ReplayChannelKind.GimbalZ, ReplayChannelKind.Heat]);
+    long first = writer.Prepare(3.0, [0.01f, -0.02f, 0.5f]);
+    writer.Commit();
+    Expect(first == ReplayFile.MeasureChannels(writer.Channels), "first tick is the whole list");
+    long before = ReplayFile.MeasureChannels(writer.Channels);
+    long total = 0;
+    for (int i = 1; i <= 20; i++)
+    {
+        total += writer.Prepare(3.0 + i / 30.0, [0.01f + i * 0.001f, -0.02f, 0.5f + (i > 10 ? 0.1f : 0f)]);
+        writer.Commit();
+    }
+    long after = ReplayFile.MeasureChannels(writer.Channels);
+    Expect(total == after - before, $"measured {total}, grew {after - before}");
+    Expect(writer.Channels[1].Times.Count == 1, "an unchanged channel has one key");
+});
+
+Check("replay record: a tick that is not committed leaves the channels as they were", () =>
+{
+    var writer = new ReplayChannelWriter([ReplayChannelKind.Wetness]);
+    writer.Prepare(1.0, [0f]);
+    writer.Commit();
+    writer.Prepare(1.5, [0.5f]);
+    Expect(writer.Channels[0].Times.Count == 1, "pending keys are not stored");
+    writer.Prepare(1.5, [0.5f]);
+    writer.Commit();
+    writer.Prepare(1.50001, [0.6f]);
+    writer.Commit();
+    Expect(writer.Channels[0].Times.Count == 2 && writer.Channels[0].Values[^1] == 0.6f, "a key at the same stored time replaces the last value");
+    bool rejected = false;
+    try { _ = new ReplayChannelWriter(["q"]); } catch (ArgumentException) { rejected = true; }
+    Expect(rejected, "unknown kind");
+});
+
+ReplayFlight RecordFlight()
+{
+    var samples = Enumerable.Range(0, 31).Select(i => new ReplaySample(i / 30.0, new V3(TakeBodyRadius, 0, 0), new ReplayRotation(0, 0, 0, 1), [])).ToList();
+    var neighbor = Enumerable.Range(0, 16).Select(i => new ReplaySample(i / 30.0, new V3(TakeBodyRadius, 50, 0), new ReplayRotation(0, 0, 0, 1), [])).ToList();
+    var channel = new ReplayChannel(ReplayChannelKind.Animation, [0.0, 0.5, 1.0], [0f, 0.5f, 0.5f]);
+    return new ReplayFlight("game", "system", "body", 0.0,
+        new()
+        {
+            new ReplayActor(0, "rocket", new() { new ReplaySegment(0.0, "<first/>", samples) { Channels = [channel] } }),
+            new ReplayActor(1, "station", new() { new ReplaySegment(0.0, "<station/>", neighbor) }) { Neighbor = true, End = 0.6 },
+        },
+        new());
+}
+
+Check("replay record: part channels, neighbors and end times survive a save, and older files load", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-record-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        ReplayFile.Save(path, RecordFlight());
+        ReplayFlight loaded = ReplayFile.Load(path);
+        ReplayChannel channel = loaded.Actors[0].Segments[0].Channels!.Single();
+        Expect(channel.Kind == "a" && channel.Times.SequenceEqual([0.0, 0.5, 1.0]) && channel.Values[1] == 0.5f, "channel");
+        Expect(loaded.Actors[1].Neighbor && loaded.Actors[1].End == 0.6 && !loaded.Actors[0].Neighbor && loaded.Actors[0].End == null, "actor fields");
+
+        ReplayFlight plain = RecordFlight();
+        plain = plain with { Actors = [plain.Actors[0] with { Segments = [plain.Actors[0].Segments[0] with { Channels = null }] }] };
+        ReplayFile.Save(path, plain);
+        ReplayFlight old = ReplayFile.Load(path);
+        Expect(old.Actors[0].Segments[0].Channels == null && !old.Actors[0].Neighbor && old.Actors[0].End == null, "a file without the fields");
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+});
+
+Check("replay record: invalid channels and end times are rejected", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-record-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    bool Rejected(ReplayFlight flight)
+    {
+        try { ReplayFile.Save(path, flight); return false; }
+        catch (InvalidDataException) { return true; }
+        finally { File.Delete(path); }
+    }
+    ReplayFlight good = RecordFlight();
+    ReplaySegment segment = good.Actors[0].Segments[0];
+    ReplayFlight WithChannel(ReplayChannel channel) => good with
+    {
+        Actors = [good.Actors[0] with { Segments = [segment with { Channels = [channel] }] }, good.Actors[1]],
+    };
+    Expect(Rejected(WithChannel(new ReplayChannel("a", [0.0, 0.0], [0f, 1f]))), "times not increasing");
+    Expect(Rejected(WithChannel(new ReplayChannel("a", [0.0], [0f, 1f]))), "counts differ");
+    Expect(Rejected(WithChannel(new ReplayChannel("x", [0.0], [0f]))), "unknown kind");
+    Expect(Rejected(WithChannel(new ReplayChannel("a", [0.0], [float.NaN]))), "value not finite");
+    Expect(Rejected(good with { Actors = [good.Actors[0], good.Actors[1] with { End = 0.2 }] }), "end before the last sample");
+});
+
+Check("replay record: an actor that ended is not drawn and a neighbor is not a separated vehicle", () =>
+{
+    ReplayFlight flight = RecordFlight();
+    Expect(ReplayTimeline.Sample(flight.Actors[1], 0.55) != null && ReplayTimeline.Sample(flight.Actors[1], 0.6) == null
+        && ReplayTimeline.Sample(flight.Actors[1], 0.9) == null, "end time");
+
+    ReplayFlight take = TakeFlight();
+    ReplayFlight marked = take with { Actors = [take.Actors[0], take.Actors[1] with { Neighbor = true }, take.Actors[2]] };
+    WorldSample world = TakeWorld(marked).Build(11.0, TakeSite());
+    Expect(world.SeparatedNewest == null && world.SeparatedNearest == null, "the near neighbor is not separated");
+    Expect(TakeWorld(take).Build(11.0, TakeSite()).SeparatedNearest?.Name == "rocket stage", "the same vehicle as a stage is separated");
+});
+
+Check("replay record: neighbors leave room for the stages", () =>
+{
+    Expect(ReplaySampling.CanAddNeighbor(1, 0, 0), "first neighbor");
+    Expect(!ReplaySampling.CanAddNeighbor(2, 0, ReplaySampling.NeighborLimit), "neighbor limit");
+    Expect(ReplaySampling.CanAddNeighbor(ReplaySampling.ActorLimit - ReplaySampling.SplitReserve - 1, 0, 1), "last free slot");
+    Expect(!ReplaySampling.CanAddNeighbor(ReplaySampling.ActorLimit - ReplaySampling.SplitReserve - 1, 1, 1), "a waiting split takes a slot");
+    Expect(ReplaySampling.NeighborScanDue(0) && !ReplaySampling.NeighborScanDue(1) && ReplaySampling.NeighborScanDue(ReplaySampling.NeighborScanTicks), "scan ticks");
+});
+
+Check("replay record: a pulsed thruster flickers by its duty cycle and the same time gives the same picture", () =>
+{
+    Expect(!ReplayExhaust.Lit(0f, 1.0, 0) && ReplayExhaust.Lit(1f, 1.0, 0) && !ReplayExhaust.Lit(float.NaN, 1.0, 0), "off and full");
+    int lit = 0;
+    for (int i = 0; i < 20000; i++)
+    {
+        if (ReplayExhaust.Lit(0.25f, i / 60.0, 3))
+            lit++;
+    }
+    Expect(Math.Abs(lit / 20000.0 - 0.25) < 0.02, $"fraction {lit / 20000.0}");
+    Expect(ReplayExhaust.Lit(0.5f, 12.345, 7) == ReplayExhaust.Lit(0.5f, 12.345, 7), "deterministic");
+});
+
+#endregion
+
+#region Replay plan and follow
+
+// A climb with one sample per spacing seconds, as a recording at a time warp makes it at one sample
+// per frame. The vehicle climbs 20 m/s from 2 s.
+ReplayFlight ClimbFlight(int count, double spacing, List<ReplayEvent> events)
+{
+    var samples = new List<ReplaySample>(count);
+    for (int i = 0; i < count; i++)
+    {
+        double t = i * spacing;
+        double height = Math.Max(t - 2.0, 0.0) * 20.0;
+        var state = new ReplayState(t >= 1.0 ? ReplayStateFlags.EngineOn : 0, 0, 0, (float)height, t >= 2.0 ? 20f : 0f, t >= 2.0 ? 20f : 0f);
+        samples.Add(new ReplaySample(t, new V3(TakeBodyRadius + height, 0.0, 0.0), new ReplayRotation(0, 0, 0, 1), [], State: state));
+    }
+
+    return new ReplayFlight("game", "system", "body", 0.0,
+        [new ReplayActor(0, "rocket", [new ReplaySegment(0.0, "<first/>", samples) { CenterOfMass = new V3(5.0, 0.0, 0.0) }])], [])
+    {
+        Events = events,
+    };
+}
+
+// Ten hours of flight at one sample per second, as a time warp of 60 records it at 60 frames per second.
+ReplayFlight LongFlight() => ClimbFlight(36_000, 1.0,
+    [new(1.0, "ignition"), new(2.0, "liftoff"), new(1200.0, "sequence:1"), new(7000.0, "mark")]);
+
+const string longTakeFile = """
+{
+  "preRoll": { "until": "liftoff" },
+  "camera": [
+    { "type": "orbit", "target": "vehicle", "radius": 40, "height": 10, "degPerSec": 20, "lookAt": [15, 0, 0], "duration": 0.75 },
+    { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 0.5 },
+    { "type": "chase", "offset": [-10, 20, 5], "lookAt": [15, 0, 0], "smoothing": 0.5, "duration": 30, "at": { "event": "liftoff", "delay": 0.5 } },
+    { "type": "chase", "offset": [-10, 20, 5], "lookAt": [15, 0, 0], "smoothing": 0.5, "duration": 30, "at": { "event": "altitude:70000", "delay": -5 } },
+    { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 60, "at": { "event": "mark", "delay": 1.5 } },
+  ],
+  "speed": [ { "at": { "event": "sequence:1" }, "to": 2, "ramp": 3 }, { "at": { "time": 9000 }, "to": 0.5, "ramp": 0 } ],
+}
+""";
+
+// The plan of the timeline as a live take makes it, one update per frame of 1/60 s, for a check of
+// the plan that goes over the stretches where nothing can change.
+(TimelineStarts Starts, Dictionary<string, double> Events, double Duration, List<double> Recording) SteppedPlan(Take take, ShotFile file, List<ReplayEvent> events, double duration)
+{
+    const double step = ReplayTakePlan.DefaultStep;
+    var runner = new TimelineRunner(take, file.Events);
+    var sorted = events.Where(e => e.Time <= duration).OrderBy(e => e.Time).ToList();
+    var times = new Dictionary<string, double>();
+    var predicted = new HashSet<string>();
+    foreach (Trigger trigger in take.Shots.Select(s => s.At).Concat(take.Speed.Select(k => k.At)))
+    {
+        if (trigger.Kind == TriggerKind.Event && trigger.Delay < 0.0 && EventName.TryResolve(trigger.Event, file.Events, out EventName name, out _) && name.IsPredictable)
+            predicted.Add(name.Canonical);
+    }
+
+    Dictionary<string, double>? Predict(int from, double recording, double speed)
+    {
+        if (predicted.Count == 0 || speed <= 1e-12)
+            return null;
+        var result = new Dictionary<string, double>();
+        for (int i = from; i < sorted.Count; i++)
+        {
+            if (predicted.Contains(sorted[i].Name))
+                result.TryAdd(sorted[i].Name, (sorted[i].Time - recording) / speed);
+        }
+
+        return result;
+    }
+
+    int next = 0;
+    double time = 0.0, now = 0.0, end = duration;
+    var table = new List<double> { 0.0 };
+    while (next < sorted.Count && sorted[next].Time <= 0.0)
+        times.TryAdd(sorted[next++].Name, 0.0);
+    TimelineState state = runner.Update(0.0, times, Predict(next, 0.0, 1.0));
+    for (int k = 1; now < duration; k++)
+    {
+        double speed = Math.Max(state.TargetSpeed, 0.0);
+        double after = now + speed * step;
+        while (next < sorted.Count && sorted[next].Time <= after)
+        {
+            times.TryAdd(sorted[next].Name, speed > 0.0 ? time + (sorted[next].Time - now) / speed : time);
+            next++;
+        }
+
+        if (after >= duration)
+        {
+            end = speed > 0.0 ? time + (duration - now) / speed : time;
+            after = duration;
+        }
+
+        time = k * step;
+        now = after;
+        table.Add(now);
+        state = runner.Update(time, times, Predict(next, now, speed));
+    }
+
+    return (runner.Starts, times, end, table);
+}
+
+Check("replay follow and plan: a plan over hours of a warped flight costs few updates and does not stop early", () =>
+{
+    ReplayFlight flight = LongFlight();
+    Take take = ParseTake(longTakeFile, out ShotFile file);
+    List<ReplayEvent> events = ReplayEvents.ForTake(flight, EventDetector.Watched(take, file.Events), TakeBodyRadius);
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    ReplayTakePlan plan = ReplayTakePlan.Resolve(take, file, events, ReplayTimeline.Duration(flight));
+    double milliseconds = watch.Elapsed.TotalMilliseconds;
+    Console.WriteLine($"  long plan: {plan.Updates} updates, {milliseconds:F1} ms, {plan.Duration:F1} take seconds");
+    Expect(!plan.Truncated && plan.Updates <= 1000, $"{plan.Updates} updates");
+    Expect(milliseconds < 250.0, $"{milliseconds} ms");
+    // 1200 s at speed 1, a ramp of 3 s to speed 2 (1.5 s of flight in it on average) and speed 2 to
+    // the key at take time 9000, then speed 0.5 to the end of the 35999 s of flight.
+    double rampFlight = plan.RecordingTime(1203.0) - 1200.0;
+    double at9000 = 1200.0 + rampFlight + (9000.0 - 1203.0) * 2.0;
+    Expect(Near(plan.RecordingTime(9000.0), at9000, 1e-6), $"recording at 9000: {plan.RecordingTime(9000.0)} {at9000}");
+    Expect(Near(plan.Duration, 9000.0 + (35999.0 - at9000) / 0.5, 1e-6), $"duration {plan.Duration}");
+    Expect(Near(plan.EventTimes["sequence:1"], 1200.0, 1e-9) && Near(plan.EventTimes["liftoff"], 2.0, 1e-9), "events at speed 1");
+    double mark = 1203.0 + (7000.0 - 1200.0 - rampFlight) / 2.0;
+    Expect(Near(plan.EventTimes["mark"], mark, 1e-6) && Near(plan.Starts!.Shots[4]!.Value, mark + 1.5, 1e-6), $"the mark at {plan.EventTimes["mark"]}");
+    double altitude = plan.EventTimes["altitude:70000"];
+    Expect(Near(plan.RecordingTime(altitude), 3502.0, 1e-6), $"altitude at {plan.RecordingTime(altitude)}");
+    double predicted = plan.Starts!.Shots[3]!.Value;
+    Expect(predicted >= altitude - 5.0 - 1e-9 && predicted < altitude - 5.0 + plan.Step, $"the prediction starts 5 s before the event: {predicted} {altitude}");
+    Expect(Near(plan.TakeTime(plan.RecordingTime(5000.0)), 5000.0, 1e-6) && Near(plan.RecordingRate(5000.0), 2.0, 1e-12)
+        && Near(plan.RecordingRate(10000.0), 0.5, 1e-12), "take time and rate");
+});
+
+Check("replay follow and plan: the plan that goes over quiet stretches equals the plan of one update per frame", () =>
+{
+    ReplayFlight flight = ClimbFlight(900, 1.0, [new(1.0, "ignition"), new(2.0, "liftoff"), new(300.0, "sequence:1"), new(600.0, "mark")]);
+    Take take = ParseTake(longTakeFile.Replace("altitude:70000", "altitude:5000").Replace("\"time\": 9000", "\"time\": 400"), out ShotFile file);
+    List<ReplayEvent> events = ReplayEvents.ForTake(flight, EventDetector.Watched(take, file.Events), TakeBodyRadius);
+    ReplayTakePlan plan = ReplayTakePlan.Resolve(take, file, events, 899.0);
+    var stepped = SteppedPlan(take, file, events, 899.0);
+    Expect(Near(plan.Duration, stepped.Duration, 1e-6), $"duration {plan.Duration} {stepped.Duration}");
+    Expect(plan.EventTimes.Count == stepped.Events.Count && plan.EventTimes.All(e => Near(e.Value, stepped.Events[e.Key], 1e-6)), "event times");
+    for (int i = 0; i < take.Shots.Count; i++)
+        Expect(Near(plan.Starts!.Shots[i]!.Value, stepped.Starts.Shots[i]!.Value, 1e-6), $"shot {i}: {plan.Starts.Shots[i]} {stepped.Starts.Shots[i]}");
+    for (int i = 0; i < take.Speed.Count; i++)
+        Expect(Near(plan.Starts!.Speed[i]!.Value, stepped.Starts.Speed[i]!.Value, 1e-6), $"speed key {i}");
+    for (int k = 0; k < stepped.Recording.Count; k += 97)
+        Expect(Near(plan.RecordingTime(k * plan.Step), stepped.Recording[k], 1e-6), $"recording at step {k}: {plan.RecordingTime(k * plan.Step)} {stepped.Recording[k]}");
+    Expect(plan.Updates * 20 < stepped.Recording.Count, $"{plan.Updates} updates for {stepped.Recording.Count} frames");
+});
+
+Check("replay follow and plan: a take that stops the sim ends when nothing can start any more", () =>
+{
+    ReplayFlight flight = LongFlight();
+    double duration = ReplayTimeline.Duration(flight);
+    // The key at 9000 s would give the sim its speed back, so this take has only the stop and the key that waits for the stage.
+    Take loop = ParseTake(longTakeFile.Replace(", { \"at\": { \"time\": 9000 }, \"to\": 0.5, \"ramp\": 0 }", "")
+        .Replace("\"speed\": [ {", "\"speed\": [ { \"at\": { \"time\": 0 }, \"to\": 0, \"ramp\": 0 }, {"), out ShotFile loopFile);
+    Expect(loop.Speed.Count == 2, "two keys");
+    ReplayTakePlan stalled = ReplayTakePlan.Resolve(loop, loopFile, ReplayEvents.ForTake(flight, EventDetector.Watched(loop, loopFile.Events), TakeBodyRadius), duration);
+    Expect(!stalled.Truncated && stalled.Updates < 10, $"{stalled.Updates} updates");
+    Expect(Near(stalled.Duration, 0.75 + 1.25, 1e-9) && stalled.RecordingTime(stalled.Duration) == 0.0, $"one more pass of the loop after its last shot started: {stalled.Duration}");
+
+    Take hold = ParseTake("""
+    {
+      "camera": [
+        { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 5 },
+        { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 4, "at": { "time": 10 } },
+        { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 4, "at": { "event": "liftoff" } },
+      ],
+      "speed": [ { "at": { "time": 0 }, "to": 0, "ramp": 0 } ],
+    }
+    """, out ShotFile holdFile);
+    ReplayTakePlan held = ReplayTakePlan.Resolve(hold, holdFile, ReplayEvents.ForTake(flight, EventDetector.Watched(hold, holdFile.Events), TakeBodyRadius), duration);
+    Expect(!held.Truncated && held.Updates < 10 && Near(held.Duration, 14.0, 1e-9), $"the shot at 10 s plays to its end: {held.Duration}, {held.Updates} updates");
+    Expect(held.FirstShown[1] is double shown && Near(shown, 10.0, 1e-9) && held.FirstShown[2] == null && held.Starts!.Shots[2] == null, "the event never comes");
+
+    Take ramp = ParseTake(longTakeFile.Replace("\"ramp\": 3", "\"ramp\": 3600"), out ShotFile rampFile);
+    List<ReplayEvent> rampEvents = ReplayEvents.ForTake(flight, EventDetector.Watched(ramp, rampFile.Events), TakeBodyRadius);
+    bool cancelled = false;
+    try { ReplayTakePlan.Resolve(ramp, rampFile, rampEvents, duration, cancel: new CancellationToken(true)); }
+    catch (OperationCanceledException) { cancelled = true; }
+    Expect(cancelled, "a long ramp stops when the resolve is cancelled");
+});
+
+Check("replay follow and plan: a drag of the play head costs a few world builds and the settle gives the exact pose", () =>
+{
+    ReplayFlight flight = LongFlight();
+    Take take = ParseTake(longTakeFile, out ShotFile file);
+    int builds = 0;
+    var world = new ReplayWorld(flight, TakeBodyRadius, segment => { builds++; return TakeShape(segment); });
+    var player = new ReplayTakePlayer(world);
+    player.Load(take, file, TakeSite());
+    builds = 0;
+    player.Seek(2360.0);
+    int exact = builds;
+    Expect(exact > 300, $"an exact seek warms up over {ReplayTakePlayer.WarmUpSeconds(take)} s: {exact} builds");
+
+    int most = 0;
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    for (int i = 0; i < 120; i++)
+    {
+        builds = 0;
+        // A drag forward and back over a minute of the take, one seek per frame.
+        player.Seek(2350.0 + 30.0 * Math.Sin(i * 0.05), true);
+        most = Math.Max(most, builds);
+    }
+
+    Console.WriteLine($"  scrub: at most {most} builds per rough seek, {exact} per exact seek, {watch.Elapsed.TotalMilliseconds:F1} ms for 120 rough seeks");
+    Expect(most <= ReplayTakePlayer.ScrubSteps + 1 && player.IsRough, $"at most {most} builds");
+    double time = player.Time;
+    player.Settle();
+    var fresh = new ReplayTakePlayer(world);
+    fresh.Load(take, file, TakeSite());
+    fresh.Seek(time);
+    Expect(!player.IsRough && player.Frame!.Pose == fresh.Frame!.Pose, "the settle gives the pose of an exact seek");
+
+    player.Seek(2361.0, true);
+    player.SetPlaying(true);
+    while (player.Time < 2361.0 + ReplayTakePlayer.WarmUpSeconds(take))
+        player.Advance(1.0 / 60.0);
+    Expect(!player.IsRough, "a play over the warm-up time is exact");
+});
+
+Check("replay follow and plan: play at the end starts again and says so", () =>
+{
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var player = new ReplayTakePlayer(TakeWorld(TakeFlight()));
+    player.Load(take, file, TakeSite());
+    player.Seek(player.Duration);
+    Expect(player.SetPlaying(true) && player.Time == 0.0 && player.IsPlaying, "restart");
+    Expect(!player.SetPlaying(true) && !player.SetPlaying(false), "no restart in the middle");
+});
+
+Check("replay follow and plan: an update that starts nothing makes no list", () =>
+{
+    Take take = ParseTake(replayTakeFile, out ShotFile file);
+    var runner = new TimelineRunner(take, file.Events);
+    runner.Update(0.0, Events());
+    TimelineState quiet = runner.Update(0.1, Events());
+    Expect(ReferenceEquals(quiet.StartedShots, Array.Empty<int>()) && ReferenceEquals(quiet.StartedSpeedKeys, Array.Empty<int>())
+        && ReferenceEquals(quiet.StartedActions, Array.Empty<int>()), "the empty list");
+});
+
+// A stack on the pad that undocks a lander at 10 s. The player gets the control of the lander, which
+// climbs 10 m/s and drops a stage at 15 s. The stack stays.
+ReplayFlight UndockFlight(bool follows)
+{
+    var stack = new List<ReplaySample>();
+    var lander = new List<ReplaySample>();
+    var stage = new List<ReplaySample>();
+    for (int i = 0; i <= 40; i++)
+    {
+        double t = i * 0.5;
+        stack.Add(new ReplaySample(t, new V3(TakeBodyRadius + 100.0, 0.0, 0.0), new ReplayRotation(0, 0, 0, 1), [],
+            State: t < 10.0 || !follows ? new ReplayState(0, 1, 1, 100f, 0f, 0f) : null));
+        if (t >= 10.0)
+        {
+            double height = 100.0 + 10.0 * (t - 10.0);
+            lander.Add(new ReplaySample(t, new V3(TakeBodyRadius + height, 0.0, 6.0), new ReplayRotation(0, 0, 0, 1), [],
+                State: follows ? new ReplayState(ReplayStateFlags.EngineOn, 3, 0, (float)height, 10f, 10f) : null));
+        }
+
+        if (t >= 15.0)
+            stage.Add(new ReplaySample(t, new V3(TakeBodyRadius + 140.0, 0.0, 6.0), new ReplayRotation(0, 0, 0, 1), []));
+    }
+
+    return new ReplayFlight("game", "system", "body", 0.0,
+    [
+        new ReplayActor(0, "stack", [new ReplaySegment(0.0, "<first/>", stack) { CenterOfMass = new V3(5.0, 0.0, 0.0) }]),
+        new ReplayActor(1, "lander", [new ReplaySegment(10.0, "<upper/>", lander) { CenterOfMass = new V3(15.0, 0.0, 0.0) }]),
+        new ReplayActor(2, "lander stage", [new ReplaySegment(15.0, "<first/>", stage)]),
+    ], [])
+    {
+        Follows = follows ? [new ReplayFollow(10.0, 1)] : null,
+    };
+}
+
+Check("replay follow and plan: the replay follows the vehicle that the recorder followed after an undocking", () =>
+{
+    ReplayWorld world = TakeWorld(UndockFlight(true));
+    ReplaySite site = TakeSite();
+    Expect(world.FollowedAt(9.9).Name == "stack" && world.FollowedAt(10.0).Name == "lander" && world.FollowedAt(20.0).Name == "lander", "followed actors");
+    WorldSample before = world.Build(5.0, site);
+    WorldSample after = world.Build(12.0, site);
+    Expect(Near(before.VehicleFrame.Origin.X, 99.0) && before.Vehicle.ActiveSequence == 1, $"the stack before {before.VehicleFrame.Origin}");
+    Expect(Near(after.VehicleFrame.Origin.X, 120.0 + 9.0) && Near(after.VehicleFrame.Origin.Z, 6.0) && after.Vehicle.ActiveSequence == 3
+        && after.Vehicle.EngineOn, $"the lander after {after.VehicleFrame.Origin}");
+    Expect(Near3(after.SurfaceVelocity!.Value, new V3(10.0, 0.0, 0.0), 1e-6), "the velocity of the lander");
+    Expect(after.SeparatedNewest == null, "the stack existed when the follow changed, so it is no separated vehicle, as in a live take");
+    WorldSample staged = world.Build(16.0, site);
+    Expect(staged.SeparatedNewest?.Name == "lander stage" && staged.SeparatedNearest?.Name == "lander stage", "the stage of the lander");
+
+    EventName.TryParse("altitude:150", out EventName climb, out _);
+    ReplayEvent reached = ReplayEvents.ForTake(world.Flight, [climb], TakeBodyRadius).Single(e => e.Name == "altitude:150");
+    Expect(Near(reached.Time, 15.0, 1e-9), $"the altitude of the followed vehicle: {reached.Time}");
+
+    ReplayWorld old = TakeWorld(UndockFlight(false));
+    Expect(old.FollowedAt(12.0).Name == "stack" && Near(old.Build(12.0, site).VehicleFrame.Origin.X, 99.0)
+        && old.Build(12.0, site).SeparatedNewest?.Name == "lander", "a file without follow changes stays with the first vehicle");
+});
+
+Check("replay follow and plan: the follow changes are saved, optional and checked", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        ReplayFile.Save(path, UndockFlight(true));
+        ReplayFlight loaded = ReplayFile.Load(path);
+        Expect(loaded.Follows is [{ Time: 10.0, ActorId: 1 }], "saved");
+        ReplayFile.Save(path, UndockFlight(false) with { Follows = [] });
+        Expect(ReplayFile.Load(path).Follows == null && !File.ReadAllBytes(path).AsSpan().IsEmpty, "no follow changes");
+        bool Rejects(ReplayFlight flight)
+        {
+            try { ReplayFile.Save(path, flight); return false; }
+            catch (InvalidDataException) { return true; }
+        }
+
+        ReplayFlight good = UndockFlight(true);
+        Expect(Rejects(good with { Follows = [new ReplayFollow(10.0, 7)] }), "an actor that does not exist");
+        Expect(Rejects(good with { Follows = [new ReplayFollow(5.0, 1)] }), "before the actor exists");
+        Expect(Rejects(good with { Follows = [new ReplayFollow(12.0, 1), new ReplayFollow(11.0, 0)] }), "not in the order of time");
+        Expect(!Rejects(good), "the flight itself");
+    }
+    finally
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+});
+
+Check("replay follow and plan: a separated vehicle is near by its center of mass", () =>
+{
+    var primary = new List<ReplaySample>();
+    var other = new List<ReplaySample>();
+    for (int i = 0; i <= 20; i++)
+    {
+        double t = i * 0.5;
+        primary.Add(new ReplaySample(t, new V3(TakeBodyRadius, 0.0, 0.0), new ReplayRotation(0, 0, 0, 1), []));
+        if (t >= 1.0)
+            other.Add(new ReplaySample(t, new V3(TakeBodyRadius, 250.0, 0.0), new ReplayRotation(0, 0, 0, 1), []));
+    }
+
+    ReplayFlight flight = new("game", "system", "body", 0.0,
+    [
+        new ReplayActor(0, "rocket", [new ReplaySegment(0.0, "<first/>", primary) { CenterOfMass = V3.Zero }]),
+        new ReplayActor(1, "fairing", [new ReplaySegment(1.0, "<first/>", other) { CenterOfMass = new V3(0.0, -100.0, 0.0) }]),
+    ], []);
+    WorldSample sample = TakeWorld(flight).Build(2.0, TakeSite());
+    Expect(sample.SeparatedNewest is { Name: "fairing" } fairing && Near(fairing.Distance, 150.0, 1e-9),
+        $"the origin is 250 m away and the center of mass 150 m: {sample.SeparatedNewest?.Distance}");
+});
+
+#endregion
+
+#region Replay recording and render
+Check("replay: a sun tracking angle moves along the shorter arc where it wraps", () =>
+{
+    var tracking = new ReplayChannel(ReplayChannelKind.AnimationTracking, [0.0, 1.0], [3.1f, -3.1f]);
+    float middle = tracking.ValueAt(0.5);
+    Expect(Math.Abs(middle) > 3.1f, $"the angle passes half a turn, not zero: {middle}");
+    float quarter = tracking.ValueAt(0.25);
+    Expect(Near(quarter, 3.1 + (2 * Math.PI - 6.2) * 0.25, 1e-5), $"a quarter of the short arc: {quarter}");
+    var plain = new ReplayChannel(ReplayChannelKind.AnimationTracking, [0.0, 1.0], [0f, 1f]);
+    Expect(Near(plain.ValueAt(0.5), 0.5, 1e-6), "a small change stays linear");
+    var tracker = new ReplayChannel(ReplayChannelKind.Tracker, [0.0, 1.0], [3.1f, -3.1f]);
+    Expect(Near(tracker.ValueAt(0.5), 0.0, 1e-6), "a sun tracker module does not wrap");
+});
+
+Check("replay: a prepared tick that is not committed leaves no key", () =>
+{
+    var writer = new ReplayChannelWriter([ReplayChannelKind.Animation]);
+    writer.Prepare(0.0, [0f]);
+    writer.Commit();
+    writer.Prepare(1.0, [5f]);
+    writer.Prepare(1.0, [2f]);
+    writer.Commit();
+    writer.Commit();
+    ReplayChannel channel = writer.Channels[0];
+    Expect(channel.Times.SequenceEqual([0.0, 1.0]) && channel.Values.SequenceEqual([0f, 2f]), "the last prepared tick only");
+});
+
+Check("replay: the part key depends on the parts and their order", () =>
+{
+    uint a = ReplayPartKey.Of([("leg", "a"), ("engine", "y"), ("engine", "z")]);
+    Expect(a == ReplayPartKey.Of([("leg", "a"), ("engine", "y"), ("engine", "z")]), "stable");
+    Expect(a != ReplayPartKey.Of([("engine", "y"), ("engine", "z"), ("leg", "a")]), "order");
+    Expect(ReplayPartKey.Of([("panelA", "a")]) != ReplayPartKey.Of([("panelB", "a")]), "part id");
+    Expect(ReplayPartKey.Of([("ab", "c")]) != ReplayPartKey.Of([("a", "bc")]), "field borders");
+});
+
+Check("replay: a segment over the channel limit loads without its channels", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        ReplayFlight flight = RecordFlight();
+        ReplaySegment segment = flight.Actors[0].Segments[0];
+        ReplayFile.Save(path, flight with { Actors = [flight.Actors[0] with { Segments = [segment with { PartKey = 1234u }] }, flight.Actors[1]] });
+        ReplayFlight keyed = ReplayFile.Load(path);
+        Expect(keyed.Actors[0].Segments[0].PartKey == 1234u && keyed.Actors[0].Segments[0].Channels!.Count == 1, "the part key survives a save");
+
+        var many = Enumerable.Range(0, ReplayFile.ChannelLimit + 1)
+            .Select(_ => new ReplayChannel(ReplayChannelKind.Heat, [0.0], [0.5f])).ToList();
+        ReplayFile.Save(path, flight with { Actors = [flight.Actors[0] with { Segments = [segment with { Channels = many, PartKey = 7u }] }, flight.Actors[1]] });
+        ReplayFlight loaded = ReplayFile.Load(path);
+        ReplaySegment kept = loaded.Actors[0].Segments[0];
+        Expect(kept.Channels == null && kept.PartKey == null, "the channels and their key are dropped");
+        Expect(kept.Samples.Count == segment.Samples.Count && loaded.Actors.Count == 2, "the flight stays");
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+});
+
+Check("replay: the collector deletes a picture that came after its run", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    string source = Path.Combine(root, "shots");
+    string frames = Path.Combine(root, "frames");
+    Directory.CreateDirectory(source);
+    try
+    {
+        File.WriteAllBytes(Path.Combine(source, "ksa_old_1920x1080.png"), Png());
+        var collector = new ScreenshotCollector(source, frames);
+        Expect(!collector.Discard(TimeSpan.FromMilliseconds(20)), "nothing new, nothing deleted");
+        File.WriteAllBytes(Path.Combine(source, "ksa_new_1920x1080.png"), Png(3));
+        Expect(collector.Discard(TimeSpan.FromSeconds(2)), "the new picture is deleted");
+        Expect(!File.Exists(Path.Combine(source, "ksa_new_1920x1080.png")) && File.Exists(Path.Combine(source, "ksa_old_1920x1080.png")),
+            "only the new picture left the screenshot folder");
+        Expect(!Directory.EnumerateFiles(frames).Any(), "no frame is left");
+        Expect(!collector.Discard(TimeSpan.FromSeconds(5), () => true), "the give-up function ends the wait");
+    }
+    finally
+    {
+        Directory.Delete(root, true);
+    }
+});
+
+Check("replay: the dock builds the replay layout again only after an edit or a new plan", () =>
+{
+    var cache = new TimelineLayoutCache();
+    var take = new Take();
+    var aliases = new Dictionary<string, string>();
+    object plan = new();
+    int builds = 0;
+    TimelineLayout Build()
+    {
+        builds++;
+        return TimelineLayout.Build(take, aliases);
+    }
+    TimelineLayout first = cache.Get(1, plan, take, aliases, Build);
+    Expect(ReferenceEquals(first, cache.Get(1, plan, take, aliases, Build)) && builds == 1, "same inputs");
+    cache.Get(2, plan, take, aliases, Build);
+    Expect(builds == 2, "an edit");
+    cache.Get(2, new object(), take, aliases, Build);
+    Expect(builds == 3, "a new plan");
+    cache.Get(2, null, take, aliases, Build);
+    cache.Get(2, null, take, aliases, Build);
+    Expect(builds == 4, "no plan is a key too");
+    cache.Clear();
+    cache.Get(2, null, take, aliases, Build);
+    Expect(builds == 5, "clear");
 });
 
 #endregion
@@ -4466,6 +5667,566 @@ Check("key placement: the starts of a take with errors are unknown", () =>
     var take = new Take { Name = "broken", PreRoll = new PreRoll { Until = "liftoff" } };
     take.Shots.Add(new Shot { Type = ShotType.Orbit, Duration = 10.0 });
     Expect(ShotPlacer.StartsAt(take, 1.0, new Dictionary<string, double>(), new Dictionary<string, string>()) == null, "no shot ends the loop");
+});
+
+#endregion
+
+#region Flight heading and recording slots
+
+double HeadingStepDegrees(V3 a, V3 b) => Math.Acos(Math.Clamp(V3.Dot(a.NormalizedOr(V3.UnitZ), b.NormalizedOr(V3.UnitZ)), -1.0, 1.0)) * 180.0 / Math.PI;
+
+Check("flight heading: a velocity that turns through south at 3 m/s gives no jump", () =>
+{
+    V3 up = V3.UnitX, north = V3.UnitZ;
+    const double dt = 1.0 / 60.0;
+    var heading = new FlightHeading();
+    V3 last = heading.Update(up, north, new V3(0.0, 20.0, 0.0), 0.0);
+    for (int i = 0; i < 600; i++)
+        last = heading.Update(up, north, new V3(0.0, 20.0, 0.0), dt);
+    double worst = 0.0;
+    // East to west through south in 20 s, while the vehicle falls fast, as in the flight of the test.
+    for (int i = 0; i <= 1200; i++)
+    {
+        double angle = Math.PI / 2.0 + Math.PI * i / 1200.0;
+        var velocity = new V3(-96.0, 3.0 * Math.Sin(angle), 3.0 * Math.Cos(angle));
+        V3 next = heading.Update(up, north, velocity, dt);
+        if (i > 0)
+            worst = Math.Max(worst, HeadingStepDegrees(last, next));
+        last = next;
+    }
+
+    Expect(worst <= FlightHeading.TurnDegreesPerSecond * dt + 1e-9, $"largest step per frame {worst:0.###} degrees");
+    Expect(Math.Abs(V3.Dot(last, up)) < 1e-9 && Near(last.Length, 1.0, 1e-9), "the heading stays a horizontal unit vector");
+
+    // The start heading alone has no state and flips across south, so it is only a start value.
+    double raw = HeadingStepDegrees(FlightHeading.Raw(up, north, new V3(0.0, 0.3, -5.0)), FlightHeading.Raw(up, north, new V3(0.0, -0.3, -5.0)));
+    Expect(raw > 30.0, $"the start heading flips by {raw:0.#} degrees");
+});
+
+Check("flight heading: a stop and a reverse holds the heading and then turns at a limited rate", () =>
+{
+    V3 up = V3.UnitX, north = V3.UnitZ;
+    const double dt = 1.0 / 60.0;
+    var heading = new FlightHeading();
+    V3 last = heading.Update(up, north, new V3(0.0, 20.0, 0.0), 0.0);
+    Expect(Near3(last, V3.UnitY, 1e-12), "the first update at speed takes the velocity at once");
+    double worst = 0.0;
+    bool heldWhileSlow = true;
+    for (int i = 1; i <= 1200; i++)
+    {
+        double t = i * dt;
+        double east = t < 2.0 ? 20.0 : Math.Max(20.0 - 5.0 * (t - 2.0), -20.0);
+        V3 next = heading.Update(up, north, new V3(0.0, east, 0.0), dt);
+        worst = Math.Max(worst, HeadingStepDegrees(last, next));
+        if (Math.Abs(east) < 1.0 && !Near3(next, last, 1e-12))
+            heldWhileSlow = false;
+        last = next;
+    }
+
+    Expect(worst <= FlightHeading.TurnDegreesPerSecond * dt + 1e-9, $"largest step per frame {worst:0.###} degrees");
+    Expect(heldWhileSlow, "the heading holds while the vehicle stands");
+    Expect(Near3(last, -V3.UnitY, 1e-9), $"after the reverse it points along the new velocity: {last}");
+});
+
+Check("flight heading: an ascent with a small wandering horizontal velocity and a fall hold the heading", () =>
+{
+    V3 up = V3.UnitX, north = V3.UnitZ;
+    const double dt = 1.0 / 60.0;
+    var heading = new FlightHeading();
+    heading.Update(up, north, new V3(0.0, 30.0, 0.0), 0.0);
+    for (int i = 0; i < 300; i++)
+        heading.Update(up, north, new V3(0.0, 30.0 - 0.1 * i, 0.0), dt);
+    for (int i = 0; i < 600; i++)
+        heading.Update(up, north, V3.Zero, dt);
+    V3 east = heading.Update(up, north, V3.Zero, dt);
+    Expect(Near3(east, V3.UnitY, 1e-9), $"the heading of the flight before: {east}");
+    var random = new Random(7);
+    V3 current = east;
+    for (int i = 0; i < 1200; i++)
+    {
+        double a = random.NextDouble() * 2.0 * Math.PI;
+        current = heading.Update(up, north, new V3(200.0, 1.5 * Math.Cos(a), 1.5 * Math.Sin(a)), dt);
+    }
+
+    Expect(Near3(current, east, 1e-9), $"a vertical ascent below 2 m/s horizontal holds it: {current}");
+    for (int i = 0; i < 600; i++)
+        current = heading.Update(up, north, new V3(-80.0, 0.0, 0.0), dt);
+    Expect(Near3(current, east, 1e-9), $"a fall straight down holds it: {current}");
+
+    var fresh = new FlightHeading();
+    Expect(Near3(fresh.Update(up, north, new V3(-80.0, 0.0, 0.0), 0.0), north, 1e-12), "north only when no heading was ever known");
+});
+
+Check("flight heading: fast forward flight gives the direction of the smoothed velocity, as before", () =>
+{
+    V3 up = V3.UnitX, north = V3.UnitZ;
+    const double dt = 1.0 / 60.0;
+    var heading = new FlightHeading();
+    V3 smoothed = V3.Zero, rate = V3.Zero;
+    double worst = 0.0;
+    for (int i = 0; i < 1800; i++)
+    {
+        double a = 0.2 * i * dt;
+        var velocity = new V3(50.0, 80.0 * Math.Sin(a), 80.0 * Math.Cos(a));
+        V3 h = heading.Update(up, north, velocity, i == 0 ? 0.0 : dt);
+        smoothed = i == 0 ? velocity : Spring.SmoothDamp(smoothed, velocity, ref rate, FlightHeading.SmoothSeconds, dt);
+        worst = Math.Max(worst, (h - FlightHeading.Raw(up, north, smoothed)).Length);
+    }
+
+    Expect(worst < 1e-9, $"largest difference {worst}");
+});
+
+// A rover moves east at 30 m/s, stops at 7 s and stands until 30 s, longer than the warm-up of a seek.
+ReplayFlight StopFlight()
+{
+    double East(double t) => t < 5.0 ? 30.0 * t : t < 7.0 ? 150.0 + 30.0 * (t - 5.0) - 7.5 * (t - 5.0) * (t - 5.0) : 180.0;
+    var samples = new List<ReplaySample>();
+    for (int i = 0; i <= 960; i++)
+    {
+        double t = i / 32.0;
+        samples.Add(new ReplaySample(t, new V3(TakeBodyRadius + 100.0, East(t), 0.0), new ReplayRotation(0, 0, 0, 1), [],
+            State: new ReplayState(0, 0, 0, 100f, 0f, 0f)));
+    }
+
+    return new ReplayFlight("game", "system", "body", 0.0,
+        new() { new ReplayActor(0, "rover", new() { new ReplaySegment(0.0, "<rover/>", samples) { CenterOfMass = new V3(1.0, 0.0, 0.0) } }) },
+        new());
+}
+
+Check("flight heading: a replay seek into a stand gives the heading that the play holds", () =>
+{
+    Take take = ParseTake("""
+    { "camera": [ { "type": "chase", "frame": "flight", "offset": [0, 10, -100], "lookAt": [0, 0, 0], "duration": 30, "smoothing": 0 } ] }
+    """, out ShotFile file);
+    var world = new ReplayWorld(StopFlight(), TakeBodyRadius, TakeShape);
+    Expect(ReplayTakePlayer.WarmUpSeconds(take) < 20.0, "the stand is longer than the warm-up");
+    var played = new ReplayTakePlayer(world);
+    played.Load(take, file, TakeSite());
+    Expect(played.Problem.Length == 0, "loaded: " + played.Problem);
+    played.Seek(0.0);
+    played.SetPlaying(true);
+    var seeker = new ReplayTakePlayer(world);
+    seeker.Load(take, file, TakeSite());
+    foreach (double target in new[] { 3.0, 6.0, 15.0, 28.0 })
+    {
+        while (played.Time < target)
+            played.Advance(1.0 / 60.0);
+        CameraPose p = played.Frame!.Pose!.Value;
+        seeker.Seek(played.Time);
+        CameraPose q = seeker.Frame!.Pose!.Value;
+        Expect(Near3(p.Position, q.Position, 1e-2) && Near3(p.LookAt, q.LookAt, 1e-2), $"pose at {played.Time}: {p.Position} {q.Position}");
+    }
+
+    V3 heading = played.Director!.Heading!.Value;
+    Expect(heading.Y > 0.999, $"the play holds the heading east while the rover stands: {heading}");
+});
+
+Check("replay slots: debris never ends a recording and the followed vehicle keeps its slots", () =>
+{
+    var none = new Func<int, int>(_ => 0);
+    var fragments = Enumerable.Range(0, 14).Select(_ => new ReplaySampling.SplitCandidate(0, false, 1)).ToList();
+    Expect(!ReplaySampling.AdmitSplits(3, false, fragments, none).Any(x => x), "single part fragments of a dropped booster are skipped");
+
+    var pieces = Enumerable.Range(0, 5).Select(_ => new ReplaySampling.SplitCandidate(0, false, 4)).ToList();
+    Expect(ReplaySampling.AdmitSplits(3, false, pieces, none).Count(x => x) == ReplaySampling.OtherChildLimit, "a cap of pieces per parent");
+    Expect(!ReplaySampling.AdmitSplits(3, false, pieces, _ => ReplaySampling.OtherChildLimit).Any(x => x), "the cap counts the pieces of earlier ticks");
+
+    int edge = ReplaySampling.ActorLimit - ReplaySampling.FollowReserve - ReplaySampling.StageReserve - 1;
+    var stage = new List<ReplaySampling.SplitCandidate> { new(0, false, 6) };
+    Expect(ReplaySampling.AdmitSplits(edge, false, stage, none)[0], "another stage gets a slot while the reserve stays free");
+    Expect(!ReplaySampling.AdmitSplits(edge + 1, false, stage, none)[0], "the reserve for the stages of the followed vehicle");
+
+    var own = Enumerable.Range(0, 8).Select(i => new ReplaySampling.SplitCandidate(0, true, 1 + i)).ToList();
+    bool[] admitted = ReplaySampling.AdmitSplits(10, false, own, none);
+    Expect(admitted.Count(x => x) == ReplaySampling.ActorLimit - 10 - ReplaySampling.FollowReserve, "pieces of the followed vehicle take all slots but the last");
+    Expect(admitted[7] && !admitted[0], "the larger pieces first");
+
+    var mixed = new List<ReplaySampling.SplitCandidate> { new(1, false, 5), new(0, true, 2) };
+    bool[] first = ReplaySampling.AdmitSplits(ReplaySampling.ActorLimit - 3, false, mixed, none);
+    Expect(first[1] && !first[0], "the followed vehicle before the others");
+
+    var follow = new List<ReplaySampling.SplitCandidate> { new(0, true, 3, Required: true) };
+    Expect(ReplaySampling.AdmitSplits(ReplaySampling.ActorLimit - 1, false, follow, none)[0], "the vehicle that the recording follows takes the last slot");
+    Expect(!ReplaySampling.AdmitSplits(ReplaySampling.ActorLimit - 2, true, own.Take(1).ToList(), none)[0], "a follow change that needs a slot keeps it");
+});
+
+#endregion
+
+#region Status and problem texts
+
+Check("status text: a reader error becomes a sentence about the shot", () =>
+{
+    string[] takes = ["launch", "orbit"];
+    const string raw = "takes[1].camera[3].duration: the value 0 is out of range (must be greater than 0 and at most 3600)";
+    ProblemLine own = ProblemText.Describe(raw, true, takes, 1);
+    Expect(own.Sentence == "Shot 4: the length must be above 0 s and at most 3600 s.", own.Sentence);
+    Expect(own.TakeIndex == 1 && own.Item == ProblemItem.Shot && own.ItemIndex == 3 && own.Raw == raw && own.IsError, "the item of the error");
+    ProblemLine other = ProblemText.Describe(raw, true, takes, 0);
+    Expect(other.Sentence == "Take \"orbit\", shot 4: the length must be above 0 s and at most 3600 s.", other.Sentence);
+});
+
+Check("status text: problems of keys, actions, the pre-roll and the file", () =>
+{
+    string[] takes = ["launch"];
+    ProblemLine key = ProblemText.Describe("takes[0].speed[1].to: this field is required", true, takes, 0);
+    Expect(key.Sentence == "Speed key 2: the target is missing." && key.Item == ProblemItem.SpeedKey && key.ItemIndex == 1, key.Sentence);
+    ProblemLine action = ProblemText.Describe("takes[0].actions[0].sequence: expected a whole number from 1", true, takes, 0);
+    Expect(action.Sentence == "Action 1: the sequence: expected a whole number from 1." && action.Item == ProblemItem.Action, action.Sentence);
+    ProblemLine trigger = ProblemText.Describe("Take \"launch\": camera[2].at: a shot of the pre-roll loop starts after the one before", true, takes, 0);
+    Expect(trigger.TakeIndex == 0 && trigger.Item == ProblemItem.Shot && trigger.ItemIndex == 2, "the shot of a timeline error");
+    Expect(trigger.Sentence == "Shot 3: the start: a shot of the pre-roll loop starts after the one before.", trigger.Sentence);
+    ProblemLine preRoll = ProblemText.Describe("Take \"launch\": preRoll.until: no shot starts on the event \"x\"", true, takes, 0);
+    Expect(preRoll.Item == ProblemItem.Take && preRoll.Sentence.StartsWith("This take: the pre-roll, end event: no shot", StringComparison.Ordinal), preRoll.Sentence);
+    ProblemLine point = ProblemText.Describe("takes[0].camera[0].points[2].t: expected a number", true, takes, 0);
+    Expect(point.Sentence == "Shot 1: the point 3, point share must be a number.", point.Sentence);
+    ProblemLine plain = ProblemText.Describe("the text is not valid JSON.", true, takes, 0);
+    Expect(plain.Sentence == "The text is not valid JSON." && plain.Item == ProblemItem.None && plain.TakeIndex == -1, plain.Sentence);
+    ProblemLine warning = ProblemText.Describe("Take \"launch\": the anchor has no effect, because the take uses the Landmark \"Pad\"", false, takes, 0);
+    Expect(!warning.IsError && warning.Item == ProblemItem.Take && warning.Sentence == "This take: the anchor has no effect, because the take uses the Landmark \"Pad\".", warning.Sentence);
+
+    var all = ProblemText.DescribeAll(new ValidationResult(["takes[0].camera[0].fov: expected a number"], ["Take \"launch\": the anchor has no effect"]), takes, 0);
+    Expect(all.Count == 2 && all[0].IsError && !all[1].IsError, "errors first, then warnings");
+});
+
+Check("status text: the state of the take in plain words", () =>
+{
+    Expect(StatusText.TakeState(RunState.Idle, null) == "Ready", "idle");
+    Expect(StatusText.TakeState(RunState.Recording, 12.04) == "Running 12.0 s", StatusText.TakeState(RunState.Recording, 12.04));
+    Expect(StatusText.TakeState(RunState.Paused, 3.25) == "Paused at 3.3 s" || StatusText.TakeState(RunState.Paused, 3.25) == "Paused at 3.2 s", "paused");
+    Expect(StatusText.TakeState(RunState.Paused, null) == "Paused", "paused without a run time");
+    Expect(StatusText.TakeState(RunState.Resetting, null) == "Loading the checkpoint", "reset");
+    Expect(StatusText.LiveLine("launch", "Ready", "next: press Start take") == "\"launch\"  |  Ready  |  next: press Start take", "status line");
+    Expect(StatusText.LiveLine(null, "Ready", "") == "No take  |  Ready", "status line without a take");
+});
+
+Check("status text: the footer shows the two most important parts and lists all in the tip", () =>
+{
+    var items = new List<FooterItem>
+    {
+        new(StatusText.Priority.Take, "Ready", false),
+        new(StatusText.Priority.Note, "Loaded 2 takes.", false),
+        new(StatusText.Priority.Recording, "Flight recording 3.0 s", true),
+        new(StatusText.Priority.Note, "Loaded 2 takes.", false),
+        new(StatusText.Priority.Quick, "", false),
+    };
+    FooterLine line = StatusText.Footer(items);
+    Expect(line.Shown == "Flight recording 3.0 s  |  Ready", line.Shown);
+    Expect(line.Pending, "a shown recording is pending");
+    Expect(line.Tip == "Flight recording 3.0 s\nReady\nLoaded 2 takes.", line.Tip);
+    FooterLine short2 = StatusText.Footer([new(StatusText.Priority.Take, "Ready", false)]);
+    Expect(short2.Shown == "Ready" && short2.Tip == "" && !short2.Pending, "one part needs no tip");
+    FooterLine quiet = StatusText.Footer([new(StatusText.Priority.Take, "Ready", false), new(StatusText.Priority.Note, "x", true), new(StatusText.Priority.Note, "y", true)]);
+    Expect(quiet.Pending, "a shown pending note");
+    FooterLine hidden = StatusText.Footer([new(StatusText.Priority.Render, "a", false), new(StatusText.Priority.Take, "b", false), new(StatusText.Priority.Note, "c", true)]);
+    Expect(!hidden.Pending, "a pending part that does not show does not make the footer pending");
+});
+
+Check("status text: a text is cut only after a whole word", () =>
+{
+    static double Width(string text) => text.Length;
+    Expect(StatusText.FitWords("short", 10, Width) == "short", "a text that fits stays");
+    string cut = StatusText.FitWords("Shot 4: the length must be above 0 s", 12, Width);
+    Expect(cut == "Shot 4...", cut);
+    Expect(StatusText.FitWords("Unbreakable", 5, Width) == "", "no word fits");
+    string longer = StatusText.FitWords("The take cannot play, so the replay plays it as it was before", 30, Width);
+    Expect(longer.EndsWith("...", StringComparison.Ordinal) && longer.Length <= 30 && !longer.Contains(",...", StringComparison.Ordinal), longer);
+});
+
+Check("status text: the title strip leaves out the parts of the lowest priority first", () =>
+{
+    // name (priority 3), state (0), not reached (1)
+    double[] widths = [30, 10, 20];
+    int[] priorities = [3, 0, 1];
+    bool[] all = StatusText.FitParts(widths, priorities, 60);
+    Expect(all.All(k => k), "all fit");
+    bool[] some = StatusText.FitParts(widths, priorities, 35);
+    Expect(!some[0] && some[1] && some[2], "the recording name goes first");
+    bool[] state = StatusText.FitParts(widths, priorities, 5);
+    Expect(!state[0] && state[1] && !state[2], "the state always stays");
+    Expect(StatusText.NotReached(1) == "1 NOT REACHED", "words");
+});
+
+Check("status text: the header of a recording is read without the flight", () =>
+{
+    string directory = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N"));
+    string path = Path.Combine(directory, "Flight 2026-11-11 15-46-52 launch f802e44f.ccreplay");
+    try
+    {
+        ReplayFlight flight = ReplayExample();
+        ReplayFile.Save(path, flight);
+        RecordingHeader header = RecordingHeaderReader.Read(path);
+        Expect(header.Vehicle == "vehicle" && header.GameVersion == "game" && header.SystemId == "system" && header.BodyId == "body", "facts");
+        Expect(header.Version == ReplayFile.CurrentVersion && Near(header.Duration, ReplayTimeline.Duration(flight)), $"length {header.Duration}");
+
+        ReplayFlight longFlight = LongFlight();
+        ReplayFile.Save(path, longFlight);
+        RecordingHeader longHeader = RecordingHeaderReader.Read(path);
+        Expect(Near(longHeader.Duration, ReplayTimeline.Duration(longFlight)), $"length of a long flight {longHeader.Duration}");
+
+        using var cancel = new CancellationTokenSource();
+        cancel.Cancel();
+        bool canceled = false;
+        try { RecordingHeaderReader.Read(path, cancel.Token); } catch (OperationCanceledException) { canceled = true; }
+        Expect(canceled, "a cancel stops the read");
+    }
+    finally
+    {
+        if (Directory.Exists(directory))
+            Directory.Delete(directory, true);
+    }
+});
+
+Check("status text: the header reader takes the first actor and the sample times only", () =>
+{
+    const string json = "{\"Version\":1,\"Flight\":{\"GameVersion\":\"g\",\"SystemId\":\"Sol\",\"BodyId\":\"Earth\",\"StartTime\":0," +
+        "\"Actors\":[{\"Id\":0,\"Name\":\"Rocket\",\"Segments\":[{\"Start\":0,\"Definition\":\"x\",\"Samples\":[{\"Time\":0},{\"Time\":12.5}]}]}," +
+        "{\"Id\":1,\"Name\":\"Booster\",\"Segments\":[{\"Start\":3,\"Samples\":[{\"Time\":40.25}]}]}]," +
+        "\"Markers\":[{\"Time\":99,\"Label\":\"m\"}],\"Views\":[{\"Name\":\"view\",\"Time\":120}]}}";
+    using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+    RecordingHeader header = RecordingHeaderReader.Read(stream);
+    Expect(header.Vehicle == "Rocket" && header.Version == 1 && Near(header.Duration, 40.25), $"{header.Vehicle} {header.Duration}");
+    bool rejected = false;
+    try { RecordingHeaderReader.Read(new MemoryStream(System.Text.Encoding.UTF8.GetBytes("{\"Version\":7,\"Flight\":{}}"))); }
+    catch (InvalidDataException) { rejected = true; }
+    Expect(rejected, "an unknown version");
+    rejected = false;
+    try { RecordingHeaderReader.Read(new MemoryStream(System.Text.Encoding.UTF8.GetBytes("{\"Version\":2,\"Flight\":"))); }
+    catch (InvalidDataException) { rejected = true; }
+    Expect(rejected, "a cut file");
+});
+
+Check("status text: the list of recordings: date, order, texts and the delete check", () =>
+{
+    Expect(RecordingList.DateFromId("Flight 2026-11-11 15-46-52 f802e44f") == new DateTime(2026, 11, 11, 15, 46, 52), "date from the name");
+    Expect(RecordingList.DateFromId("my flight") == null && RecordingList.DateFromId("Flight 2026-13-11 15-46-52 x") == null, "no date");
+    var older = new RecordingEntry("a", "a", new DateTime(2026, 1, 1), 10, null, null);
+    var newer = new RecordingEntry("b", "b", new DateTime(2026, 2, 1), 10, null, null);
+    var undated = new RecordingEntry("c", "c", null, 10, null, null);
+    Expect(RecordingList.NewestFirst([older, undated, newer]).Select(e => e.Id).SequenceEqual(["b", "a", "c"]), "newest first");
+    Expect(RecordingList.SizeText(512) == "512 B" && RecordingList.SizeText(2048) == "2 KB" && RecordingList.SizeText(5 * 1024 * 1024 + 400_000) == "5.4 MB", "sizes");
+    Expect(RecordingList.LengthText(103.07) == "1:43" && RecordingList.LengthText(3725) == "1:02:05" && RecordingList.LengthText(-1) == "-", "lengths");
+    var read = new RecordingEntry("p", "Flight 2026-11-11 15-46-52 x", new DateTime(2026, 11, 11, 15, 46, 52), 2048,
+        new RecordingHeader(2, "v", "Sol", "Earth", "Rocket", 103.07), null);
+    Expect(RecordingList.Cells(read).SequenceEqual(["2026-11-11 15:46", "Rocket", "1:43", "2 KB"]), string.Join("|", RecordingList.Cells(read)));
+    Expect(RecordingList.Cells(older)[1] == "reading..." && RecordingList.Cells(older with { Error = "bad" })[1] == "cannot be read", "pending and failed reads");
+    Expect(RecordingList.DisplayName(read) == "Rocket, 2026-11-11 15:46" && RecordingList.DisplayName(undated) == "c", "display names");
+
+    string folder = Path.Combine(Path.GetTempPath(), "cinecam-replays");
+    string file = Path.Combine(folder, "Flight 1.ccreplay");
+    string[] listed = [file];
+    Expect(RecordingList.IsDeletable(folder, file, listed), "a listed recording");
+    Expect(!RecordingList.IsDeletable(folder, Path.Combine(folder, "Flight 2.ccreplay"), listed), "a file that the list did not show");
+    string outside = Path.Combine(folder, "..", "Flight 1.ccreplay");
+    Expect(!RecordingList.IsDeletable(folder, outside, [outside]), "a file outside the folder");
+    string other = Path.Combine(folder, "notes.txt");
+    Expect(!RecordingList.IsDeletable(folder, other, [other]), "another kind of file");
+    string nested = Path.Combine(folder, "sub", "Flight 1.ccreplay");
+    Expect(!RecordingList.IsDeletable(folder, nested, [nested]), "a file in a sub folder");
+});
+
+#endregion
+
+#region Replay heading on take time
+
+// A rover on the pad at (R + 100, 0, 0) of the body-fixed frame. Its horizontal velocity at a time
+// gives the path, and the samples are 1/32 s apart, as the recorder takes them.
+ReplayFlight RoverFlight(double seconds, Func<double, V3> velocity)
+{
+    var samples = new List<ReplaySample>();
+    V3 position = new(TakeBodyRadius + 100.0, 0.0, 0.0);
+    const double step = 1.0 / 32.0;
+    int count = (int)Math.Round(seconds / step);
+    for (int i = 0; i <= count; i++)
+    {
+        double t = i * step;
+        samples.Add(new ReplaySample(t, position, new ReplayRotation(0, 0, 0, 1), [], State: new ReplayState(0, 0, 0, 100f, 0f, 0f)));
+        // Midpoint steps, so the path follows the velocity closely.
+        position += velocity(t + step * 0.5) * step;
+    }
+
+    return new ReplayFlight("game", "system", "body", 0.0,
+        new() { new ReplayActor(0, "rover", new() { new ReplaySegment(0.0, "<rover/>", samples) { CenterOfMass = new V3(1.0, 0.0, 0.0) } }) },
+        new());
+}
+
+// Plays the take from the take start in frames of 1/60 s and compares the pose with an exact seek
+// of another player at each target. Returns the largest difference in meters.
+double SeekAgainstPlay(ReplayWorld world, Take take, ShotFile file, double[] targets)
+{
+    var played = new ReplayTakePlayer(world);
+    played.Load(take, file, TakeSite());
+    Expect(played.Problem.Length == 0, "loaded: " + played.Problem);
+    played.Seek(0.0);
+    played.SetPlaying(true);
+    var seeker = new ReplayTakePlayer(world);
+    seeker.Load(take, file, TakeSite());
+    double worst = 0.0;
+    foreach (double target in targets)
+    {
+        while (played.Time < target)
+            played.Advance(1.0 / 60.0);
+        CameraPose p = played.Frame!.Pose!.Value;
+        seeker.Seek(played.Time);
+        CameraPose q = seeker.Frame!.Pose!.Value;
+        worst = Math.Max(worst, Math.Max((p.Position - q.Position).Length, (p.LookAt - q.LookAt).Length));
+    }
+
+    return worst;
+}
+
+const string flightChaseTake = """
+{
+  "camera": [ { "type": "chase", "frame": "flight", "offset": [0, 10, -100], "lookAt": [0, 0, 0], "duration": 3600, "smoothing": 0 } ],
+  "speed": [ { "at": { "time": 0 }, "to": 0.25, "ramp": 0 } ]
+}
+""";
+
+Check("replay heading: a seek equals a play under a 0.25x speed key with a rover that turns at 2.5 m/s", () =>
+{
+    // A circle at 2.5 m/s, 12 degrees per second, so the heading turns at its limit and lags.
+    double rate = 12.0 * Math.PI / 180.0;
+    var world = new ReplayWorld(RoverFlight(60.0, t => new V3(0.0, 2.5 * Math.Sin(rate * t), 2.5 * Math.Cos(rate * t))), TakeBodyRadius, TakeShape);
+    Take take = ParseTake(flightChaseTake, out ShotFile file);
+    var player = new ReplayTakePlayer(world);
+    player.Load(take, file, TakeSite());
+    Expect(Near(player.Duration, 240.0, 1e-6) && player.Plan.Headings != null, $"take of {player.Duration} s with the heading run");
+    double worst = SeekAgainstPlay(world, take, file, [5.0, 30.0, 97.5, 160.0, 239.0]);
+    Console.WriteLine($"  turning rover at 0.25x: largest seek and play difference {worst:E2} m");
+    Expect(worst < 1e-3, $"largest difference {worst} m");
+
+    // A run of the heading in steps of recording time gives another heading, so the steps matter.
+    var recordingSteps = new FlightHeading();
+    for (int i = 0; i <= 60 * 40; i++)
+    {
+        (V3 origin, V3 velocity) = world.Motion(i / 60.0);
+        Basis3 local = LocalHorizon.Frame(origin, V3.Zero, V3.UnitZ);
+        recordingSteps.Update(local.X, local.Z, velocity, i == 0 ? 0.0 : 1.0 / 60.0);
+    }
+
+    V3 takeSteps = player.Plan.Headings!.At(160.0).Heading!.Value;
+    double degrees = Math.Acos(Math.Clamp(V3.Dot(takeSteps, recordingSteps.Save().Heading!.Value), -1.0, 1.0)) * 180.0 / Math.PI;
+    Expect(degrees > 1.0, $"the steps of take time matter: {degrees:0.##} degrees");
+});
+
+Check("replay heading: a rover that stands through the warm-up keeps the heading of the play", () =>
+{
+    // South at 20 m/s for 3 s, a stop in 1 s, then 100 s of stand, longer than any warm-up at 0.25x.
+    var world = new ReplayWorld(RoverFlight(104.0, t => t < 3.0 ? new V3(0.0, 0.0, -20.0) : t < 4.0 ? new V3(0.0, 0.0, -20.0 * (4.0 - t)) : V3.Zero),
+        TakeBodyRadius, TakeShape);
+    Take take = ParseTake(flightChaseTake, out ShotFile file);
+    Expect(ReplayTakePlayer.WarmUpSeconds(take) < 60.0, "the stand is longer than the warm-up");
+    double worst = SeekAgainstPlay(world, take, file, [8.0, 40.0, 150.0, 400.0]);
+    Expect(worst < 1e-3, $"largest difference {worst} m");
+    var seeker = new ReplayTakePlayer(world);
+    seeker.Load(take, file, TakeSite());
+    seeker.Seek(400.0);
+    V3 heading = seeker.Director!.Heading!.Value;
+    Expect(heading.Z < -0.999, $"the seek holds the heading south: {heading}");
+});
+
+Check("replay heading: a recording that starts in motion gives the take start heading of a fresh run", () =>
+{
+    // The rover drives west at 4 m/s from the first sample and turns slowly north, so the heading
+    // has a state from the first moment of the take.
+    var world = new ReplayWorld(RoverFlight(40.0, t => new V3(0.0, -4.0 * Math.Cos(0.03 * t), 4.0 * Math.Sin(0.03 * t))), TakeBodyRadius, TakeShape);
+    Take take = ParseTake(flightChaseTake, out ShotFile file);
+    var player = new ReplayTakePlayer(world);
+    player.Load(take, file, TakeSite());
+    player.Seek(0.0);
+    WorldSample start = world.Build(0.0, TakeSite(), false);
+    Basis3 local = LocalHorizon.Frame(start.VehicleFrame.Origin, start.BodyCentre, start.Pole);
+    V3 fresh = FlightHeading.Raw(local.X, local.Z, start.SurfaceVelocity!.Value);
+    Expect(Near3(player.Director!.Heading!.Value, fresh, 1e-9), $"the take start: {player.Director.Heading} {fresh}");
+    double worst = SeekAgainstPlay(world, take, file, [1.0, 12.0, 70.0, 150.0]);
+    Expect(worst < 1e-3, $"largest difference {worst} m");
+});
+
+Check("replay heading: the heading run costs little on a long recording", () =>
+{
+    ReplayFlight flight = LongFlight();
+    var world = new ReplayWorld(flight, TakeBodyRadius, TakeShape);
+    Take flightTake = ParseTake(flightChaseTake, out ShotFile flightFile);
+    Take plainTake = ParseTake(flightChaseTake.Replace("\"frame\": \"flight\", ", ""), out ShotFile plainFile);
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    ReplayTakePlan plain = ReplayTakePlayer.Resolve(world, plainTake, plainFile, out string problem);
+    double plainMs = watch.Elapsed.TotalMilliseconds;
+    Expect(problem.Length == 0 && plain.Headings == null, "no heading run without a flight frame shot");
+    watch.Restart();
+    ReplayTakePlan plan = ReplayTakePlayer.Resolve(world, flightTake, flightFile, out problem);
+    double resolveMs = watch.Elapsed.TotalMilliseconds;
+    Expect(problem.Length == 0 && plan.Headings != null, "the heading run: " + problem);
+    var player = new ReplayTakePlayer(world);
+    watch.Restart();
+    player.Apply(plan, "", TakeSite());
+    double applyMs = watch.Elapsed.TotalMilliseconds;
+    watch.Restart();
+    player.Seek(100_000.0);
+    double seekMs = watch.Elapsed.TotalMilliseconds;
+    watch.Restart();
+    for (int i = 0; i < 100; i++)
+        plan.Headings!.At(1000.0 * i + 0.99);
+    double lookupMs = watch.Elapsed.TotalMilliseconds / 100.0;
+    Console.WriteLine($"  long take ({plan.Duration:F0} take s, step {plan.Headings!.Step:F3} s): resolve {plainMs:F1} ms without and {resolveMs:F1} ms with the heading run, apply {applyMs:F1} ms, exact seek {seekMs:F1} ms, heading lookup {lookupMs:F3} ms");
+    Expect(resolveMs < 1000.0, $"{resolveMs} ms on the worker");
+    Expect(lookupMs < 2.0, $"{lookupMs} ms per lookup");
+});
+
+Check("replay heading: a key in a pause keeps the start of a shot that a prediction started", () =>
+{
+    const string json = """
+    {
+      "camera": [
+        { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 200 },
+        { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 30, "at": { "event": "altitude:5000", "delay": -3 } },
+        { "type": "tripod", "target": "vehicle", "position": [5, 30, 10], "lookAt": [10, 0, 0], "duration": 5 }
+      ]
+    }
+    """;
+    Take running = ParseTake(json, out ShotFile file);
+    Take edited = ParseTake(json, out _);
+    Expect(EventName.TryResolve("altitude:5000", file.Events, out EventName name, out _), "event name");
+    var runner = new TimelineRunner(running, file.Events);
+    var seen = new Dictionary<string, double>();
+    for (int i = 0; i <= 120 * 60; i++)
+    {
+        double t = i / 60.0;
+        if (t >= 100.0)
+            seen.TryAdd(name.Canonical, 100.0);
+        var predictions = t < 100.0 ? new Dictionary<string, double> { [name.Canonical] = 100.0 - t } : null;
+        runner.Update(t, seen, predictions);
+    }
+
+    double?[] live = runner.Starts.Shots;
+    Expect(live[1] is double s && Near(s, 97.0, 1e-6), $"the run started the shot at {live[1]}");
+    double?[]? fresh = ShotPlacer.StartsAt(edited, 120.0, seen, file.Events);
+    Expect(fresh![1] is double f && Near(f, 120.0, 1e-9), $"a fresh runner cannot know it: {fresh[1]}");
+    double?[]? kept = ShotPlacer.StartsInPause(edited, file.Events, running, file.Events, live, 120.0, seen);
+    Expect(kept![1] is double k && Near(k, 97.0, 1e-6) && kept[2] is double after && Near(after, 127.0, 1e-6), $"the starts of the run: {kept[1]} {kept[2]}");
+    ShotPlacement place = ShotPlacer.Place(edited, 120.0, kept, 0, -1);
+    Expect(place.Index == 2 && place.Duration is double d && Near(d, 7.0, 1e-6) && place.Delay == 0.0, $"the new shot fills the time to the shot after: {place}");
+
+    edited.Shots[0].Duration = 150.0;
+    double?[]? changed = ShotPlacer.StartsInPause(edited, file.Events, running, file.Events, live, 120.0, seen);
+    Expect(changed![1] is double c && Near(c, 120.0, 1e-9), "a take that the pause changed gets the starts of a fresh runner");
+
+    ShotPlacement tight = ShotPlacer.Place(running, 126.95, live, 0, -1);
+    Expect(tight.Duration is double td && Near(td, TimelineLayout.MinDuration, 1e-9) && Near(tight.Delay, TimelineLayout.MinDuration - (127.0 - 126.95), 1e-6),
+        $"a gap shorter than the shortest length delays the shots after it: {tight}");
+});
+
+Check("replay heading: the header reader refuses one huge token without a huge buffer", () =>
+{
+    string json = "{\"Version\":2,\"Flight\":{\"GameVersion\":\"" + new string('a', RecordingHeaderReader.MaxBuffer + 1024) + "\"}}";
+    using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+    bool rejected = false;
+    try { RecordingHeaderReader.Read(stream); }
+    catch (InvalidDataException) { rejected = true; }
+    Expect(rejected, "a token longer than the buffer cap");
+
+    string fits = "{\"Version\":2,\"Flight\":{\"GameVersion\":\"" + new string('b', 200_000) + "\",\"SystemId\":\"s\",\"BodyId\":\"b\"," +
+        "\"Actors\":[{\"Id\":0,\"Name\":\"Rocket\",\"Segments\":[{\"Start\":0,\"Samples\":[{\"Time\":0},{\"Time\":3}]}]}]}}";
+    RecordingHeader header = RecordingHeaderReader.Read(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(fits)));
+    Expect(header.Vehicle == "Rocket" && Near(header.Duration, 3.0), "a long token below the cap");
 });
 
 #endregion
