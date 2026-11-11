@@ -1,5 +1,6 @@
 using System.Globalization;
 using CineCam.Director;
+using CineCam.Editing;
 
 int failures = 0;
 
@@ -829,6 +830,302 @@ Check("shot file: hideUi and syncFlash are written back", () =>
 #endregion
 
 
+#region Offline capture
+
+string CaptureFile(string capture) =>
+    "{ \"fps\": 30, \"capture\": " + capture + ", \"camera\": [ { \"type\": \"tripod\", \"duration\": 5, \"position\": [1, 2, 3], \"lookAt\": [0, 0, 0] } ] }";
+
+Check("The capture options are read, written and read again", () =>
+{
+    ShotFile file = ShotFileJson.Parse(CaptureFile("{ \"mode\": \"offline\", \"fps\": 24, \"folder\": \"out\", \"scale\": 2, \"later\": 1 }")).File;
+    Expect(file.Capture.Mode == CaptureMode.Offline, "mode");
+    Expect(file.CaptureFps == 24.0, "capture fps wins over the file fps");
+    Expect(file.Capture.Folder == "out" && file.Capture.Scale == 2, "folder and scale");
+    string text = ShotFileJson.Write(file);
+    ShotFile back = ShotFileJson.Parse(text).File;
+    Expect(back.Capture.Mode == CaptureMode.Offline && back.Capture.Fps == 24.0 && back.Capture.Folder == "out" && back.Capture.Scale == 2, "round trip");
+    Expect(back.Capture.Extras.ContainsKey("later"), "unknown capture field kept");
+    Expect(text.All(c => c < 128), "ASCII");
+});
+
+Check("Without a capture field the file stays in the real time mode and writes none", () =>
+{
+    ShotFile file = ShotFileJson.Parse(CaptureFile("{ }")).File;
+    Expect(file.Capture.Mode == CaptureMode.Realtime && file.CaptureFps == 30.0, "defaults");
+    Expect(!ShotFileJson.Write(file).Contains("\"capture\""), "default capture is left out");
+});
+
+Check("A bad capture mode or scale names the field", () =>
+{
+    Expect(ExpectInvalid(CaptureFile("{ \"mode\": \"slow\" }")).FieldPath == "capture.mode", "mode path");
+    Expect(ExpectInvalid(CaptureFile("{ \"scale\": 1.5 }")).FieldPath == "capture.scale", "scale path");
+    Expect(ExpectInvalid(CaptureFile("{ \"fps\": 0 }")).FieldPath == "capture.fps", "fps path");
+});
+
+Check("The editor copy keeps the capture options", () =>
+{
+    ShotFile file = ShotFileJson.Parse(CaptureFile("{ \"mode\": \"offline\" }")).File;
+    ShotFile copy = ShotFileValidator.Copy(file);
+    Expect(copy.Capture.Mode == CaptureMode.Offline, "mode kept");
+});
+
+Check("Frame names have six digits and the output folder is resolved", () =>
+{
+    Expect(OfflineOutput.FrameName(1) == "000001.png" && OfflineOutput.FrameName(123456) == "123456.png", "names");
+    string take = Path.Combine(Path.GetTempPath(), "take");
+    Expect(OfflineOutput.ResolveFolder(take, null) == take, "default");
+    Expect(OfflineOutput.ResolveFolder(take, "  ") == take, "blank");
+    Expect(OfflineOutput.ResolveFolder(take, "sub") == Path.Combine(take, "sub"), "relative");
+    string rooted = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "elsewhere"));
+    Expect(OfflineOutput.ResolveFolder(take, rooted) == rooted, "rooted");
+});
+
+Check("The video scripts carry the ffmpeg line", () =>
+{
+    string cmd = OfflineOutput.MakeVideoCmd(29.97);
+    string sh = OfflineOutput.MakeVideoSh(60);
+    Expect(cmd.Contains("-framerate 29.97 ") && cmd.Contains("frames\\%%06d.png") && cmd.Contains("libx264") && cmd.Contains("yuv420p") && cmd.Contains("-crf 16"), "cmd line");
+    Expect(sh.Contains("-framerate 60 ") && sh.Contains("frames/%06d.png") && !sh.Contains("\r"), "sh line");
+    Expect(cmd.All(c => c < 128) && sh.All(c => c < 128), "ASCII");
+});
+
+Check("The helpers and the readme are written", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        string output = Path.Combine(root, "out");
+        OfflineOutput.WriteHelpers(output, root, "launch", 60);
+        Expect(File.Exists(Path.Combine(output, "make-video.cmd")) && File.Exists(Path.Combine(output, "make-video.sh")), "scripts");
+        Expect(File.ReadAllText(Path.Combine(root, "README.txt")).Contains("60 pictures per second"), "readme");
+    }
+    finally
+    {
+        Directory.Delete(root, true);
+    }
+});
+
+byte[] Png(int extra = 0)
+{
+    var bytes = new byte[64 + extra];
+    new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }.CopyTo(bytes, 0);
+    return bytes;
+}
+
+Check("The collector takes a finished picture, in order, and ignores the old ones", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    string source = Path.Combine(root, "shots");
+    string frames = Path.Combine(root, "frames");
+    Directory.CreateDirectory(source);
+    try
+    {
+        File.WriteAllBytes(Path.Combine(source, "ksa_old_1920x1080.png"), Png());
+        var collector = new ScreenshotCollector(source, frames);
+        Expect(collector.TryCollect(1, out _) == CollectResult.Waiting, "the old picture is not taken");
+
+        File.WriteAllBytes(Path.Combine(source, "ksa_new_1920x1080.png"), Png());
+        Expect(collector.TryCollect(1, out string? moved) == CollectResult.Done, "the new picture is taken");
+        Expect(moved == Path.Combine(frames, "000001.png") && File.Exists(moved), "moved to the first frame");
+        Expect(!File.Exists(Path.Combine(source, "ksa_new_1920x1080.png")), "source is gone");
+
+        // The next picture may carry the same name, because the game names by the second.
+        File.WriteAllBytes(Path.Combine(source, "ksa_new_1920x1080.png"), Png(5));
+        Expect(collector.TryCollect(2, out _) == CollectResult.Done, "same name again");
+        Expect(new FileInfo(Path.Combine(frames, "000002.png")).Length == 69, "second frame has the second content");
+    }
+    finally
+    {
+        Directory.Delete(root, true);
+    }
+});
+
+Check("The collector waits while the game still holds the file", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    string source = Path.Combine(root, "shots");
+    Directory.CreateDirectory(source);
+    try
+    {
+        var collector = new ScreenshotCollector(source, Path.Combine(root, "frames"));
+        string path = Path.Combine(source, "ksa_busy.png");
+        using (var writer = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read))
+        {
+            writer.Write(Png());
+            writer.Flush();
+            Expect(collector.TryCollect(1, out _) == CollectResult.Waiting, "an open file is not finished");
+            Expect(collector.Wait(1, TimeSpan.FromMilliseconds(30)) == CollectResult.Waiting, "the wait times out");
+        }
+
+        Expect(collector.Wait(1, TimeSpan.FromSeconds(2)) == CollectResult.Done, "taken after the writer closed");
+    }
+    finally
+    {
+        Directory.Delete(root, true);
+    }
+});
+
+Check("The collector gives up when told, and skips a file that is no picture", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    string source = Path.Combine(root, "shots");
+    Directory.CreateDirectory(source);
+    try
+    {
+        var collector = new ScreenshotCollector(source, Path.Combine(root, "frames"));
+        Expect(collector.Wait(1, TimeSpan.FromSeconds(5), () => true) == CollectResult.Waiting, "give up at once");
+        File.WriteAllText(Path.Combine(source, "ksa_text.png"), "not a png");
+        Expect(collector.TryCollect(1, out _) == CollectResult.Waiting, "wrong content is not a picture");
+    }
+    finally
+    {
+        Directory.Delete(root, true);
+    }
+});
+
+#endregion
+
+#region Take and camera rules
+
+double AngleBetween(V3 a, V3 b) => Math.Acos(Math.Clamp(V3.Dot(a.NormalizedOr(V3.UnitX), b.NormalizedOr(V3.UnitX)), -1.0, 1.0));
+
+Check("up: the result is a unit vector perpendicular to the view, also along the up axis", () =>
+{
+    var stabilizer = new UpStabilizer();
+    foreach (V3 view in new[] { V3.UnitX, -V3.UnitX, new V3(1, 0.001, 0), new V3(0.3, 0.4, -0.2) })
+    {
+        V3 up = stabilizer.Stabilize(view, V3.UnitX);
+        Expect(Near(up.Length, 1.0, 1e-9), "unit length");
+        Expect(Math.Abs(V3.Dot(up, view.NormalizedOr(V3.UnitX))) < 1e-9, "perpendicular");
+        Expect(!double.IsNaN(up.X + up.Y + up.Z), "no NaN");
+    }
+});
+
+Check("up: a sweep through the pole turns the roll in small steps", () =>
+{
+    var stabilizer = new UpStabilizer();
+    V3 last = stabilizer.Stabilize(new V3(1.0, -1.0, 0.02), V3.UnitX);
+    double largest = 0.0;
+    for (int i = -2000; i <= 2000; i++)
+    {
+        // The view passes the +X axis on a line that misses it by 0.02 rad.
+        double t = i * 0.0005;
+        V3 view = new V3(1.0, t, 0.02);
+        V3 up = stabilizer.Stabilize(view, V3.UnitX);
+        largest = Math.Max(largest, AngleBetween(up, last));
+        last = up;
+    }
+
+    Expect(largest < 0.2, $"largest step {largest} rad");
+});
+
+Check("up: away from the pole the hint is kept exactly", () =>
+{
+    var stabilizer = new UpStabilizer();
+    V3 view = new V3(0.0, 1.0, 0.0);
+    V3 up = stabilizer.Stabilize(view, V3.UnitX);
+    Expect(Near3(up, V3.UnitX), "up stays +X");
+});
+
+Check("burnout: an engine that ran just over the minimum time counts", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, Sample());
+    detector.Update(1.0, Sample(engine: true));
+    var off = detector.Update(2.05, Sample(engine: false));
+    Expect(off.Count == 1 && off[0].Name == "burnout", "burnout after 1.05 s");
+});
+
+Check("collector: a new picture with the name of an old one is taken", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "cinecam-test-" + Guid.NewGuid().ToString("N"));
+    string source = Path.Combine(root, "shots");
+    Directory.CreateDirectory(source);
+    try
+    {
+        string playerShot = Path.Combine(source, "ksa_same_1920x1080.png");
+        var collector = new ScreenshotCollector(source, Path.Combine(root, "frames"));
+        File.WriteAllBytes(playerShot, Png());
+        File.WriteAllBytes(Path.Combine(source, "ksa_other_1920x1080.png"), Png(3));
+        File.SetLastWriteTimeUtc(playerShot, DateTime.UtcNow.AddSeconds(-5));
+        Expect(collector.TryCollect(1, out _) == CollectResult.Done, "the newest file is taken");
+        Expect(File.Exists(playerShot), "the other file stays");
+
+        File.WriteAllBytes(playerShot, Png(9));
+        Expect(collector.TryCollect(2, out _) == CollectResult.Done, "the same name with new content counts as new");
+        Expect(new FileInfo(Path.Combine(root, "frames", "000002.png")).Length == 73, "content of the second picture");
+    }
+    finally
+    {
+        Directory.Delete(root, true);
+    }
+});
+
+Check("speed policy: waits for an automatic warp and for a menu pause, writes otherwise", () =>
+{
+    Expect(SpeedPolicy.Decide(true, 100, null, 1).Action == SpeedAction.Wait, "auto warp");
+    Expect(SpeedPolicy.Decide(true, 100, null, 1).ReportAutoWarp, "auto warp is reported");
+    Expect(SpeedPolicy.Decide(false, 0, 4, 2).Action == SpeedAction.Wait, "menu pause after a write");
+    Expect(SpeedPolicy.Decide(false, 1, null, 4).Action == SpeedAction.Write, "first write");
+    Expect(SpeedPolicy.Decide(false, 4, 4, 4).Action == SpeedAction.Keep, "already there");
+    SpeedDecision foreign = SpeedPolicy.Decide(false, 8, 4, 4);
+    Expect(foreign.Action == SpeedAction.Write && foreign.ReportOverride, "a foreign change is written over and reported");
+    Expect(SpeedPolicy.Decide(false, 0, 0, 1).Action == SpeedAction.Write, "a written zero is not a pause");
+});
+
+Check("offline: the step follows the pictures, a lost picture retries with the small step", () =>
+{
+    var capture = new OfflineCapture(50.0, "out", "out/frames", new ScreenshotCollector(Path.GetTempPath(), Path.Combine(Path.GetTempPath(), "cinecam-unused-" + Guid.NewGuid().ToString("N"))));
+    try
+    {
+        Expect(Near(capture.NextStep, 0.02) && capture.FrameNumber == 1, "first step");
+        double time = capture.Advance(capture.NextStep, 100.0);
+        Expect(Near(time, 100.02), "the game time moves by one step");
+        capture.RecordSaved(1);
+        Expect(Near(capture.TakeSeconds, 0.02) && capture.FrameNumber == 2, "take time follows the pictures");
+
+        Expect(!capture.RecordLost(3), "one loss does not end the take");
+        Expect(capture.Retry && Near(capture.NextStep, OfflineCapture.RetryStepSeconds), "retry step");
+        time = capture.Advance(capture.NextStep, 999.0);
+        Expect(Near(time, 100.02 + OfflineCapture.RetryStepSeconds), "the base time is kept");
+        Expect(Near(capture.TakeSeconds, 0.02) && capture.FrameNumber == 2, "the take time did not move");
+        capture.RecordSaved(2);
+        Expect(!capture.Retry && capture.FailuresInRow == 0 && capture.PicturesLost == 1, "recovered");
+
+        capture.RecordLost(3);
+        capture.RecordLost(3);
+        Expect(capture.RecordLost(3), "three losses in a row end the take");
+    }
+    finally
+    {
+        foreach (string folder in Directory.GetDirectories(Path.GetTempPath(), "cinecam-unused-*"))
+            Directory.Delete(folder, true);
+    }
+});
+
+Check("director: a blend keeps the smoothing of the outgoing shot", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+{ "takes": [ { "name": "t", "camera": [
+  { "type": "chase", "target": "vehicle", "offset": [-10, 0, 0], "lookAt": [0, 0, 0], "smoothing": 5, "duration": 2 },
+  { "type": "tripod", "target": "vehicle", "position": [-10, 0, 0], "lookAt": [0, 0, 0], "duration": 5, "transition": { "type": "blend", "seconds": 1 } }
+] } ] }
+""").File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    Basis3 Frame(double angle) => Basis3.FromXAndHint(V3.Zero, new V3(Math.Cos(angle), Math.Sin(angle), 0.0), V3.UnitZ);
+    var sample = new WorldSample { VehicleFrame = Frame(0.0), VehicleHeight = 10.0 };
+    for (double t = 0.0; t < 1.9; t += 0.1)
+        director.Update(t, sample);
+    sample.VehicleFrame = Frame(0.5);
+    DirectorFrame a = director.Update(1.9, sample);
+    DirectorFrame b = director.Update(2.0, sample);
+    Expect(a.Pose.HasValue && b.Pose.HasValue, "poses exist");
+    double jump = (a.Pose!.Value.Position - b.Pose!.Value.Position).Length;
+    Expect(jump < 3.0, $"the outgoing shot does not jump when the blend starts ({jump} m)");
+});
+
+#endregion
+
 #region Autotest
 
 Check("autotest take A parses and builds a director", () =>
@@ -1152,6 +1449,224 @@ Check("counted events: the triggers and the watched list know the counted names"
     Expect(timeline.ShotStart(0) == null, "not started before the event");
     state = timeline.Update(50.0, Events(("ignition", 1.0), ("ignition:2", 40.0)));
     Expect(timeline.ShotStart(0) is double start && Near(start, 41.0), "starts one second after ignition:2");
+});
+
+#endregion
+
+#region World
+
+const string WorldShots = "\"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2 } ]";
+
+List<string> WorldNames(IEnumerable<DetectedEvent> events) => events.Select(e => e.Name).ToList();
+
+Check("world: lat and lon give the direction of the game and come back", () =>
+{
+    Expect(Near3(WorldPoint.Direction(0, 0), V3.UnitX), "lat 0 lon 0 is +X");
+    Expect(Near3(WorldPoint.Direction(0, 90), V3.UnitY, 1e-12), "lon 90 is +Y");
+    Expect(Near3(WorldPoint.Direction(90, 0), V3.UnitZ, 1e-12), "lat 90 is +Z");
+    foreach ((double lat, double lon) in new[] { (28.6, -80.6), (-45.0, 170.0), (5.0, -179.0), (89.9, 12.0) })
+    {
+        WorldPoint.LatLon(WorldPoint.Direction(lat, lon), out double lat2, out double lon2);
+        Expect(Near(lat, lat2, 1e-9) && Near(lon, lon2, 1e-9), $"round trip {lat} {lon}: {lat2} {lon2}");
+    }
+});
+
+Check("world: the axes match the Landmark axes and are right handed", () =>
+{
+    WorldPoint.Axes(V3.UnitX, out V3 east, out V3 north);
+    Expect(Near3(east, V3.UnitY) && Near3(north, V3.UnitZ), "equator at lon 0: east +Y, north +Z");
+    foreach ((double lat, double lon) in new[] { (28.6, -80.6), (-60.0, 45.0), (89.999, 3.0), (90.0, 0.0), (-90.0, 0.0) })
+    {
+        V3 up = WorldPoint.Direction(lat, lon);
+        WorldPoint.Axes(up, out V3 e, out V3 n);
+        Expect(Near(e.Length, 1, 1e-9) && Near(n.Length, 1, 1e-9), "unit axes");
+        Expect(Near(V3.Dot(e, up), 0, 1e-9) && Near(V3.Dot(n, up), 0, 1e-9) && Near(V3.Dot(e, n), 0, 1e-9), "perpendicular");
+        Expect(Near3(V3.Cross(up, e), n, 1e-9), $"up cross east is north at {lat} {lon}");
+        if (Math.Abs(lat) < 89.0)
+            Expect(n.Z > 0, "north points to the pole side");
+    }
+});
+
+Check("world: an anchor from a direction keeps the place", () =>
+{
+    V3 position = WorldPoint.Direction(12.5, -33.25) * 6.4e6;
+    WorldAnchor anchor = WorldAnchor.FromDirection("Earth", position, 0.0);
+    Expect(anchor.Body == "Earth" && Near(anchor.Latitude, 12.5, 1e-9) && Near(anchor.Longitude, -33.25, 1e-9), "lat lon");
+    Expect(Near3(anchor.DirectionCcf, position / position.Length, 1e-12), "direction");
+});
+
+Check("world: an anchor is read, written and keeps unknown fields", () =>
+{
+    string json = "{ \"anchor\": { \"body\": \"Earth\", \"latitude\": 28.5, \"longitude\": -80.6, \"altitude\": 3, \"note\": \"pad B\" }, " + WorldShots + " }";
+    ShotFile file = ShotFileJson.Parse(json).File;
+    WorldAnchor? anchor = file.DefaultTake.Anchor;
+    Expect(anchor != null && anchor.Body == "Earth" && anchor.Latitude == 28.5 && anchor.Longitude == -80.6 && anchor.Altitude == 3, "read at the top level of a one-take file");
+    Expect(anchor!.Extras.ContainsKey("note") && !file.Extras.ContainsKey("anchor"), "unknown field kept in the anchor");
+    string text = ShotFileJson.Write(file);
+    Expect(ShotFileJson.Write(ShotFileJson.Parse(text).File) == text, "round trip");
+    Expect(text.Contains("\"note\": \"pad B\""), "extra written back");
+
+    string listed = "{ \"takes\": [ { \"name\": \"a\", \"anchor\": { \"body\": \"Moon\", \"latitude\": 0, \"longitude\": 0 }, " + WorldShots + " }, { \"name\": \"b\", " + WorldShots + " } ] }";
+    ShotFile two = ShotFileJson.Parse(ShotFileJson.Write(ShotFileJson.Parse(listed).File)).File;
+    Expect(two.Takes[0].Anchor is { Body: "Moon", Altitude: 0.0 } && two.Takes[1].Anchor == null, "per take, altitude defaults to 0");
+
+    Expect(ExpectInvalid("{ \"anchor\": { \"latitude\": 1, \"longitude\": 2 }, " + WorldShots + " }").FieldPath == "anchor.body", "body needed");
+    Expect(ExpectInvalid("{ \"anchor\": { \"body\": \"Earth\", \"latitude\": 91, \"longitude\": 2 }, " + WorldShots + " }").FieldPath == "anchor.latitude", "latitude range");
+    Expect(ExpectInvalid("{ \"takes\": [ { \"name\": \"a\", \"anchor\": { \"body\": \"Earth\", \"latitude\": 1 }, " + WorldShots + " } ] }").FieldPath == "takes[0].anchor.longitude", "longitude needed");
+});
+
+Check("world: the validator warns when a Landmark hides the anchor", () =>
+{
+    ShotFile file = ShotFileJson.Parse("{ \"site\": \"Pad\", \"anchor\": { \"body\": \"Earth\", \"latitude\": 1, \"longitude\": 2 }, " + WorldShots + " }").File;
+    ValidationResult result = ShotFileValidator.Validate(file);
+    Expect(result.IsValid && result.Warnings.Any(w => w.Contains("anchor has no effect")), "warning");
+    file.Site = null;
+    Expect(!ShotFileValidator.Validate(file).Warnings.Any(w => w.Contains("anchor")), "no warning without a site");
+});
+
+Check("world: formatVersion is written first, old files are version 1, newer ones warn", () =>
+{
+    ShotFileReadResult old = ShotFileJson.Parse("{ \"fps\": 30, " + WorldShots + " }");
+    Expect(old.File.FormatVersion == 1 && old.Warnings.Count == 0, "missing value is version 1 without a warning");
+    string text = ShotFileJson.Write(old.File);
+    Expect(text.StartsWith("{\n  \"formatVersion\": 2,", StringComparison.Ordinal), "written at the top: " + text[..Math.Min(40, text.Length)]);
+    ShotFileReadResult again = ShotFileJson.Parse(text);
+    Expect(again.File.FormatVersion == 2 && again.Warnings.Count == 0 && ShotFileJson.Write(again.File) == text, "version 2 round trip");
+    Expect(new ShotFile().FormatVersion == ShotFile.CurrentFormatVersion, "a new file has the current version");
+
+    ShotFileReadResult newer = ShotFileJson.Parse("{ \"formatVersion\": 3, \"futureField\": 1, " + WorldShots + " }");
+    Expect(newer.File.FormatVersion == 3 && newer.Warnings.Any(w => w.StartsWith("formatVersion:", StringComparison.Ordinal)), "newer version warns");
+    string newerText = ShotFileJson.Write(newer.File);
+    Expect(newerText.Contains("\"formatVersion\": 3") && newerText.Contains("\"futureField\": 1"), "the higher version and the unknown field are kept");
+    Expect(ExpectInvalid("{ \"formatVersion\": 1.5, " + WorldShots + " }").FieldPath == "formatVersion", "fraction rejected");
+    Expect(ExpectInvalid("{ \"formatVersion\": 0, " + WorldShots + " }").FieldPath == "formatVersion", "zero rejected");
+});
+
+Check("world: the new events parse, count and resolve", () =>
+{
+    foreach ((string text, EventKind kind, string canonical) in new[]
+    {
+        ("landed", EventKind.Landed, "landed"), ("Landed:2", EventKind.Landed, "landed:2"), ("soi", EventKind.Soi, "soi"),
+        ("soi:3", EventKind.Soi, "soi:3"), ("apoapsis", EventKind.Apoapsis, "apoapsis"), ("periapsis:2", EventKind.Periapsis, "periapsis:2"),
+        ("docked", EventKind.Docked, "docked"), ("undocked:1", EventKind.Undocked, "undocked"), ("mark:4", EventKind.Mark, "mark:4"),
+        ("ignition:1", EventKind.Ignition, "ignition"), ("burnout:2", EventKind.Burnout, "burnout:2"),
+    })
+    {
+        Expect(EventName.TryParse(text, out EventName name, out string error), text + ": " + error);
+        Expect(name.Kind == kind && name.Canonical == canonical && !name.IsPredictable, text + " gives " + name.Canonical);
+    }
+
+    Expect(!EventName.TryParse("mark:0", out _, out _) && !EventName.TryParse("soi:x", out _, out _), "bad counts");
+    Expect(!EventName.TryParse("dock", out _, out string unknown) && unknown.Contains("periapsis"), "the error lists the new names");
+    ExpectInvalid("{ \"events\": { \"mark\": \"liftoff\" }, " + WorldShots + " }");
+    Take take = ParseTake("{ \"events\": { \"cut\": \"mark:2\" }, \"camera\": [ { \"type\": \"tripod\", \"position\": [5,0,0], \"lookAt\": [6,1,0], \"duration\": 2, \"at\": { \"event\": \"cut\" } } ] }", out ShotFile file);
+    Expect(EventDetector.Watched(take, file.Events).Single().Canonical == "mark:2", "an alias of a mark");
+});
+
+Check("world: landed counts after the lift-off and ignores bounces and the pad", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, Sample(contact: true, altitude: 10));
+    Expect(detector.Update(0.1, Sample(contact: false, altitude: 10.1)).Count == 0, "a pad flicker is no lift-off");
+    Expect(detector.Update(0.2, Sample(contact: true, altitude: 10)).Count == 0, "and no landing");
+    Expect(WorldNames(detector.Update(1.0, Sample(contact: false, altitude: 12))).SequenceEqual(new[] { "liftoff" }), "lift-off");
+    Expect(WorldNames(detector.Update(5.0, Sample(contact: true, altitude: 10))).SequenceEqual(new[] { "landed" }), "landed");
+    detector.Update(5.2, Sample(contact: false, altitude: 10.5));
+    Expect(detector.Update(5.6, Sample(contact: true, altitude: 10)).Count == 0, "a short bounce is not a landing");
+    detector.Update(6.0, Sample(contact: false, altitude: 20));
+    Expect(WorldNames(detector.Update(9.0, Sample(contact: true, altitude: 10))).SequenceEqual(new[] { "landed:2" }), "the second landing");
+
+    var flying = new EventDetector(Array.Empty<EventName>());
+    flying.Update(0.0, Sample(contact: false, altitude: 500));
+    Expect(WorldNames(flying.Update(3.0, Sample(contact: true, altitude: 0))).SequenceEqual(new[] { "landed" }), "a take that starts in flight sees the landing");
+});
+
+Check("world: soi changes are counted with the bodies", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, new VehicleSample(false, false, 0, 1e6, 3000, Body: "Earth"));
+    Expect(detector.Update(1.0, new VehicleSample(false, false, 0, 1e6, 3000, Body: "Earth")).Count == 0, "same body");
+    var first = detector.Update(2.0, new VehicleSample(false, false, 0, 1e6, 3000, Body: "Moon"));
+    Expect(WorldNames(first).SequenceEqual(new[] { "soi" }) && first[0].Detail == "from Earth to Moon", "soi " + first.FirstOrDefault()?.Detail);
+    Expect(detector.Update(3.0, new VehicleSample(false, false, 0, 1e6, 3000)).Count == 0, "an unknown body changes nothing");
+    Expect(WorldNames(detector.Update(4.0, new VehicleSample(false, false, 0, 1e6, 3000, Body: "Earth"))).SequenceEqual(new[] { "soi:2" }), "soi:2");
+});
+
+Check("world: apoapsis and periapsis need a stable orbit outside the atmosphere", () =>
+{
+    VehicleSample Orbit(double radial, bool closed = true, bool outside = true) =>
+        new(false, false, 0, 2e5, 7800, Body: "Earth", RadialSpeed: radial, StableOrbit: closed, OutsideAtmosphere: outside);
+
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, Orbit(50));
+    Expect(detector.Update(1.0, Orbit(0.05)).Count == 0 && detector.Update(2.0, Orbit(-0.05)).Count == 0, "the dead band gives nothing");
+    Expect(WorldNames(detector.Update(3.0, Orbit(-20))).SequenceEqual(new[] { "apoapsis" }), "apoapsis");
+    Expect(WorldNames(detector.Update(4.0, Orbit(20))).SequenceEqual(new[] { "periapsis" }), "periapsis");
+    Expect(WorldNames(detector.Update(5.0, Orbit(-20))).SequenceEqual(new[] { "apoapsis:2" }), "apoapsis:2");
+    Expect(detector.Update(6.0, Orbit(20, closed: false)).Count == 0, "an open orbit gives no periapsis");
+    Expect(detector.Update(7.0, Orbit(-20, outside: false)).Count == 0, "inside the atmosphere gives no apoapsis");
+    Expect(WorldNames(detector.Update(8.0, Orbit(20))).SequenceEqual(new[] { "periapsis:2" }), "periapsis:2");
+
+    var hop = new EventDetector(Array.Empty<EventName>());
+    hop.Update(0.0, new VehicleSample(false, true, 0, 0, 0, Body: "Earth", RadialSpeed: 0.01, StableOrbit: true));
+    hop.Update(1.0, new VehicleSample(false, false, 0, 100, 50, Body: "Earth", RadialSpeed: 50, StableOrbit: true));
+    Expect(!hop.Update(5.0, new VehicleSample(false, false, 0, 200, 10, Body: "Earth", RadialSpeed: -5, StableOrbit: true)).Any(e => e.Name.StartsWith("apo", StringComparison.Ordinal)), "the top of a hop in the air is no apoapsis");
+
+    var soi = new EventDetector(Array.Empty<EventName>());
+    soi.Update(0.0, Orbit(30));
+    var changed = soi.Update(1.0, new VehicleSample(false, false, 0, 1e7, 900, Body: "Moon", RadialSpeed: -30, StableOrbit: true, OutsideAtmosphere: true));
+    Expect(WorldNames(changed).SequenceEqual(new[] { "soi" }), "a new body starts the apsis watch again");
+});
+
+Check("world: docking and undocking follow the docked ports", () =>
+{
+    VehicleSample Ports(int docked, int sequence = 0, IReadOnlyList<int>? fired = null, bool changed = false) =>
+        new(false, false, sequence, 4e5, 7700, fired, DockedPorts: docked, VehicleChanged: changed);
+
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, Ports(1));
+    Expect(detector.Update(1.0, Ports(1)).Count == 0, "the ports at the start are no event");
+    var docked = detector.Update(2.0, Ports(3, changed: true));
+    Expect(WorldNames(docked).SequenceEqual(new[] { "docked" }) && docked[0].Detail == "docked ports 1 to 3", "docked");
+    Expect(WorldNames(detector.Update(3.0, Ports(1))).SequenceEqual(new[] { "undocked" }), "undocked");
+    Expect(WorldNames(detector.Update(4.0, Ports(2))).SequenceEqual(new[] { "docked:2" }), "docked:2");
+    var staged = detector.Update(5.0, Ports(1, sequence: 1, fired: new[] { 1 }));
+    Expect(WorldNames(staged).SequenceEqual(new[] { "sequence:1" }), "a port that leaves with a stage is no undocking: " + string.Join(",", WorldNames(staged)));
+    Expect(WorldNames(detector.Update(5.5, Ports(2, sequence: 1))).SequenceEqual(new[] { "docked:3" }), "docked:3");
+    Expect(detector.Update(5.8, Ports(1, sequence: 1)).Count == 0, "still within a second of the stage");
+    detector.Update(7.0, Ports(2, sequence: 1));
+    Expect(WorldNames(detector.Update(8.0, Ports(1, sequence: 1))).SequenceEqual(new[] { "undocked:2" }), "undocked:2");
+});
+
+Check("world: a new vehicle object gives no sequence events for its own list", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    detector.Update(0.0, new VehicleSample(false, false, 2, 4e5, 7700));
+    var found = detector.Update(1.0, new VehicleSample(false, false, 7, 4e5, 7700, Fired: new[] { 7 }, DockedPorts: 2, VehicleChanged: true));
+    Expect(WorldNames(found).SequenceEqual(new[] { "docked" }), "only the docking: " + string.Join(",", WorldNames(found)));
+    Expect(WorldNames(detector.Update(2.0, new VehicleSample(false, false, 8, 4e5, 7700, DockedPorts: 2))).SequenceEqual(new[] { "sequence:8" }), "the next stage of the new list counts");
+});
+
+Check("world: marks are counted in order", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    Expect(WorldNames(detector.Update(0.0, new VehicleSample(false, true, 0, 0, 0, Marks: 1))).SequenceEqual(new[] { "mark" }), "first mark at the start");
+    Expect(detector.Update(1.0, Sample()).Count == 0, "no mark");
+    Expect(WorldNames(detector.Update(2.0, new VehicleSample(false, true, 0, 0, 0, Marks: 2))).SequenceEqual(new[] { "mark:2", "mark:3" }), "two marks in one frame");
+    Expect(detector.Seen["mark:3"] == 2.0, "the time of the frame");
+});
+
+Check("world: events have plain names for the player", () =>
+{
+    foreach ((string text, string shown) in new[]
+    {
+        ("ignition", "Ignition"), ("ignition:2", "Ignition 2"), ("liftoff", "Lift-off"), ("burnout:2", "Burnout 2"),
+        ("sequence:3", "Stage 3"), ("altitude:5000", "Altitude 5 km"), ("altitude:12500", "Altitude 12.5 km"), ("altitude:800", "Altitude 800 m"),
+        ("speed:300", "Speed 300 m/s"), ("landed", "Landed"), ("soi:2", "SOI change 2"), ("apoapsis", "Apoapsis"),
+        ("periapsis:3", "Periapsis 3"), ("docked", "Docked"), ("undocked:2", "Undocked 2"), ("mark:3", "Mark 3"), ("Liftoff", "Lift-off"),
+        ("fairing", "fairing"), ("not an event:x", "not an event:x"), ("", ""),
+    })
+        Expect(EventDisplay.Name(text) == shown, $"{text} shows as \"{EventDisplay.Name(text)}\", not \"{shown}\"");
 });
 
 #endregion
