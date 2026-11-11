@@ -733,6 +733,344 @@ Check("detector: watched events come from the triggers and aliases", () =>
 
 #endregion
 
+#region Take director
+
+WorldSample World(VehicleSample sample, double x = 0.0) => new()
+{
+    Vehicle = sample,
+    VehicleFrame = new Basis3(new V3(x, 0, 0), V3.UnitX, V3.UnitY, V3.UnitZ),
+    VehicleHeight = 40.0,
+};
+
+const string DirectorFile = """
+{
+  "hideUi": true,
+  "syncFlash": true,
+  "camera": [
+    { "type": "tripod", "position": [3, -60, -45], "lookAt": [15, 0, 0], "duration": 5, "fov": 30 },
+    { "type": "tripod", "position": [3, 60, 45], "lookAt": [15, 0, 0], "duration": 5, "fov": 50, "at": { "event": "ignition" } }
+  ],
+  "speed": [ { "at": { "event": "ignition" }, "to": 0.25, "ramp": 0.5 } ]
+}
+""";
+
+Check("director: the first shot plays and the second waits for ignition", () =>
+{
+    ShotFile file = ShotFileJson.Parse(DirectorFile).File;
+    Expect(file.HideUi && file.SyncFlash, "file flags are read");
+    var director = new TakeDirector(file.DefaultTake, file);
+    var f0 = director.Update(0.0, World(Sample()));
+    Expect(f0.Pose.HasValue && f0.Pose.Value.Frame == PoseFrame.Site, "pose in the site frame");
+    Expect(f0.ShotIndex == 0 && Near(f0.Pose!.Value.Fov, 30), "first shot");
+    Expect(!f0.SpeedActive, "the speed is left alone before the first key");
+    var f1 = director.Update(7.0, World(Sample()));
+    Expect(f1.ShotIndex == 0 && !f1.Finished, "the first shot holds and the take waits");
+    var f2 = director.Update(8.0, World(Sample(engine: true)));
+    Expect(f2.ShotIndex == 1 && f2.NewEvents.Any(e => e.Name == "ignition"), "second shot on ignition");
+    Expect(f2.SpeedActive && f2.StartedSpeedKeys.Contains(0), "speed key started");
+    var f3 = director.Update(8.6, World(Sample(engine: true)));
+    Expect(Near(f3.TargetSpeed, 0.25, 1e-6), "speed ramp done: " + f3.TargetSpeed);
+    var f4 = director.Update(13.1, World(Sample(engine: true)));
+    Expect(f4.Finished, "finished after the last shot");
+});
+
+Check("director: a chase shot follows the vehicle frame", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "chase", "offset": [-10, 5, 0], "lookAt": [0, 0, 0], "duration": 5, "smoothing": 0 } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    var pose = director.Update(0.0, World(Sample(), x: 100.0)).Pose!.Value;
+    Expect(Near3(pose.Position, new V3(90, 5, 0)), "offset behind the base: " + pose.Position);
+    Expect(Near3(pose.LookAt, new V3(100, 0, 0)), "look at the base: " + pose.LookAt);
+    Expect(Near3(pose.Up, V3.UnitX), "up is the vehicle axis");
+});
+
+Check("director: a part shot warns once when the part is missing", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "part", "part": "Engine", "offset": [1, 1, 1], "duration": 5 } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    var world = World(Sample());
+    Expect(director.Update(0.0, world).Warnings.Count == 1, "one warning");
+    Expect(director.Update(0.1, world).Warnings.Count == 0, "not again");
+    world.PartLookup = id => id == "Engine" ? new V3(5, 0, 0) : null;
+    var pose = director.Update(0.2, world).Pose!.Value;
+    Expect(Near3(pose.Position, new V3(6, 1, 1)), "relative to the part: " + pose.Position);
+});
+
+Check("director: a negative delay on an altitude event uses the prediction", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 100, "fov": 30 },
+                  { "type": "tripod", "position": [4,5,6], "lookAt": [0,0,0], "duration": 5, "fov": 50, "at": { "event": "altitude:1000", "delay": -2 } } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    int shotAt = -1;
+    for (int i = 0; i <= 100; i++)
+    {
+        var frame = director.Update(i * 0.1, World(Sample(altitude: i * 10.0)));
+        if (frame.ShotIndex == 1 && shotAt < 0)
+            shotAt = i;
+    }
+
+    Expect(shotAt > 70 && shotAt < 100, "the second shot started about 2 s before the altitude: frame " + shotAt);
+});
+
+Check("shot file: hideUi and syncFlash are written back", () =>
+{
+    ShotFile file = ShotFileJson.Parse(DirectorFile).File;
+    ShotFile again = ShotFileJson.Parse(ShotFileJson.Write(file)).File;
+    Expect(again.HideUi && again.SyncFlash, "both flags survive");
+    Expect(!ShotFileJson.Parse(DefaultShotFile.Json).File.HideUi, "off by default");
+});
+
+#endregion
+
+
+#region Camera features: keep-out, look point blend, fit, flight frame, counted events
+
+KeepOutBox Box(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, string name = "deck") =>
+    new() { Name = name, Min = new V3(minX, minY, minZ), Max = new V3(maxX, maxY, maxZ) };
+
+Check("keep-out: a point inside a box moves to the nearest face plus the margin", () =>
+{
+    KeepOutBox box = Box(-10, -20, -30, 10, 20, 30);
+    // Nearest face of each point, in the order top, -Y, +Y, -Z, +Z.
+    V3 top = KeepOutMath.Push(box, new V3(9, 0, 0), out string f1);
+    Expect(f1 == "top" && Near3(top, new V3(11, 0, 0)), "top " + top);
+    V3 minusY = KeepOutMath.Push(box, new V3(0, -19, 0), out string f2);
+    Expect(f2 == "-Y" && Near3(minusY, new V3(0, -21, 0)), "-Y " + minusY);
+    V3 plusY = KeepOutMath.Push(box, new V3(0, 18, 0), out string f3);
+    Expect(f3 == "+Y" && Near3(plusY, new V3(0, 21, 0)), "+Y " + plusY);
+    V3 minusZ = KeepOutMath.Push(box, new V3(0, 0, -28), out string f4);
+    Expect(f4 == "-Z" && Near3(minusZ, new V3(0, 0, -31)), "-Z " + minusZ);
+    V3 plusZ = KeepOutMath.Push(box, new V3(0, 0, 29), out string f5);
+    Expect(f5 == "+Z" && Near3(plusZ, new V3(0, 0, 31)), "+Z " + plusZ);
+});
+
+Check("keep-out: the bottom face is never used, a point near it goes to another face", () =>
+{
+    KeepOutBox box = Box(-10, -20, -30, 10, 20, 30);
+    V3 near = new(-9.5, 0, 0);
+    V3 pushed = KeepOutMath.Push(box, near, out string face);
+    Expect(face != "" && pushed.X >= box.Min.X, "the point did not leave through the bottom: " + pushed);
+    Expect(!KeepOutMath.Contains(box, pushed) || face == "", "the point is outside after the push");
+    V3 outside = new(50, 0, 0);
+    Expect(KeepOutMath.Push(box, outside, out string none) == outside && none == "", "a point outside stays");
+});
+
+Check("keep-out: boxes are applied in turn, far cameras are left alone and a take list wins over the file", () =>
+{
+    var boxes = new List<KeepOutBox> { Box(0, 0, 0, 10, 10, 10, "a"), Box(0, 10.5, 0, 10, 20, 10, "b") };
+    V3 moved = KeepOutMath.Apply(boxes, new V3(5, 9.6, 5), out KeepOutBox? first, out _);
+    Expect(first?.Name == "a" && boxes.All(b => !KeepOutMath.Contains(b, moved)), "pushed out of both: " + moved);
+    V3 far = new(5, 9.6 + 10000, 5);
+    Expect(KeepOutMath.Apply(new[] { Box(-1e9, -1e9, -1e9, 1e9, 1e9, 1e9) }, far, out KeepOutBox? none, out _) == far && none == null, "far from the site");
+
+    ShotFile file = ShotFileJson.Parse("""
+    { "keepOut": [ { "min": [-5, -5, -5], "max": [0, 5, 5], "name": "deck" } ],
+      "takes": [
+        { "name": "a", "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5 } ] },
+        { "name": "b", "keepOut": [], "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5 } ] },
+        { "name": "c", "keepOut": [ { "min": [0,0,0], "max": [1,1,1] } ], "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5 } ] } ] }
+    """).File;
+    Expect(file.KeepOutFor(file.FindTake("a")!).Count == 1 && file.KeepOutFor(file.FindTake("a")!)[0].Name == "deck", "file list");
+    Expect(file.KeepOutFor(file.FindTake("b")!).Count == 0, "an empty take list turns the boxes off");
+    Expect(file.KeepOutFor(file.FindTake("c")!).Count == 1 && file.KeepOutFor(file.FindTake("c")!)[0].Name == "", "take list wins");
+    string text = ShotFileJson.Write(file);
+    Expect(ShotFileJson.Write(ShotFileJson.Parse(text).File) == text, "keepOut round trips");
+    Expect(ExpectInvalid("""{ "keepOut": [ { "min": [1,0,0], "max": [0,1,1] } ], "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5 } ] }""").FieldPath == "keepOut[0].min", "min above max");
+    Expect(ExpectInvalid("""{ "keepOut": [ { "min": [0,0,0] } ], "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5 } ] }""").FieldPath == "keepOut[0].max", "max is required");
+});
+
+Check("keep-out: the director moves the camera, keeps the look point and reports once per shot", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "keepOut": [ { "min": [-30, -30, -30], "max": [0, 30, 30], "name": "deck" } ],
+      "camera": [ { "type": "tripod", "position": [-5, 0, 2], "lookAt": [20, 0, 0], "duration": 5 } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    DirectorFrame f0 = director.Update(0.0, World(Sample()));
+    Expect(Near3(f0.Pose!.Value.Position, new V3(1, 0, 2)), "moved to the top face: " + f0.Pose.Value.Position);
+    Expect(Near3(f0.Pose.Value.LookAt, new V3(20, 0, 0)), "look point stays");
+    Expect(f0.Notes.Count == 1 && f0.Notes[0].Contains("deck"), "one note");
+    DirectorFrame f1 = director.Update(0.1, World(Sample()));
+    Expect(f1.Notes.Count == 0, "reported once");
+});
+
+Check("blend: the look point is mixed, so a subject that both shots look at stays in the middle of the picture", () =>
+{
+    var a = new CameraPose(PoseFrame.Site, new V3(0, -100, 50), new V3(0, 0, 0), V3.UnitX, 30);
+    var b = new CameraPose(PoseFrame.Site, new V3(0, 100, 50), new V3(0, 0, 0), V3.UnitX, 50);
+    CameraPose mid = PoseMath.Blend(a, b, 0.5);
+    Expect(Near3(mid.LookAt, V3.Zero), "the shared look point is kept: " + mid.LookAt);
+    // The old direction turn would look sideways from a position in the middle.
+    var c = new CameraPose(PoseFrame.Site, new V3(0, -100, 0), new V3(0, 0, 0), V3.UnitX, 30);
+    var d = new CameraPose(PoseFrame.Site, new V3(0, -100, 1000), new V3(0, 0, 1000), V3.UnitX, 30);
+    CameraPose m2 = PoseMath.Blend(c, d, 0.25, curved: false);
+    Expect(Near3(m2.LookAt, new V3(0, 0, 250)) && Near3(m2.Position, new V3(0, -100, 250)), "point and position move with the same weight");
+    CameraPose end = PoseMath.Blend(c, d, 1.0);
+    Expect(Near3(end.LookAt, d.LookAt) && Near3(end.Position, d.Position), "weight 1 is the second pose");
+});
+
+Check("blend: a pose without a look point falls back to the direction turn", () =>
+{
+    var a = new CameraPose(PoseFrame.Site, new V3(0, 0, 0), new V3(0, 0, 0), V3.UnitX, 30);
+    var b = new CameraPose(PoseFrame.Site, new V3(0, 10, 0), new V3(0, 10, 10), V3.UnitX, 30);
+    CameraPose mid = PoseMath.Blend(a, b, 0.5);
+    Expect(!double.IsNaN(mid.LookAt.X) && (mid.LookAt - mid.Position).Length > 0.0, "defined look: " + mid.LookAt);
+    V3 dir = (mid.LookAt - mid.Position).NormalizedOr(V3.Zero);
+    double h = Math.Sqrt(0.5);
+    Expect(Near3(dir, new V3(h, 0, h)), "a turn from the default direction to the look direction of the second pose: " + dir);
+});
+
+Check("fit: the field of view follows the distance and is limited to 5 to 90 degrees", () =>
+{
+    // A vehicle of 40 m by 0 m that should fill half of the picture at 100 m: tan(fov/2) = 40 / (2 * 100 * 0.5) = 0.4.
+    double fov = PoseMath.FitFov(40.0, 0.0, 100.0, 0.5);
+    Expect(Near(fov, 2.0 * Math.Atan(0.4) * 180.0 / Math.PI, 1e-9), "fov " + fov);
+    Expect(Near(PoseMath.FitFov(40.0, 0.0, 1e6, 0.7), PoseMath.FitMinFov), "far away is limited to 5");
+    Expect(Near(PoseMath.FitFov(40.0, 0.0, 1.0, 0.1), PoseMath.FitMaxFov), "very near is limited to 90");
+    Expect(PoseMath.FitFov(40.0, 5.0, 100.0, 0.5) > fov, "the width makes the frame wider");
+
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [
+        { "type": "chase", "offset": [-100, 0, 0], "lookAt": [20, 0, 0], "duration": 5, "fit": 0.5, "smoothing": 0 },
+        { "type": "part", "offset": [-100, 0, 0], "duration": 5, "fit": "off" },
+        { "type": "track", "position": [20, -100, 0], "duration": 5, "fit": 0.7 },
+        { "type": "path", "duration": 5, "fit": 0.6, "points": [ { "t": 0, "position": [20, -100, 0], "lookAt": [20, 0, 0], "fov": 80 } ] } ] }
+    """).File;
+    Expect(file.DefaultTake.Shots[0].Fit == 0.5 && file.DefaultTake.Shots[1].Fit == null && file.DefaultTake.Shots[2].Fit == 0.7 && file.DefaultTake.Shots[3].Fit == 0.6, "fit is read");
+    string text = ShotFileJson.Write(file);
+    Expect(ShotFileJson.Write(ShotFileJson.Parse(text).File) == text && text.Contains("\"fit\": 0.5"), "fit round trips");
+    Expect(ExpectInvalid("""{ "camera": [ { "type": "chase", "offset": [1,0,0], "duration": 5, "fit": 7 } ] }""").FieldPath == "camera[0].fit", "fit out of range");
+
+    var director = new TakeDirector(file.DefaultTake, file);
+    var world = World(Sample());
+    world.VehicleHeight = 40.0;
+    world.VehicleWidth = 4.0;
+    CameraPose chase = director.Update(0.0, world).Pose!.Value;
+    double distance = (new V3(20, 0, 0) - new V3(-100, 0, 0)).Length;
+    Expect(Near(chase.Fov, PoseMath.FitFov(40.0, 4.0, distance, 0.5), 1e-6), "the chase shot fits the vehicle: " + chase.Fov);
+});
+
+Check("flight frame: +Z along the horizontal velocity, +X up, right handed, north below a few m/s", () =>
+{
+    // A body centre below the origin: up is +X. The pole is +Z, so north is +Z.
+    V3 centre = new(-6.4e6, 0, 0);
+    V3 pole = V3.UnitZ;
+    V3 east = V3.UnitY;
+    Basis3 f = LocalHorizon.FlightFrame(new V3(1000, 0, 0), centre, pole, east);
+    Expect(Near3(f.X, V3.UnitX) && Near3(f.Z, east), "up and flight axis");
+    Expect(Near3(V3.Cross(f.X, f.Y), f.Z, 1e-9) && Near(f.Y.Length, 1.0), "right handed: " + f.Y);
+    Expect(Near3(f.Y, new V3(0, 0, -1)), "+Y is Z cross X: " + f.Y);
+
+    // A heading with a vertical part is projected on the horizontal plane.
+    Basis3 tilted = LocalHorizon.FlightFrame(new V3(1000, 0, 0), centre, pole, new V3(5, 3, 0));
+    Expect(Near3(tilted.Z, V3.UnitY), "the vertical part is dropped: " + tilted.Z);
+
+    // No heading falls back to the local frame (north).
+    Basis3 none = LocalHorizon.FlightFrame(new V3(1000, 0, 0), centre, pole, null);
+    Expect(Near3(none.Z, V3.UnitZ) && Near3(none.Y, LocalHorizon.Frame(new V3(1000, 0, 0), centre, pole).Y), "north without a heading");
+
+    V3 up = V3.UnitX, north = V3.UnitZ;
+    Expect(Near3(FlightHeading.Raw(up, north, new V3(300, 1.0, 0.5)), north), "below 2 m/s horizontal: north");
+    Expect(Near3(FlightHeading.Raw(up, north, new V3(300, 100, 0)), V3.UnitY, 1e-9), "above 6 m/s: the direction of the velocity");
+    V3 between = FlightHeading.Raw(up, north, new V3(0, 4, 0));
+    Expect(Near(between.Length, 1.0) && between.Y > 0.0 && between.Z > 0.0 && Near(between.X, 0.0), "between: a mix " + between);
+    Expect(Near3(FlightHeading.Raw(up, north, new V3(300, -50, 0)), -V3.UnitY, 1e-9), "a velocity against north-east axes works too");
+});
+
+Check("flight frame: the smoothed heading starts at the velocity and follows a turn without a jump", () =>
+{
+    var heading = new FlightHeading();
+    V3 up = V3.UnitX, north = V3.UnitZ;
+    V3 first = heading.Update(up, north, new V3(0, 50, 0), 0.0);
+    Expect(Near3(first, V3.UnitY), "first frame " + first);
+    V3 step = heading.Update(up, north, new V3(0, 0, 50), 1.0 / 60.0);
+    Expect(step.Y > 0.9, "one frame after a sudden turn the heading has hardly moved: " + step);
+    V3 later = V3.UnitY;
+    for (int i = 0; i < 600; i++)
+        later = heading.Update(up, north, new V3(0, 0, 50), 1.0 / 60.0);
+    Expect(Near3(later, V3.UnitZ, 1e-3), "after ten seconds it has turned: " + later);
+});
+
+Check("flight frame: a chase shot with the flight frame puts +Z ahead along the velocity and keeps the Earth below", () =>
+{
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "chase", "frame": "flight", "offset": [10, 0, 80], "lookAt": [0, 0, 0], "duration": 5, "smoothing": 0 } ] }
+    """).File;
+    Shot shot = file.DefaultTake.Shots[0];
+    Expect(shot.Frame == ShotFrame.Flight && shot.UsesFlightFrame && shot.EffectiveUp == ShotUp.Horizon, "flight frame is read with the horizon up");
+    Expect(ShotFileJson.Write(file).Contains("\"frame\": \"flight\""), "written back");
+
+    var director = new TakeDirector(file.DefaultTake, file);
+    var world = World(Sample());
+    world.BodyCentre = new V3(-6.4e6, 0, 0);
+    world.Pole = V3.UnitZ;
+    world.SurfaceVelocity = new V3(200, 300, 0);
+    CameraPose pose = director.Update(0.0, world).Pose!.Value;
+    // The vehicle base is at the origin, the horizontal velocity is east (+Y), so +Z of the frame is +Y of the site.
+    Expect(Near3(pose.Position, new V3(10, 80, 0), 1e-6), "the camera is ahead of the vehicle along the flight: " + pose.Position);
+    Expect(Near3(pose.Up, V3.UnitX, 1e-4), "the up is away from the body");
+    Expect(Near3(director.Heading!.Value, V3.UnitY, 1e-6), "the heading is exposed");
+
+    world.SurfaceVelocity = new V3(0, 0.5, 0);
+    var slow = new TakeDirector(file.DefaultTake, file);
+    world.BodyCentre = new V3(-6.4e6, 0, 0);
+    CameraPose still = slow.Update(0.0, world).Pose!.Value;
+    Expect(Near3(still.Position, new V3(10, 0, 80), 1e-6), "north without horizontal speed: " + still.Position);
+});
+
+Check("counted events: names parse and print, the first one has no number", () =>
+{
+    Expect(EventName.TryParse("ignition:2", out EventName second, out _) && second.Canonical == "ignition:2" && second.Kind == EventKind.Ignition, "ignition:2");
+    Expect(EventName.TryParse("ignition:1", out EventName one, out _) && one.Canonical == "ignition", "ignition:1 is ignition");
+    Expect(EventName.TryParse("Burnout:3", out EventName third, out _) && third.Canonical == "burnout:3", "burnout:3");
+    Expect(EventName.TryParse("ignition", out EventName plain, out _) && plain.Canonical == "ignition", "plain ignition");
+    Expect(!EventName.TryParse("ignition:0", out _, out _) && !EventName.TryParse("burnout:x", out _, out _) && !EventName.TryParse("ignition:1.5", out _, out _), "bad counts");
+    Expect(!EventName.TryParse("liftoff:2", out _, out string error) && error.Contains("liftoff"), "liftoff takes no number");
+});
+
+Check("counted events: hot staging gives ignition:2 when the upper stage lights while the lower stage burns", () =>
+{
+    var detector = new EventDetector(Array.Empty<EventName>());
+    VehicleSample S(bool engine, int fresh = 0) => new(engine, false, 0, 100, 10, null, fresh);
+    detector.Update(0.0, S(false));
+    var first = detector.Update(1.0, S(true, fresh: 1));
+    Expect(first.Count == 1 && first[0].Name == "ignition", "ignition");
+    Expect(detector.Update(1.4, S(true, fresh: 2)).Count == 0, "engines of the same stage that light a moment later belong to ignition 1");
+    Expect(detector.Update(10.0, S(true)).Count == 0, "nothing while the engines burn");
+    var hot = detector.Update(45.0, S(true, fresh: 1));
+    Expect(hot.Count == 1 && hot[0].Name == "ignition:2", "the upper stage lights: " + string.Join(",", hot.Select(e => e.Name)));
+    Expect(detector.Update(46.0, S(true)).Count == 0, "no repeat");
+    var end = detector.Update(90.0, S(false));
+    Expect(end.Count == 1 && end[0].Name == "burnout", "the first time the engines go off");
+    var relight = detector.Update(95.0, S(true, fresh: 1));
+    Expect(relight.Count == 1 && relight[0].Name == "ignition:3", "a third ignition");
+    var off2 = detector.Update(99.0, S(false));
+    Expect(off2.Count == 1 && off2[0].Name == "burnout:2", "the second burnout");
+});
+
+Check("counted events: the triggers and the watched list know the counted names", () =>
+{
+    Take take = ParseTake("""
+    { "events": { "upper": "ignition:2" },
+      "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5, "at": { "event": "upper", "delay": 1 } },
+                  { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 5, "at": { "event": "burnout:2" } } ] }
+    """, out ShotFile file);
+    var timeline = new TimelineRunner(take, file.Events);
+    TimelineState state = timeline.Update(5.0, Events(("ignition", 1.0)));
+    Expect(state.ShotIndex == -1 && timeline.ShotStart(1) == null, "no shot starts before ignition:2: " + state.ShotIndex);
+    Expect(timeline.ShotStart(0) == null, "not started before the event");
+    state = timeline.Update(50.0, Events(("ignition", 1.0), ("ignition:2", 40.0)));
+    Expect(timeline.ShotStart(0) is double start && Near(start, 41.0), "starts one second after ignition:2");
+});
+
+#endregion
+
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;
 
