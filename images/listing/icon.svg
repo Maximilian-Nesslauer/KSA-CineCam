@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#070b14"/>
+      <stop offset="0.62" stop-color="#10233b"/>
+      <stop offset="1" stop-color="#1d4763"/>
+    </linearGradient>
+    <linearGradient id="plume" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#ff7a2f" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffb347" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#ffb347" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#sky)"/>
+
+  <g fill="#dfe8f2">
+    <circle cx="70" cy="96" r="2.5"/><circle cx="148" cy="52" r="2"/><circle cx="412" cy="74" r="2.5"/>
+    <circle cx="452" cy="178" r="2"/><circle cx="96" cy="214" r="2"/><circle cx="356" cy="132" r="1.8"/>
+    <circle cx="214" cy="104" r="1.8"/><circle cx="438" cy="286" r="2"/>
+  </g>
+
+  <!-- The rocket, tilted into its ascent. -->
+  <g transform="translate(262 232) rotate(24)">
+    <ellipse cx="0" cy="118" rx="62" ry="62" fill="url(#glow)"/>
+    <path d="M-17 92 L17 92 L8 214 L-8 214 Z" fill="url(#plume)"/>
+    <path d="M-26 92 L-26 -62 Q-26 -116 0 -150 Q26 -116 26 -62 L26 92 Z" fill="#eef2f6"/>
+    <path d="M0 -150 Q26 -116 26 -62 L26 92 L4 92 L4 -146 Z" fill="#c3ccd6"/>
+    <rect x="-26" y="-6" width="52" height="14" fill="#1b2430"/>
+    <path d="M-26 44 L-50 96 L-26 92 Z" fill="#9aa6b3"/>
+    <path d="M26 44 L50 96 L26 92 Z" fill="#7f8b98"/>
+    <path d="M-15 92 L15 92 L20 108 L-20 108 Z" fill="#3a4654"/>
+  </g>
+
+  <!-- The viewfinder. -->
+  <g fill="none" stroke="#f2f5f8" stroke-width="12" stroke-linecap="square">
+    <path d="M52 124 V52 H124"/>
+    <path d="M388 52 H460 V124"/>
+    <path d="M52 340 V412 H124"/>
+    <path d="M388 412 H460 V340"/>
+  </g>
+  <circle cx="412" cy="100" r="15" fill="#ff4a3d"/>
+
+  <!-- The timeline with its keys. -->
+  <rect x="52" y="446" width="408" height="8" rx="4" fill="#f2f5f8" opacity="0.35"/>
+  <rect x="52" y="446" width="186" height="8" rx="4" fill="#ffb347"/>
+  <g fill="#f2f5f8">
+    <path d="M120 436 L134 450 L120 464 L106 450 Z"/>
+    <path d="M330 436 L344 450 L330 464 L316 450 Z" opacity="0.7"/>
+    <path d="M412 436 L426 450 L412 464 L398 450 Z" opacity="0.7"/>
+  </g>
+  <path d="M238 432 L252 450 L238 468 L224 450 Z" fill="#ffb347"/>
+</svg>
