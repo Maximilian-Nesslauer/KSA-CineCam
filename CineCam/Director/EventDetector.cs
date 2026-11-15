@@ -9,7 +9,9 @@ namespace CineCam.Director;
 /// shows. <see cref="RadialSpeed"/> is in meters per second away from the center of <see cref="Body"/>.
 /// <see cref="StableOrbit"/> on a body without an atmosphere also needs the periapsis above the
 /// highest terrain. <see cref="VehicleChanged"/> is true in the first sample after the take moved to
-/// another vehicle object, which the game makes when vehicles dock or undock.
+/// another vehicle object, which the game makes when vehicles dock or undock. <see cref="Ground"/> is the height in
+/// meters of the lowest point of the vehicle over the terrain or the sea under it (see <see cref="GroundClearance"/>),
+/// or null when it is not known.
 /// </summary>
 public readonly record struct VehicleSample(
     bool EngineOn,
@@ -25,17 +27,20 @@ public readonly record struct VehicleSample(
     bool OutsideAtmosphere = false,
     int DockedPorts = 0,
     int Marks = 0,
-    bool VehicleChanged = false);
+    bool VehicleChanged = false,
+    double? Ground = null);
 
 public sealed record DetectedEvent(string Name, double TakeTime, string Detail);
 
 /// <summary>
 /// Turns the per-frame samples of the vehicle into the events of the shot file, each reported once,
-/// and predicts the altitude and speed events so that a shot can start before them.
+/// and predicts the altitude, speed, ground and slow events so that a shot can start before them. A ground or
+/// slow event comes the first time its value falls to the target after the take saw it above the target, so a
+/// vehicle that is already low or slow at the start does not give the event until it rose above the target.
 /// </summary>
 public sealed class EventDetector
 {
-    // The rate of altitude and speed is smoothed over about this many seconds.
+    // The rate of altitude, speed and the height over the ground is smoothed over about this many seconds.
     private const double RateTimeConstant = 0.5;
 
     // An engine that runs for less time than this does not count toward a burnout.
@@ -62,6 +67,9 @@ public sealed class EventDetector
 
     private readonly List<double> _altitudeTargets = new();
     private readonly List<double> _speedTargets = new();
+    private readonly List<double> _groundTargets = new();
+    private readonly List<double> _slowTargets = new();
+    private readonly HashSet<string> _above = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _seen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _predictions = new(StringComparer.Ordinal);
 
@@ -74,6 +82,8 @@ public sealed class EventDetector
     private double _lastSpeed;
     private double _altitudeRate;
     private double _speedRate;
+    private double? _lastGround;
+    private double _groundRate;
     private double _engineOnSince;
     private double _lastIgnition;
     private int _ignitions;
@@ -100,13 +110,17 @@ public sealed class EventDetector
                 _altitudeTargets.Add(name.Value);
             else if (name.Kind == EventKind.Speed && !_speedTargets.Contains(name.Value))
                 _speedTargets.Add(name.Value);
+            else if (name.Kind == EventKind.Ground && !_groundTargets.Contains(name.Value))
+                _groundTargets.Add(name.Value);
+            else if (name.Kind == EventKind.Slow && !_slowTargets.Contains(name.Value))
+                _slowTargets.Add(name.Value);
         }
     }
 
     /// <summary>Canonical event names and the take time at which each was first seen.</summary>
     public IReadOnlyDictionary<string, double> Seen => _seen;
 
-    /// <summary>Canonical names of altitude and speed events and the seconds until each, from the last update.</summary>
+    /// <summary>Canonical names of the predictable events and the seconds until each, from the last update.</summary>
     public IReadOnlyDictionary<string, double> Predictions => _predictions;
 
     public static List<EventName> Watched(Take take, IReadOnlyDictionary<string, string> aliases)
@@ -135,6 +149,7 @@ public sealed class EventDetector
             _lastSequence = sample.ActiveSequence;
             _lastAltitude = sample.Altitude;
             _lastSpeed = sample.Speed;
+            _lastGround = sample.Ground;
             if (sample.EngineOn)
             {
                 _engineOnSince = takeTime;
@@ -221,6 +236,8 @@ public sealed class EventDetector
                 double blend = 1.0 - Math.Exp(-dt / RateTimeConstant);
                 _altitudeRate += ((sample.Altitude - _lastAltitude) / dt - _altitudeRate) * blend;
                 _speedRate += ((sample.Speed - _lastSpeed) / dt - _speedRate) * blend;
+                if (sample.Ground is double ground && _lastGround is double lastGround)
+                    _groundRate += ((ground - lastGround) / dt - _groundRate) * blend;
             }
         }
 
@@ -234,12 +251,17 @@ public sealed class EventDetector
             Reach(found, "altitude", target, sample.Altitude, _altitudeRate, takeTime);
         foreach (double target in _speedTargets)
             Reach(found, "speed", target, sample.Speed, _speedRate, takeTime);
+        foreach (double target in _groundTargets)
+            Fall(found, new EventName(EventKind.Ground, target).Canonical, target, sample.Ground, _groundRate, takeTime);
+        foreach (double target in _slowTargets)
+            Fall(found, new EventName(EventKind.Slow, target).Canonical, target, sample.Speed, _speedRate, takeTime);
 
         _wasEngineOn = sample.EngineOn;
         _wasContact = sample.Contact;
         _lastSequence = Math.Max(_lastSequence, sample.ActiveSequence);
         _lastAltitude = sample.Altitude;
         _lastSpeed = sample.Speed;
+        _lastGround = sample.Ground;
         _lastTime = takeTime;
         return found;
     }
@@ -323,6 +345,33 @@ public sealed class EventDetector
             _predictions[name] = seconds.Value;
         else
             _predictions.Remove(name);
+    }
+
+    // A sample without the value neither arms nor fires the event.
+    private void Fall(List<DetectedEvent> found, string name, double target, double? value, double rate, double takeTime)
+    {
+        if (_seen.ContainsKey(name))
+            return;
+        if (value is not double current)
+        {
+            _predictions.Remove(name);
+            return;
+        }
+
+        if (current > target)
+        {
+            _above.Add(name);
+            double? seconds = EventPrediction.SecondsUntilFall(current, target, rate);
+            if (seconds.HasValue)
+                _predictions[name] = seconds.Value;
+            else
+                _predictions.Remove(name);
+            return;
+        }
+
+        _predictions.Remove(name);
+        if (_above.Contains(name))
+            Add(found, name, takeTime, "");
     }
 
     private void CountIgnition(List<DetectedEvent> found, double takeTime, string detail)

@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace CineCam.Director;
 
-public enum EventKind { Ignition, Liftoff, Burnout, Sequence, Altitude, Speed, Landed, Soi, Apoapsis, Periapsis, Docked, Undocked, Mark }
+public enum EventKind { Ignition, Liftoff, Burnout, Sequence, Altitude, Speed, Landed, Soi, Apoapsis, Periapsis, Docked, Undocked, Mark, Ground, Slow }
 
 /// <summary>
 /// A parsed canonical event name. For a counted event (ignition, burnout, landed, soi, apoapsis,
@@ -11,7 +11,13 @@ public enum EventKind { Ignition, Liftoff, Burnout, Sequence, Altitude, Speed, L
 /// </summary>
 public readonly record struct EventName(EventKind Kind, double Value)
 {
-    public bool IsPredictable => Kind is EventKind.Altitude or EventKind.Speed;
+    public bool IsPredictable => Kind is EventKind.Altitude or EventKind.Speed or EventKind.Ground or EventKind.Slow;
+
+    /// <summary>
+    /// True for an event that comes when its value falls to the target: the height over the ground and the
+    /// slow speed. Such an event needs the value above the target first.
+    /// </summary>
+    public bool IsFalling => Kind is EventKind.Ground or EventKind.Slow;
 
     public string Canonical => Kind switch
     {
@@ -21,6 +27,8 @@ public readonly record struct EventName(EventKind Kind, double Value)
         EventKind.Sequence => "sequence:" + Value.ToString("0", CultureInfo.InvariantCulture),
         EventKind.Altitude => "altitude:" + Value.ToString("R", CultureInfo.InvariantCulture),
         EventKind.Speed => "speed:" + Value.ToString("R", CultureInfo.InvariantCulture),
+        EventKind.Ground => "ground:" + Value.ToString("R", CultureInfo.InvariantCulture),
+        EventKind.Slow => "slow:" + Value.ToString("R", CultureInfo.InvariantCulture),
         _ => Counted(CountedHead(Kind), Value),
     };
 
@@ -58,7 +66,10 @@ public readonly record struct EventName(EventKind Kind, double Value)
     public static string Counted(string head, double count) =>
         count < 1.5 ? head : head + ":" + count.ToString("0", CultureInfo.InvariantCulture);
 
-    /// <summary>The names are case insensitive. Altitude is in meters and speed in meters per second.</summary>
+    /// <summary>
+    /// The names are case insensitive. Altitude and the height over the ground are in meters, and speed is in
+    /// meters per second.
+    /// </summary>
     public static bool TryParse(string? text, out EventName name, out string error)
     {
         name = default;
@@ -99,7 +110,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
                 name = new EventName(countedKind, count);
                 return true;
             }
-            case "sequence" or "altitude" or "speed":
+            case "sequence" or "altitude" or "speed" or "ground" or "slow":
                 if (!double.TryParse(tail, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
                     || double.IsNaN(value) || double.IsInfinity(value))
                 {
@@ -113,11 +124,29 @@ public readonly record struct EventName(EventKind Kind, double Value)
                     return false;
                 }
 
-                name = new EventName(head == "sequence" ? EventKind.Sequence
-                    : head == "altitude" ? EventKind.Altitude : EventKind.Speed, value);
+                if (head == "ground" && value < 0)
+                {
+                    error = "the height over the ground is 0 or more meters";
+                    return false;
+                }
+
+                if (head == "slow" && value <= 0)
+                {
+                    error = "the speed of \"slow\" is more than 0 meters per second, because a vehicle seldom stands fully still";
+                    return false;
+                }
+
+                name = new EventName(head switch
+                {
+                    "sequence" => EventKind.Sequence,
+                    "altitude" => EventKind.Altitude,
+                    "speed" => EventKind.Speed,
+                    "ground" => EventKind.Ground,
+                    _ => EventKind.Slow,
+                }, value);
                 return true;
             default:
-                error = $"unknown event \"{trimmed}\" (known: ignition, liftoff, burnout, landed, soi, apoapsis, periapsis, docked, undocked and mark, each counted with :N, and sequence:N, altitude:M, speed:V, or an alias from \"events\")";
+                error = $"unknown event \"{trimmed}\" (known: ignition, liftoff, burnout, landed, soi, apoapsis, periapsis, docked, undocked and mark, each counted with :N, and sequence:N, altitude:M, speed:V, ground:M, slow:V, or an alias from \"events\")";
                 return false;
         }
     }
@@ -146,6 +175,10 @@ public static class EventPrediction
             return null;
         return distance / rate;
     }
+
+    /// <summary>Seconds until a value that changes at a constant rate falls to a target, or null when it rises or stands still.</summary>
+    public static double? SecondsUntilFall(double current, double target, double rate) =>
+        SecondsUntil(-current, -target, -rate);
 }
 
 /// <summary>Player-facing names of events, for the window and the timeline.</summary>
@@ -165,6 +198,8 @@ public static class EventDisplay
             EventKind.Sequence => "Stage " + Whole(name.Value),
             EventKind.Altitude => "Altitude " + Distance(name.Value),
             EventKind.Speed => "Speed " + Short(name.Value) + " m/s",
+            EventKind.Ground => "Over ground " + Distance(name.Value),
+            EventKind.Slow => "Slow to " + Short(name.Value) + " m/s",
             EventKind.Landed => Counted("Landed", name.Value),
             EventKind.Soi => Counted("SOI change", name.Value),
             EventKind.Apoapsis => Counted("Apoapsis", name.Value),

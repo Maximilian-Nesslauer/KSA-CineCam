@@ -26,15 +26,21 @@ public readonly record struct ReplaySite(V3 OriginCcf, V3 UpCcf, V3 EastCcf, V3 
 /// <summary>
 /// In the assembly frame, which is the frame of the recorded rotation. <see cref="Base"/> is the origin of
 /// the vehicle frame of the director, the lowest point along the axis through the center of mass.
+/// <see cref="Min"/> and <see cref="Max"/> are the corners of the part bounding box, or null when the shape
+/// was not made from the bounds.
 /// </summary>
 public sealed record ReplayShape(V3 Base, double Height, double Width, Func<string, V3?>? PartAssembly = null)
 {
+    public V3? Min { get; init; }
+
+    public V3? Max { get; init; }
+
     /// <summary>Without a center of mass the axis goes through the middle of the box.</summary>
     public static ReplayShape FromBounds(V3 min, V3 max, V3? centerOfMass, Func<string, V3?>? parts = null)
     {
         V3 center = centerOfMass ?? (min + max) * 0.5;
         return new ReplayShape(new V3(min.X, center.Y, center.Z), Math.Max(max.X - min.X, 1.0),
-            Math.Max(Math.Max(max.Y - min.Y, max.Z - min.Z), 0.1), parts);
+            Math.Max(Math.Max(max.Y - min.Y, max.Z - min.Z), 0.1), parts) { Min = min, Max = max };
     }
 }
 
@@ -54,13 +60,23 @@ public sealed class ReplayWorld
     // Read once, so that Motion does not call the shape delegate, which reads game data, on a worker thread.
     private readonly Dictionary<ReplaySegment, V3> _bases;
 
+    // The height over the ground of the followed samples that have no recorded height, read once because it
+    // reads the terrain of the game.
+    private readonly Dictionary<ReplaySample, double> _ground;
+
     // A live take starts to look for separated vehicles again when it follows another vehicle, so each
     // followed span has its own list of the vehicles that showed up near it in the span.
     private readonly (double Start, ReplayActor Actor, List<ReplayActor> Separated)[] _follows;
 
     /// <param name="bodyRadius">Meters.</param>
     /// <param name="sunCcf">The position of the sun in the body-fixed frame at a recording time, or null without a sun.</param>
-    public ReplayWorld(ReplayFlight flight, double bodyRadius, Func<ReplaySegment, ReplayShape> shapes, Func<double, V3?>? sunCcf = null)
+    /// <param name="surfaceRadiusCcf">
+    /// The distance from the body center to the terrain or the sea under a unit direction of the body-fixed frame,
+    /// for the height over the ground of a recording that does not store it. Without it such a recording has no
+    /// ground events.
+    /// </param>
+    public ReplayWorld(ReplayFlight flight, double bodyRadius, Func<ReplaySegment, ReplayShape> shapes, Func<double, V3?>? sunCcf = null,
+        Func<V3, double>? surfaceRadiusCcf = null)
     {
         Flight = flight;
         BodyRadius = bodyRadius;
@@ -69,6 +85,16 @@ public sealed class ReplayWorld
         _bases = new Dictionary<ReplaySegment, V3>(ReferenceEqualityComparer.Instance);
         foreach (ReplaySegment segment in flight.Actors.SelectMany(actor => actor.Segments))
             _bases[segment] = shapes(segment).Base;
+        _ground = new Dictionary<ReplaySample, double>(ReferenceEqualityComparer.Instance);
+        if (surfaceRadiusCcf != null)
+        {
+            foreach ((ReplaySegment segment, ReplaySample sample) in ReplayTimeline.FollowedPoses(flight))
+            {
+                if (sample.State?.Ground == null && GroundOf(segment, sample, shapes(segment), surfaceRadiusCcf) is double height)
+                    _ground[sample] = height;
+            }
+        }
+
         Duration = ReplayTimeline.Duration(flight);
         Primary = flight.Actors[0];
         Start = Primary.Segments[0].Samples[0].Position;
@@ -104,6 +130,28 @@ public sealed class ReplayWorld
     public V3 Start { get; }
 
     public ReplayActor FollowedAt(double time) => _follows[FollowIndex(time)].Actor;
+
+    /// <summary>
+    /// The height of the lowest point of the followed vehicle over the ground at a recorded sample, from the
+    /// state of the sample or else from the pose, or null when neither gives it. It reads only the recording,
+    /// so it can run on a worker thread.
+    /// </summary>
+    public double? GroundHeight(ReplaySample sample) =>
+        sample.State?.Ground is float recorded ? recorded : _ground.TryGetValue(sample, out double height) ? height : null;
+
+    // The same math as a live take, with the center of mass of the segment as the reference point. A file
+    // without a center of mass uses the model origin. The box is the one of the parts at the start of the
+    // segment, so a landing leg that deployed later in the segment is not in it, while a recording that
+    // stores the height has the live box of each sample.
+    private static double? GroundOf(ReplaySegment segment, ReplaySample sample, ReplayShape shape, Func<V3, double> surfaceRadiusCcf)
+    {
+        if (shape.Min is not V3 min || shape.Max is not V3 max)
+            return null;
+        V3 pivot = segment.CenterOfMass ?? V3.Zero;
+        V3 centre = sample.Position + sample.Rotation.Rotate(pivot);
+        double height = GroundClearance.Height(centre, min, max, pivot, sample.Rotation, surfaceRadiusCcf(centre.NormalizedOr(V3.UnitX)));
+        return double.IsFinite(height) ? height : null;
+    }
 
     /// <summary>Takes recording time and gives the world in the site frame.</summary>
     public WorldSample Build(double time, ReplaySite site, bool separated = true)
@@ -219,7 +267,8 @@ public sealed class ReplayWorld
             RadialSpeed: hasState ? state.Radial : 0.0,
             StableOrbit: state.Has(ReplayStateFlags.StableOrbit),
             OutsideAtmosphere: state.Has(ReplayStateFlags.OutsideAtmosphere),
-            DockedPorts: state.Docked);
+            DockedPorts: state.Docked,
+            Ground: state.Ground);
     }
 
     private static V3 OriginCcf(ReplaySample sample, ReplayShape shape) => sample.Position + sample.Rotation.Rotate(shape.Base);

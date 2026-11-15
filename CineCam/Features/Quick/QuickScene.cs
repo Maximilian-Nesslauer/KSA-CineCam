@@ -71,9 +71,12 @@ internal sealed class QuickScene
 
     // The radius below which a camera is under the ground or the sea, for a direction in the CCE
     // axes. GetTerrainHeightFromDirCcf and OceanReference.Level are both heights above the mean radius.
-    public static double SurfaceRadius(Celestial body, double3 directionCce)
+    public static double SurfaceRadius(Celestial body, double3 directionCce) =>
+        SurfaceRadiusCcf(body, directionCce.Normalized().Transform(body.GetCce2Ccf()));
+
+    // The same for a unit direction in the CCF axes.
+    public static double SurfaceRadiusCcf(Celestial body, double3 directionCcf)
     {
-        double3 directionCcf = directionCce.Normalized().Transform(body.GetCce2Ccf());
         double ground = body.GetTerrainHeightFromDirCcf(directionCcf, accurate: true);
         if (body.GetOceanReference() is { } ocean)
             ground = Math.Max(ground, ocean.Level.InMeters());

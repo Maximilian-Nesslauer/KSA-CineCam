@@ -6269,6 +6269,240 @@ Check("release: a checkpoint in a clean document with errors is kept as an unsav
 
 #endregion
 
+#region Ground and slow events
+
+Check("ground events: the names parse, print, show and predict a falling value", () =>
+{
+    Expect(EventName.TryParse("Ground:100", out EventName g, out _) && g.Kind == EventKind.Ground && g.Canonical == "ground:100", "ground");
+    Expect(g.IsPredictable && g.IsFalling, "ground is predictable and falling");
+    Expect(EventName.TryParse("ground:0", out EventName zero, out _) && zero.Canonical == "ground:0", "ground 0 is allowed");
+    Expect(EventName.TryParse("slow:12.5", out EventName s, out _) && s.Kind == EventKind.Slow && s.Canonical == "slow:12.5" && s.IsPredictable && s.IsFalling, "slow");
+    Expect(!EventName.TryParse("ground:-1", out _, out string below), "a height below 0: " + below);
+    Expect(!EventName.TryParse("slow:0", out _, out _), "a slow speed of 0");
+    Expect(!EventName.TryParse("ground", out _, out _), "ground needs a number");
+    Expect(EventName.TryParse("altitude:5", out EventName a, out _) && !a.IsFalling, "altitude rises");
+    Expect(!EventName.TryParse("height:5", out _, out string unknown) && unknown.Contains("ground:M") && unknown.Contains("slow:V"), "the error names the new events: " + unknown);
+    Expect(EventDisplay.Name("ground:100") == "Over ground 100 m" && EventDisplay.Name("ground:2500") == "Over ground 2.5 km", EventDisplay.Name("ground:100"));
+    Expect(EventDisplay.Name("slow:50") == "Slow to 50 m/s", EventDisplay.Name("slow:50"));
+    Expect(EventPrediction.SecondsUntilFall(300, 100, -20) == 10.0, "falling prediction");
+    Expect(EventPrediction.SecondsUntilFall(300, 100, 5) is null, "a rising value never falls to the target");
+    Expect(EventPrediction.SecondsUntilFall(300, 100, 0) is null, "a value that stands still");
+    Expect(EventPrediction.SecondsUntilFall(80, 100, 5) == 0.0, "already below");
+});
+
+Check("ground events: a negative delay is kept and the example of the shot file reads", () =>
+{
+    ShotFileReadResult result = ShotFileJson.Parse("""
+    { "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 30 },
+                  { "type": "chase", "target": "vehicle", "offset": [-30, 10, -15], "lookAt": [0, 0, 0], "duration": 20, "at": { "event": "ground:100", "delay": -2 } } ],
+      "speed": [ { "at": { "event": "slow:20", "delay": -1 }, "to": 0.5, "ramp": 1 } ] }
+    """);
+    Expect(result.Warnings.Count == 0, "no warning: " + string.Join("|", result.Warnings));
+    Take take = result.File.DefaultTake;
+    Expect(take.Shots[1].At.Delay == -2.0 && take.Speed[0].At.Delay == -1.0, "the delays stay");
+    var watched = EventDetector.Watched(take, result.File.Events).Select(n => n.Canonical).ToList();
+    Expect(watched.SequenceEqual(new[] { "ground:100", "slow:20" }), string.Join(",", watched));
+});
+
+VehicleSample Descent(double ground, bool contact = false, double speed = 0.0, double altitude = 1000.0) =>
+    new(false, contact, 0, altitude, speed, Ground: ground);
+
+Check("ground events: the event comes once when the height falls to the target, not at the start when high", () =>
+{
+    var detector = new EventDetector(new[] { new EventName(EventKind.Ground, 100) });
+    Expect(detector.Update(0.0, Descent(3000)).All(e => e.Name != "ground:100"), "high at the start");
+    Expect(detector.Update(1.0, Descent(500)).All(e => e.Name != "ground:100"), "still above");
+    Expect(detector.Update(2.0, Descent(100.5)).All(e => e.Name != "ground:100"), "just above");
+    var found = detector.Update(3.0, Descent(99.0));
+    Expect(found.Count(e => e.Name == "ground:100") == 1 && Near(found.Single(e => e.Name == "ground:100").TakeTime, 3.0), "at or below 100 m");
+    Expect(detector.Update(4.0, Descent(0.2, contact: true)).All(e => e.Name != "ground:100"), "the landing gives no second event");
+    Expect(detector.Update(5.0, Descent(300)).All(e => e.Name != "ground:100") && detector.Update(6.0, Descent(50)).All(e => e.Name != "ground:100"), "a second descent gives no repeat");
+    Expect(!detector.Predictions.ContainsKey("ground:100"), "no prediction after the event");
+});
+
+Check("ground events: a vehicle that is low or landed at the start gives the event only after it rose above the target", () =>
+{
+    var pad = new EventDetector(new[] { new EventName(EventKind.Ground, 100) });
+    Expect(pad.Update(0.0, Descent(0.1, contact: true)).All(e => e.Name != "ground:100"), "on the pad at the start");
+    Expect(pad.Update(1.0, Descent(40)).All(e => e.Name != "ground:100"), "climbs, still below");
+    Expect(pad.Update(2.0, Descent(60)).All(e => e.Name != "ground:100"), "climbs below the target");
+    Expect(pad.Update(3.0, Descent(0.1, contact: true)).All(e => e.Name != "ground:100"), "a hop under the target gives no event");
+    Expect(pad.Update(4.0, Descent(150)).All(e => e.Name != "ground:100"), "rises above the target");
+    Expect(pad.Update(5.0, Descent(100)).Count(e => e.Name == "ground:100") == 1, "comes on the descent");
+
+    var hover = new EventDetector(new[] { new EventName(EventKind.Ground, 100) });
+    Expect(hover.Update(0.0, Descent(30)).All(e => e.Name != "ground:100"), "flying low at the start");
+    Expect(hover.Update(1.0, Descent(10)).All(e => e.Name != "ground:100") && hover.Update(2.0, Descent(0, contact: true)).All(e => e.Name != "ground:100"), "lands without the event");
+
+    var unknown = new EventDetector(new[] { new EventName(EventKind.Ground, 100) });
+    unknown.Update(0.0, new VehicleSample(false, false, 0, 5000, 0));
+    Expect(unknown.Update(1.0, Descent(50)).All(e => e.Name != "ground:100"), "a sample without the height does not arm the event");
+});
+
+Check("ground events: the prediction of a falling height lets a shot start before the event", () =>
+{
+    var detector = new EventDetector(new[] { new EventName(EventKind.Ground, 100) });
+    for (int i = 0; i <= 160; i++)
+        detector.Update(i * 0.05, Descent(300.0 - 20.0 * i * 0.05));
+    Expect(detector.Predictions.TryGetValue("ground:100", out double seconds), "a prediction");
+    Expect(Near(seconds, 2.0, 0.05), "about 2 s left: " + seconds);
+
+    ShotFile file = ShotFileJson.Parse("""
+    { "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 60 },
+                  { "type": "tripod", "position": [4,5,6], "lookAt": [0,0,0], "duration": 20, "at": { "event": "ground:100", "delay": -2 } } ] }
+    """).File;
+    var director = new TakeDirector(file.DefaultTake, file);
+    double? started = null, seen = null;
+    for (int i = 0; i <= 300 && seen == null; i++)
+    {
+        double t = i * 0.05;
+        DirectorFrame frame = director.Update(t, World(Descent(300.0 - 20.0 * t)));
+        if (frame.ShotIndex == 1 && started == null)
+            started = t;
+        if (frame.NewEvents.Any(e => e.Name == "ground:100"))
+            seen = t;
+    }
+
+    Expect(seen is double s && Near(s, 10.0, 1e-9), $"the event at 10 s: {seen}");
+    Expect(started is double t0 && t0 >= 7.9 && t0 <= 8.1, $"the shot started 2 s early: {started}");
+    Expect(Near(director.Timeline.ShotStart(1)!.Value, started!.Value, 1e-9), "the start stays");
+});
+
+Check("slow events: the speed falls to the target after it was faster, not at the start at rest", () =>
+{
+    var detector = new EventDetector(new[] { new EventName(EventKind.Slow, 50) });
+    Expect(detector.Update(0.0, Descent(0, contact: true, speed: 0)).Count == 0, "at rest at the start");
+    for (int i = 1; i <= 100; i++)
+        Expect(detector.Update(i * 0.1, Descent(100, speed: i * 2.0)).Count == 0, "accelerates to 200 m/s");
+    var events = new List<DetectedEvent>();
+    double predicted = double.NaN;
+    for (int i = 1; i <= 100; i++)
+    {
+        double t = 10.0 + i * 0.1;
+        events.AddRange(detector.Update(t, Descent(100, speed: 200.0 - i * 2.0)));
+        if (Near(t, 15.0, 1e-9) && detector.Predictions.TryGetValue("slow:50", out double left))
+            predicted = left;
+    }
+
+    Expect(Near(predicted, 2.5, 0.1), $"2.5 s left at 100 m/s and 20 m/s^2 of braking: {predicted}");
+    Expect(events.Count == 1 && events[0].Name == "slow:50" && Near(events[0].TakeTime, 17.5, 1e-9), "once at 50 m/s: " + string.Join(",", events.Select(e => $"{e.Name}@{e.TakeTime}")));
+});
+
+Check("ground clearance: the lowest corner of the box counts, also on a vehicle on its side", () =>
+{
+    const double radius = 600000.0;
+    var centre = new V3(radius + 50.0, 0.0, 0.0);
+    var min = new V3(-1.0, -3.0, -2.0);
+    var max = new V3(9.0, 3.0, 2.0);
+    var pivot = new V3(4.0, 0.0, 0.0);
+    double upright = GroundClearance.Height(centre, min, max, pivot, new ReplayRotation(0, 0, 0, 1), radius);
+    Expect(Near(upright, 45.0, 1e-6), $"upright, the base 5 m under the center of mass: {upright}");
+    double half = Math.Sqrt(0.5);
+    double side = GroundClearance.Height(centre, min, max, pivot, new ReplayRotation(0, 0, half, half), radius);
+    Expect(Near(side, 47.0, 1e-6), $"on its side, the half width of 3 m under the center of mass: {side}");
+    double terrain = GroundClearance.Height(centre, min, max, pivot, new ReplayRotation(0, 0, 0, 1), radius + 513.0);
+    Expect(Near(terrain, 45.0 - 513.0, 1e-6), "the terrain radius counts");
+});
+
+// A descent at 20 m/s onto terrain 513 m above the mean radius: the base of the vehicle is 300 m over the
+// ground at 0 s and touches it at 15 s. The model origin is the base, and the center of mass is 5 m up the
+// axis. The samples are 1/32 s apart. With recordGround the states store the height, as the recorder does.
+ReplayFlight DescentFlight(bool recordGround)
+{
+    const double terrain = 513.0;
+    var samples = new List<ReplaySample>();
+    for (int i = 0; i <= 640; i++)
+    {
+        double t = i / 32.0;
+        double height = Math.Max(300.0 - 20.0 * t, 0.0);
+        bool landed = height <= 0.0;
+        var state = new ReplayState(landed ? ReplayStateFlags.Contact : 0, 0, 0, (float)(terrain + height + 5.0), landed ? 0f : 20f, landed ? 0f : -20f,
+            recordGround ? (float?)height : null);
+        samples.Add(new ReplaySample(t, new V3(TakeBodyRadius + terrain + height, 0.0, 0.0), new ReplayRotation(0, 0, 0, 1), [], State: state));
+    }
+
+    return new ReplayFlight("game", "system", "body", 0.0,
+        [new ReplayActor(0, "lander", [new ReplaySegment(0.0, "<lander/>", samples) { CenterOfMass = new V3(5.0, 0.0, 0.0) }])], []);
+}
+
+ReplayWorld DescentWorld(ReplayFlight flight, bool terrain) => new(flight, TakeBodyRadius,
+    segment => ReplayShape.FromBounds(new V3(0.0, -2.0, -2.0), new V3(10.0, 2.0, 2.0), segment.CenterOfMass), null,
+    terrain ? (Func<V3, double>)(_ => TakeBodyRadius + 513.0) : null);
+
+Check("replay ground events: a recorded and a computed height give the event at the same time as a live take", () =>
+{
+    EventName.TryParse("ground:100", out EventName ground, out _);
+    EventName.TryParse("slow:10", out EventName slow, out _);
+    ReplayFlight recorded = DescentFlight(recordGround: true);
+    ReplayFlight older = DescentFlight(recordGround: false);
+    ReplayWorld recordedWorld = DescentWorld(recorded, terrain: false);
+    ReplayWorld olderWorld = DescentWorld(older, terrain: true);
+
+    double? Time(List<ReplayEvent> events, string name) => events.FirstOrDefault(e => e.Name == name)?.Time;
+    List<ReplayEvent> a = ReplayEvents.ForTake(recorded, [ground, slow], TakeBodyRadius, recordedWorld.GroundHeight);
+    List<ReplayEvent> b = ReplayEvents.ForTake(older, [ground], TakeBodyRadius, olderWorld.GroundHeight);
+    Expect(Time(a, "ground:100") is double ta && Near(ta, 10.0, 1e-6), $"recorded: {Time(a, "ground:100")}");
+    Expect(Time(b, "ground:100") is double tb && Near(tb, 10.0, 1e-6), $"computed from the pose: {Time(b, "ground:100")}");
+    Expect(Time(a, "slow:10") is double tslow && Near(tslow, 15.0 - 1.0 / 64.0, 1e-6), $"slow between the last two samples before the touchdown: {Time(a, "slow:10")}");
+    Expect(Near(olderWorld.GroundHeight(older.Actors[0].Segments[0].Samples[32])!.Value, 280.0, 1e-6), "the computed height at 1 s");
+    Expect(ReplayEvents.ForTake(older, [ground], TakeBodyRadius).All(e => e.Name != "ground:100"), "an older recording without the terrain has no ground event");
+    Expect(ReplayEvents.ForTake(older, [ground], TakeBodyRadius, DescentWorld(older, terrain: false).GroundHeight).Count == 0, "nor a world without the terrain");
+
+    var detector = new EventDetector([ground]);
+    double? live = null;
+    foreach (ReplaySample sample in recorded.Actors[0].Segments[0].Samples)
+    {
+        VehicleSample vehicle = recordedWorld.VehicleAt(sample.Time);
+        Expect(vehicle.Ground == sample.State!.Value.Ground, "the replay vehicle has the recorded height");
+        if (detector.Update(sample.Time, vehicle).Any(e => e.Name == "ground:100"))
+            live ??= sample.Time;
+    }
+
+    Expect(live is double t && Near(t, 10.0, 1e-9), $"the live detector on the same samples: {live}");
+});
+
+Check("replay ground events: a negative delay starts the shot before the event in the replay plan", () =>
+{
+    Take take = ParseTake("""
+    { "camera": [ { "type": "tripod", "position": [1,2,3], "lookAt": [0,0,0], "duration": 30 },
+                  { "type": "tripod", "position": [4,5,6], "lookAt": [0,0,0], "duration": 5, "at": { "event": "ground:100", "delay": -2 } } ] }
+    """, out ShotFile file);
+    ReplayFlight flight = DescentFlight(recordGround: false);
+    ReplayWorld world = DescentWorld(flight, terrain: true);
+    var plan = ReplayTakePlan.Resolve(take, file, ReplayEvents.ForTake(flight, EventDetector.Watched(take, file.Events), TakeBodyRadius, world.GroundHeight), 20.0);
+    Expect(Near(plan.EventTimes["ground:100"], 10.0, 1e-6), $"event {plan.EventTimes["ground:100"]}");
+    Expect(plan.Starts!.Shots[1] is double start && start >= 8.0 - 1e-6 && start < 8.0 + plan.Step, $"start {plan.Starts.Shots[1]}");
+});
+
+Check("replay file: the height over the ground is optional and must be finite", () =>
+{
+    ReplayFlight recorded = DescentFlight(recordGround: true);
+    ReplayFlight older = DescentFlight(recordGround: false);
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        ReplayFile.Save(path, recorded);
+        ReplayState state = ReplayFile.Load(path).Actors[0].Segments[0].Samples[32].State!.Value;
+        Expect(state.Ground is float g && Near(g, 280.0, 1e-3), $"the height loads: {state.Ground}");
+        ReplayFile.Save(path, older);
+        Expect(ReplayFile.Load(path).Actors[0].Segments[0].Samples.All(s => s.State!.Value.Ground == null), "a state without the height loads as null");
+        string json = System.Text.Json.JsonSerializer.Serialize(older.Actors[0].Segments[0].Samples[0]);
+        Expect(!json.Contains("Ground", StringComparison.Ordinal), "no field when there is no height: " + json);
+        List<ReplaySample> samples = recorded.Actors[0].Segments[0].Samples;
+        samples[0] = samples[0] with { State = samples[0].State!.Value with { Ground = float.NaN } };
+        bool rejected = false;
+        try { ReplayFile.Save(path, recorded); } catch (InvalidDataException) { rejected = true; }
+        Expect(rejected, "a height that is not finite");
+    }
+    finally
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+});
+
+#endregion
+
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;
 

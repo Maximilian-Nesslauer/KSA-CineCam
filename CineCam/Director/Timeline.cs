@@ -47,7 +47,7 @@ public sealed record TimelineStarts(double?[] Shots, double?[] Speed, double?[] 
 /// with a take time that does not go back.
 /// </summary>
 /// <remarks>
-/// A negative delay works only for altitude and speed events, which the caller predicts. The start is
+/// A negative delay works only for altitude, speed, ground and slow events, which the caller predicts. The start is
 /// then fixed on the frame in which the predicted time is reached, or in which the event comes first.
 /// <para>
 /// The start of each pre-roll loop shot moves to its latest pass, so the active shot and the shot to
@@ -172,7 +172,7 @@ public sealed class TimelineRunner
     }
 
     /// <param name="eventTimes">Canonical event names and the take time at which each was seen.</param>
-    /// <param name="predictions">Canonical names of altitude and speed events and the seconds until each, from now.</param>
+    /// <param name="predictions">Canonical names of the predictable events and the seconds until each, from now.</param>
     public TimelineState Update(double takeTime,
         IReadOnlyDictionary<string, double> eventTimes,
         IReadOnlyDictionary<string, double>? predictions = null)

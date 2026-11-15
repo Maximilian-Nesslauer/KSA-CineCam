@@ -576,7 +576,7 @@ public static class ShotFileJson
             double delay = obj.OptNum("delay", -3600.0, 3600.0) ?? 0.0;
             if (delay < 0.0 && !resolved.IsPredictable)
             {
-                _warnings.Add($"{obj.Child("delay")}: a delay below 0 works only for altitude and speed events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0");
+                _warnings.Add($"{obj.Child("delay")}: a delay below 0 works only for altitude, speed, ground and slow events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0");
                 delay = 0.0;
             }
 

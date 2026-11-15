@@ -13,7 +13,7 @@ Requirements:
 
 - **Quick cameras.** Flyby, Chase, Orbit, Onboard and Ground tracker. One click, no setup, on the pad, in the air and in orbit.
 - **Takes with a timeline.** A take is a list of shots. Fly the free camera to a good place and press Add key here, or add a shot from a preset. No numbers to type.
-- **Events.** A shot can start at a time, after the shot before, or on a flight event such as lift-off, a stage or a docking.
+- **Events.** A shot can start at a time, after the shot before, or on a flight event such as lift-off, a stage, a docking or a height over the ground before a landing.
 - **Slow motion and speed keys.** A button sets the sim speed, and a take can change the sim speed on a timeline.
 - **Flight recording and replay (experimental).** Record a flight, then play a take on it afterward and edit its shots while you watch.
 - **Render to pictures.** Save every frame as a numbered picture, so the video has the exact speed at any render speed. This works for a live take and for a replay.

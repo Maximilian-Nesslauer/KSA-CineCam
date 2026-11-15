@@ -2,6 +2,7 @@ using Brutal.Logging;
 using Brutal.Numerics;
 using CineCam.Director;
 using CineCam.Director.Replay;
+using CineCam.Features.Quick;
 using CineCam.Features.Takes;
 using KSA;
 using KSA.Rendering.Lighting;
@@ -91,7 +92,8 @@ internal sealed class ReplayScene : IDisposable
                 }
             }
 
-            World = new ReplayWorld(flight, body.MeanRadius, segment => _models[segment].Shape, SunCcf);
+            World = new ReplayWorld(flight, body.MeanRadius, segment => _models[segment].Shape, SunCcf,
+                direction => QuickScene.SurfaceRadiusCcf(body, QuickScene.ToDouble3(direction)));
             Player = new ReplayTakePlayer(World);
             Site = SiteFor(null, null, out _);
         }

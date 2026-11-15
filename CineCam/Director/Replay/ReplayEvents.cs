@@ -1,8 +1,8 @@
 namespace CineCam.Director.Replay;
 
 /// <summary>
-/// Times are recording seconds. Altitude and speed events depend on the values that a take waits for,
-/// so they are not recorded but found here from the samples.
+/// Times are recording seconds. Altitude, speed, ground and slow events depend on the values that a take
+/// waits for, so they are not recorded but found here from the samples.
 /// </summary>
 public static class ReplayEvents
 {
@@ -27,8 +27,14 @@ public static class ReplayEvents
     }
 
     /// <summary>Each name appears once, at its first time.</summary>
-    public static List<ReplayEvent> ForTake(ReplayFlight flight, IEnumerable<EventName> watched, double bodyRadius)
+    /// <param name="ground">
+    /// The height over the ground at a sample (see <see cref="ReplayWorld.GroundHeight"/>). Without it only the
+    /// recorded height counts.
+    /// </param>
+    public static List<ReplayEvent> ForTake(ReplayFlight flight, IEnumerable<EventName> watched, double bodyRadius,
+        Func<ReplaySample, double?>? ground = null)
     {
+        ground ??= sample => sample.State?.Ground;
         var result = new List<ReplayEvent>();
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (ReplayEvent item in flight.Events.OrderBy(e => e.Time))
@@ -41,9 +47,13 @@ public static class ReplayEvents
         {
             if (!name.IsPredictable || !names.Add(name.Canonical))
                 continue;
-            double? time = name.Kind == EventKind.Altitude
-                ? Crossing(flight, sample => Altitude(sample, bodyRadius), name.Value)
-                : Crossing(flight, Speed, name.Value);
+            double? time = name.Kind switch
+            {
+                EventKind.Altitude => Crossing(flight, sample => Altitude(sample, bodyRadius), name.Value),
+                EventKind.Ground => Fall(flight, ground, name.Value),
+                EventKind.Slow => Fall(flight, sample => Speed(sample), name.Value),
+                _ => Crossing(flight, Speed, name.Value),
+            };
             if (time is double t)
                 result.Add(new ReplayEvent(t, name.Canonical));
         }
@@ -65,6 +75,43 @@ public static class ReplayEvents
                 if (previous == null || current <= previousValue)
                     return sample.Time;
                 double share = Math.Clamp((target - previousValue) / (current - previousValue), 0.0, 1.0);
+                return previous.Time + (sample.Time - previous.Time) * share;
+            }
+
+            previous = sample;
+            previousValue = current;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The first recording time at which the followed vehicle falls to the target after a sample above it,
+    /// interpolated between samples, as <see cref="EventDetector"/> finds a ground or slow event. A sample
+    /// without the value neither arms nor fires it.
+    /// </summary>
+    public static double? Fall(ReplayFlight flight, Func<ReplaySample, double?> value, double target)
+    {
+        bool above = false;
+        ReplaySample? previous = null;
+        double previousValue = 0.0;
+        foreach (ReplaySample sample in ReplayTimeline.FollowedSamples(flight))
+        {
+            if (value(sample) is not double current)
+            {
+                previous = null;
+                continue;
+            }
+
+            if (current > target)
+            {
+                above = true;
+            }
+            else if (above)
+            {
+                if (previous == null || previousValue <= target)
+                    return sample.Time;
+                double share = Math.Clamp((previousValue - target) / (previousValue - current), 0.0, 1.0);
                 return previous.Time + (sample.Time - previous.Time) * share;
             }
 

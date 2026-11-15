@@ -334,7 +334,7 @@ public sealed class ReplayTakePlan
         return settle;
     }
 
-    // Only altitude and speed events that a trigger waits for with a negative delay need a prediction.
+    // Only the predictable events that a trigger waits for with a negative delay need a prediction.
     // The view gives the take seconds until each of them from the speed of the last step, as a live take
     // predicts them from the rate of the value, and it allocates nothing per step.
     private sealed class Predictions : IReadOnlyDictionary<string, double>

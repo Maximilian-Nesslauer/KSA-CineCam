@@ -21,7 +21,10 @@ public static class ReplayTimeline
         return result;
     }
 
-    public static IEnumerable<ReplaySample> FollowedSamples(ReplayFlight flight)
+    public static IEnumerable<ReplaySample> FollowedSamples(ReplayFlight flight) =>
+        FollowedPoses(flight).Select(pose => pose.Sample);
+
+    public static IEnumerable<(ReplaySegment Segment, ReplaySample Sample)> FollowedPoses(ReplayFlight flight)
     {
         List<(double Start, ReplayActor Actor)> follows = Follows(flight);
         for (int i = 0; i < follows.Count; i++)
@@ -33,7 +36,7 @@ public static class ReplayTimeline
                 foreach (ReplaySample sample in segment.Samples)
                 {
                     if (sample.Time >= from && sample.Time < until)
-                        yield return sample;
+                        yield return (segment, sample);
                 }
             }
         }

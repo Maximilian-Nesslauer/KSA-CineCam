@@ -82,7 +82,7 @@ public sealed class ReplayTakePlayer
             return ReplayTakePlan.Identity(world.Duration);
         try
         {
-            List<ReplayEvent> events = ReplayEvents.ForTake(world.Flight, EventDetector.Watched(take, file.Events), world.BodyRadius);
+            List<ReplayEvent> events = ReplayEvents.ForTake(world.Flight, EventDetector.Watched(take, file.Events), world.BodyRadius, world.GroundHeight);
             ReplayTakePlan plan = ReplayTakePlan.Resolve(take, file, events, world.Duration, cancel: cancel);
             if (take.Shots.Any(shot => shot.UsesFlightFrame))
                 plan.Headings = new ReplayHeadings(world, plan, cancel);

@@ -102,7 +102,7 @@ In a blend, the weight follows a smootherstep curve, so the camera starts and st
 
 `"preRoll": { "until": "liftoff", "loop": true }` is a field of a take. The shots before the first shot that starts on that event are the pre-roll block. They repeat as a loop, each shot after the one before with its own `transition`, until the event comes. Then the shot that is active is left through the transition of the waiting shot. The first shot may start at a time. The other shots of the block must follow the one before. Without `preRoll`, or with `"loop": false`, the shots play once, and a shot that waits holds the last pose of the shot before. In the window this is the switch **Repeat the opening shots until an event** above the shot list, with the field **Until the event** and the switch **Loop the opening shots** (off plays them once and holds the last pose).
 
-A trigger (`at` of a shot, a speed key or an action) is a take time in seconds (`"at": 12.5`), an object with a time (`{ "time": 12.5 }`), or an event with a delay (`{ "event": "liftoff", "delay": 3 }`). A negative delay works only for altitude and speed events. For other events it is set to 0 with a warning. A blend needs seconds above 0, and it lasts 3 seconds when the file gives no length.
+A trigger (`at` of a shot, a speed key or an action) is a take time in seconds (`"at": 12.5`), an object with a time (`{ "time": 12.5 }`), or an event with a delay (`{ "event": "liftoff", "delay": 3 }`). A negative delay works only for altitude, speed, ground and slow events. For other events it is set to 0 with a warning. A blend needs seconds above 0, and it lasts 3 seconds when the file gives no length.
 
 ## Speed keys
 
@@ -123,7 +123,7 @@ Actions. The only action now is `stage`.
 
 | Field | Meaning |
 | --- | --- |
-| `at` | When the action fires. It is required. A negative delay works for altitude and speed events only |
+| `at` | When the action fires. It is required. A negative delay works for altitude, speed, ground and slow events only |
 | `action` | `stage` |
 | `sequence` | Optional. The number of the sequence that must be the next one when the action fires |
 
@@ -177,8 +177,10 @@ Events, as the file names them:
 | `liftoff` | The vehicle has no ground contact any more |
 | `burnout`, `burnout:N` | All engines turn off after they ran for at least one second. The Nth time |
 | `sequence:N` | Sequence N of the vehicle fired: its number became the active one, or a call of the staging method fired it and the game removed it at once because its parts left the vehicle (each number that was skipped is reported too) |
-| `altitude:M` | The altitude above the mean radius of the body reaches M meters. The delay may be negative |
-| `speed:V` | The speed over the surface reaches V meters per second. The delay may be negative |
+| `altitude:M` | The altitude above the mean radius of the body is M meters or more. It is for a climb: a take that starts above M sees it at the start. The delay may be negative |
+| `speed:V` | The speed over the surface is V meters per second or more. It is for an acceleration: a take that starts faster sees it at the start. The delay may be negative |
+| `ground:M` | The lowest point of the vehicle comes down to M meters or less over the terrain or the sea under it, for example `ground:100` before a landing. M is 0 or more. The take must first see the vehicle more than M meters over the ground, so a vehicle on the pad or landed at the start does not give the event at the start; it comes on the descent after the vehicle rose above M. The height is measured from the center of mass straight down to the terrain or the sea level under it, less the depth of the lowest corner of the part bounding box below the center of mass. A pad or a building does not count as ground, and on a slope the value at rest is not exactly 0, so use `landed` for the touchdown. The delay may be negative |
+| `slow:V` | The speed over the surface falls to V meters per second or less, for example `slow:50` on the last part of a landing. V is more than 0. The take must first see the vehicle faster than V, so a vehicle at rest at the start does not give the event. It is the first time the speed falls to V, which can also be the top of a vertical hop. The delay may be negative |
 | `landed`, `landed:N` | The vehicle has ground contact again after the lift-off, after at least one second without it (so a bounce does not count) |
 | `soi`, `soi:N` | The vehicle changed the body whose sphere of influence it is in. The log names both bodies |
 | `apoapsis`, `apoapsis:N` | The vehicle passed the highest point of its orbit: the speed away from the body center changed from outward to inward. Only in free flight: no engine runs, the orbit is closed, and the vehicle is above the atmosphere. On a body without an atmosphere the periapsis must also be above the highest terrain. So the coast after an ascent has its apoapsis, while a burn and the top of a hop on an airless body give none |
@@ -187,7 +189,13 @@ Events, as the file names them:
 | `undocked`, `undocked:N` | A docking port of the vehicle lost its connection, not within one second of a fired sequence. The take follows the vehicle that the game gives the control to |
 | `mark`, `mark:N` | The player gave a mark with the mark key or `cinecam_mark` during the take, or during the flight recording that a replay plays |
 
-Each event is reported once per take. A take that starts in flight sees the past events at the start. An event name is not case sensitive.
+Each event is reported once per take. A take that starts in flight sees the past events at the start, but not a `ground` or `slow` event, which needs the value above the target in the take first. An event name is not case sensitive.
+
+A shot that cuts 2 seconds before the vehicle comes down to 100 m over the ground:
+
+```json
+{ "type": "chase", "target": "vehicle", "offset": [-30, 10, -15], "lookAt": [0, 0, 0], "duration": 20, "at": { "event": "ground:100", "delay": -2 } }
+```
 
 ## Take folder and event log
 

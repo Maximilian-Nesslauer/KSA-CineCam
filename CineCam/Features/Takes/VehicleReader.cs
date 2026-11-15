@@ -1,5 +1,7 @@
 using Brutal.Numerics;
 using CineCam.Director;
+using CineCam.Features.Quick;
+using CineCam.Features.Replay;
 using KSA;
 
 namespace CineCam.Features.Takes;
@@ -98,7 +100,22 @@ internal sealed class VehicleReader
             outside,
             DockedPorts(),
             marks,
-            changed);
+            changed,
+            GroundHeight());
+    }
+
+    // The part bounding box (PartTree.ComputeBoundingBoxAsmb) is read on every sample, because an animated
+    // part such as a landing leg changes its box (KeyframeAnimationModule calls Part.UpdateBounds). The read
+    // is one pass over the parts. The recorder stores this value, so a replay sees the same height.
+    private double? GroundHeight()
+    {
+        if (_vehicle.Parent is not Celestial body)
+            return null;
+        (double3 min, double3 max) = _vehicle.Parts.ComputeBoundingBoxAsmb();
+        double3 centreCce = _vehicle.GetPositionCce();
+        double height = GroundClearance.Height(QuickScene.ToV3(centreCce), QuickScene.ToV3(min), QuickScene.ToV3(max),
+            QuickScene.ToV3(_vehicle.CenterOfMassAsmb), FlightRecorder.ToRotation(_vehicle.Body2Cce), QuickScene.SurfaceRadius(body, centreCce));
+        return double.IsFinite(height) ? height : null;
     }
 
     private int DockedPorts()

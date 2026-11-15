@@ -482,7 +482,8 @@ internal sealed class FlightRecorder
         int flags = (sample.EngineOn ? ReplayStateFlags.EngineOn : 0) | (sample.Contact ? ReplayStateFlags.Contact : 0)
             | (sample.StableOrbit ? ReplayStateFlags.StableOrbit : 0) | (sample.OutsideAtmosphere ? ReplayStateFlags.OutsideAtmosphere : 0);
         return new ReplayState(flags, Math.Max(sample.ActiveSequence, 0), Math.Max(sample.DockedPorts, 0),
-            Finite(sample.Altitude), Finite(sample.Speed), Finite(sample.RadialSpeed));
+            Finite(sample.Altitude), Finite(sample.Speed), Finite(sample.RadialSpeed),
+            sample.Ground is double ground && (float)ground is float g && float.IsFinite(g) ? g : null);
 
         // The file reader rejects a value that is not finite, so such a value is stored as 0.
         static float Finite(double value) => (float)value is float f && float.IsFinite(f) ? f : 0f;
