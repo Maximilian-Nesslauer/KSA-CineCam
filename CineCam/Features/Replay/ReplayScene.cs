@@ -152,6 +152,8 @@ internal sealed class ReplayScene : IDisposable
     /// <summary>The site of a take on this recording. It reads the game, so it runs on the main thread.</summary>
     public TakeRequest PrepareTake(Take? take, ShotFile? file)
     {
+        if (take != null && file != null && EventDetector.Watched(take, file.Events).Any(name => name.Kind == EventKind.Ground))
+            World.PrepareGround();
         SiteFrame site = SiteFor(take?.Site ?? file?.Site, take?.Anchor, out string note, out bool fellBack);
         return new TakeRequest(take, file, site, fellBack ? note : "");
     }

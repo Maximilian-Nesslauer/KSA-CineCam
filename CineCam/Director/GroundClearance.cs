@@ -3,7 +3,7 @@ using CineCam.Director.Replay;
 namespace CineCam.Director;
 
 /// <summary>
-/// The height of the lowest point of a vehicle over the ground under it. The live take and the replay use the
+/// The height of the lowest corner of the part bounding box of a vehicle over the ground under it. The live take and the replay use the
 /// same math, so a ground event comes at the same time in both.
 /// </summary>
 public static class GroundClearance

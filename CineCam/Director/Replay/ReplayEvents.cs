@@ -50,8 +50,7 @@ public static class ReplayEvents
             double? time = name.Kind switch
             {
                 EventKind.Altitude => Crossing(flight, sample => Altitude(sample, bodyRadius), name.Value),
-                EventKind.Ground => Fall(flight, ground, name.Value),
-                EventKind.Slow => Fall(flight, sample => Speed(sample), name.Value),
+                EventKind.Ground or EventKind.Slow => Fall(flight, name.Kind == EventKind.Ground ? ground : sample => Speed(sample), name),
                 _ => Crossing(flight, Speed, name.Value),
             };
             if (time is double t)
@@ -86,12 +85,14 @@ public static class ReplayEvents
     }
 
     /// <summary>
-    /// The first recording time at which the followed vehicle falls to the target after a sample above it,
-    /// interpolated between samples, as <see cref="EventDetector"/> finds a ground or slow event. A sample
-    /// without the value neither arms nor fires it.
+    /// The first recording time at which the followed vehicle falls to the target after a sample without ground
+    /// contact above <see cref="EventName.ArmLevel"/>, interpolated between samples, as <see cref="EventDetector"/>
+    /// finds a ground or slow event. A sample without the value neither arms nor fires it, and a sample without
+    /// a state counts as one without contact.
     /// </summary>
-    public static double? Fall(ReplayFlight flight, Func<ReplaySample, double?> value, double target)
+    public static double? Fall(ReplayFlight flight, Func<ReplaySample, double?> value, EventName name)
     {
+        double target = name.Value;
         bool above = false;
         ReplaySample? previous = null;
         double previousValue = 0.0;
@@ -103,11 +104,9 @@ public static class ReplayEvents
                 continue;
             }
 
-            if (current > target)
-            {
+            if (sample.State?.Has(ReplayStateFlags.Contact) != true && current > name.ArmLevel)
                 above = true;
-            }
-            else if (above)
+            if (current <= target && above)
             {
                 if (previous == null || previousValue <= target)
                     return sample.Time;

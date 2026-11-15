@@ -65,7 +65,10 @@ internal sealed class VehicleReader
 
     // The vehicle solver workers may still run here, because they start at the end of
     // Program.PrepareFrame and the game waits for them in the next frame. The sample reads single
-    // numbers, so a value one step old does no harm to an event check.
+    // numbers, so a value one step old does no harm to an event check. The part bounding box of the
+    // height over the ground is the exception: an animation step on a worker can write the box of a
+    // part (Part.BoundingBoxVehicleAsmb) while it is read, so a read can mix the corners of two
+    // animation steps of one box. Both are real boxes of the part, so that is harmless and cannot crash.
     public VehicleSample Sample(int marks = 0)
     {
         bool engineOn = ReadEngines(out int fresh);

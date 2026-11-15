@@ -60,9 +60,12 @@ public sealed class ReplayWorld
     // Read once, so that Motion does not call the shape delegate, which reads game data, on a worker thread.
     private readonly Dictionary<ReplaySegment, V3> _bases;
 
-    // The height over the ground of the followed samples that have no recorded height, read once because it
-    // reads the terrain of the game.
-    private readonly Dictionary<ReplaySample, double> _ground;
+    private readonly Func<V3, double>? _surfaceRadiusCcf;
+
+    // The height over the ground of the followed samples that have no recorded height, made by PrepareGround on
+    // the main thread because it reads the terrain of the game. It is never changed after it is published, so
+    // a plan that a worker thread resolves can read it.
+    private volatile Dictionary<ReplaySample, double>? _ground;
 
     // A live take starts to look for separated vehicles again when it follows another vehicle, so each
     // followed span has its own list of the vehicles that showed up near it in the span.
@@ -72,8 +75,8 @@ public sealed class ReplayWorld
     /// <param name="sunCcf">The position of the sun in the body-fixed frame at a recording time, or null without a sun.</param>
     /// <param name="surfaceRadiusCcf">
     /// The distance from the body center to the terrain or the sea under a unit direction of the body-fixed frame,
-    /// for the height over the ground of a recording that does not store it. Without it such a recording has no
-    /// ground events.
+    /// for the height over the ground of a recording that does not store it (see <see cref="PrepareGround"/>).
+    /// Without it such a recording has no ground events.
     /// </param>
     public ReplayWorld(ReplayFlight flight, double bodyRadius, Func<ReplaySegment, ReplayShape> shapes, Func<double, V3?>? sunCcf = null,
         Func<V3, double>? surfaceRadiusCcf = null)
@@ -85,16 +88,7 @@ public sealed class ReplayWorld
         _bases = new Dictionary<ReplaySegment, V3>(ReferenceEqualityComparer.Instance);
         foreach (ReplaySegment segment in flight.Actors.SelectMany(actor => actor.Segments))
             _bases[segment] = shapes(segment).Base;
-        _ground = new Dictionary<ReplaySample, double>(ReferenceEqualityComparer.Instance);
-        if (surfaceRadiusCcf != null)
-        {
-            foreach ((ReplaySegment segment, ReplaySample sample) in ReplayTimeline.FollowedPoses(flight))
-            {
-                if (sample.State?.Ground == null && GroundOf(segment, sample, shapes(segment), surfaceRadiusCcf) is double height)
-                    _ground[sample] = height;
-            }
-        }
-
+        _surfaceRadiusCcf = surfaceRadiusCcf;
         Duration = ReplayTimeline.Duration(flight);
         Primary = flight.Actors[0];
         Start = Primary.Segments[0].Samples[0].Position;
@@ -132,12 +126,33 @@ public sealed class ReplayWorld
     public ReplayActor FollowedAt(double time) => _follows[FollowIndex(time)].Actor;
 
     /// <summary>
-    /// The height of the lowest point of the followed vehicle over the ground at a recorded sample, from the
-    /// state of the sample or else from the pose, or null when neither gives it. It reads only the recording,
-    /// so it can run on a worker thread.
+    /// Computes the height over the ground of the followed samples that have no recorded height, which a
+    /// recording made before the recorder stored it needs for its ground events. It reads the game through the
+    /// surface function, so it runs on the main thread, before a plan of a take that waits for a ground event
+    /// is resolved. Later calls do nothing.
+    /// </summary>
+    public void PrepareGround()
+    {
+        if (_ground != null || _surfaceRadiusCcf == null)
+            return;
+        var table = new Dictionary<ReplaySample, double>(ReferenceEqualityComparer.Instance);
+        foreach ((ReplaySegment segment, ReplaySample sample) in ReplayTimeline.FollowedPoses(Flight))
+        {
+            if (sample.State?.Ground == null && GroundOf(segment, sample, _shapes(segment), _surfaceRadiusCcf) is double height)
+                table[sample] = height;
+        }
+
+        _ground = table;
+    }
+
+    /// <summary>
+    /// The height of the lowest corner of the part bounding box of the followed vehicle over the ground at a
+    /// recorded sample, from the state of the sample or else from <see cref="PrepareGround"/>, or null when
+    /// neither gives it. It reads only the recording, so it can run on a worker thread.
     /// </summary>
     public double? GroundHeight(ReplaySample sample) =>
-        sample.State?.Ground is float recorded ? recorded : _ground.TryGetValue(sample, out double height) ? height : null;
+        sample.State?.Ground is float recorded ? recorded
+        : _ground is { } table && table.TryGetValue(sample, out double height) ? height : null;
 
     // The same math as a live take, with the center of mass of the segment as the reference point. A file
     // without a center of mass uses the model origin. The box is the one of the parts at the start of the
@@ -162,7 +177,7 @@ public sealed class ReplayWorld
         ReplayShape shape = _shapes(segment);
         var world = new WorldSample
         {
-            Vehicle = VehicleOf(sample),
+            Vehicle = VehicleOf(segment, sample),
             VehicleFrame = FrameOf(sample, shape, site),
             VehicleHeight = shape.Height,
             VehicleWidth = shape.Width,
@@ -195,7 +210,8 @@ public sealed class ReplayWorld
     public VehicleSample VehicleAt(double time)
     {
         ReplayActor followed = FollowedAt(time);
-        return VehicleOf(Followed(time, ref followed).Sample);
+        var (segment, sample) = Followed(time, ref followed);
+        return VehicleOf(segment, sample);
     }
 
     private int FollowIndex(double time)
@@ -253,7 +269,9 @@ public sealed class ReplayWorld
         return (b - a) / (to - from);
     }
 
-    private VehicleSample VehicleOf(ReplaySample sample)
+    // The state of a sample between two recorded ones is the state of the earlier one, and so is the height
+    // over the ground.
+    private VehicleSample VehicleOf(ReplaySegment segment, ReplaySample sample)
     {
         ReplayState state = sample.State ?? default;
         bool hasState = sample.State.HasValue;
@@ -268,7 +286,21 @@ public sealed class ReplayWorld
             StableOrbit: state.Has(ReplayStateFlags.StableOrbit),
             OutsideAtmosphere: state.Has(ReplayStateFlags.OutsideAtmosphere),
             DockedPorts: state.Docked,
-            Ground: state.Ground);
+            Ground: GroundHeight(RecordedAt(segment, sample.Time)));
+    }
+
+    private static ReplaySample RecordedAt(ReplaySegment segment, double time)
+    {
+        List<ReplaySample> samples = segment.Samples;
+        int lo = 0, hi = samples.Count - 1;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo + 1) / 2;
+            if (samples[mid].Time <= time) lo = mid;
+            else hi = mid - 1;
+        }
+
+        return samples[lo];
     }
 
     private static V3 OriginCcf(ReplaySample sample, ReplayShape shape) => sample.Position + sample.Rotation.Rotate(shape.Base);

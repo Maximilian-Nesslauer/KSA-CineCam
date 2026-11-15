@@ -10,8 +10,8 @@ namespace CineCam.Director;
 /// <see cref="StableOrbit"/> on a body without an atmosphere also needs the periapsis above the
 /// highest terrain. <see cref="VehicleChanged"/> is true in the first sample after the take moved to
 /// another vehicle object, which the game makes when vehicles dock or undock. <see cref="Ground"/> is the height in
-/// meters of the lowest point of the vehicle over the terrain or the sea under it (see <see cref="GroundClearance"/>),
-/// or null when it is not known.
+/// meters of the lowest corner of the part bounding box over the terrain or the sea under the vehicle (see
+/// <see cref="GroundClearance"/>), or null when it is not known.
 /// </summary>
 public readonly record struct VehicleSample(
     bool EngineOn,
@@ -35,8 +35,9 @@ public sealed record DetectedEvent(string Name, double TakeTime, string Detail);
 /// <summary>
 /// Turns the per-frame samples of the vehicle into the events of the shot file, each reported once,
 /// and predicts the altitude, speed, ground and slow events so that a shot can start before them. A ground or
-/// slow event comes the first time its value falls to the target after the take saw it above the target, so a
-/// vehicle that is already low or slow at the start does not give the event until it rose above the target.
+/// slow event comes the first time its value falls to the target after the take saw the vehicle without ground
+/// contact and the value above <see cref="EventName.ArmLevel"/>, so a vehicle that is low, slow or landed at the
+/// start does not give the event until it flew above that level.
 /// </summary>
 public sealed class EventDetector
 {
@@ -252,9 +253,9 @@ public sealed class EventDetector
         foreach (double target in _speedTargets)
             Reach(found, "speed", target, sample.Speed, _speedRate, takeTime);
         foreach (double target in _groundTargets)
-            Fall(found, new EventName(EventKind.Ground, target).Canonical, target, sample.Ground, _groundRate, takeTime);
+            Fall(found, new EventName(EventKind.Ground, target), sample.Ground, sample.Contact, _groundRate, takeTime);
         foreach (double target in _slowTargets)
-            Fall(found, new EventName(EventKind.Slow, target).Canonical, target, sample.Speed, _speedRate, takeTime);
+            Fall(found, new EventName(EventKind.Slow, target), sample.Speed, sample.Contact, _speedRate, takeTime);
 
         _wasEngineOn = sample.EngineOn;
         _wasContact = sample.Contact;
@@ -348,8 +349,10 @@ public sealed class EventDetector
     }
 
     // A sample without the value neither arms nor fires the event.
-    private void Fall(List<DetectedEvent> found, string name, double target, double? value, double rate, double takeTime)
+    private void Fall(List<DetectedEvent> found, EventName eventName, double? value, bool contact, double rate, double takeTime)
     {
+        string name = eventName.Canonical;
+        double target = eventName.Value;
         if (_seen.ContainsKey(name))
             return;
         if (value is not double current)
@@ -358,10 +361,12 @@ public sealed class EventDetector
             return;
         }
 
+        if (!contact && current > eventName.ArmLevel)
+            _above.Add(name);
+        // An event that is not armed cannot come, so it has no prediction that could start a shot early.
         if (current > target)
         {
-            _above.Add(name);
-            double? seconds = EventPrediction.SecondsUntilFall(current, target, rate);
+            double? seconds = _above.Contains(name) ? EventPrediction.SecondsUntilFall(current, target, rate) : null;
             if (seconds.HasValue)
                 _predictions[name] = seconds.Value;
             else

@@ -728,7 +728,7 @@ internal static class TrackPanel
             }
         }
 
-        Widgets.Tip("Type ignition:N, burnout:N, sequence:N, altitude:METERS, speed:METERS_PER_SECOND, ground:METERS or slow:METERS_PER_SECOND in the field above for the others. ignition:2 is the second time the engines come on, for example the upper stage in a hot staging. ground:100 comes when the lowest point of the vehicle comes down to 100 m over the terrain or the sea, and slow:50 when the speed over the surface falls to 50 m/s. Both need the value above the target first, so they do not come at the start on the pad.");
+        Widgets.Tip("Type ignition:N, burnout:N, sequence:N, altitude:METERS, speed:METERS_PER_SECOND, ground:METERS or slow:METERS_PER_SECOND in the field above for the others. ignition:2 is the second time the engines come on, for example the upper stage in a hot staging. ground:100 comes when the lowest corner of the part bounding box comes down to 100 m over the terrain or the sea, and slow:50 when the speed over the surface falls to 50 m/s. Both need the vehicle in the air with the value above the target first, so they do not come on the pad or after a landing.");
         return changed;
     }
 

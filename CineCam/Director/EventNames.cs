@@ -14,10 +14,11 @@ public readonly record struct EventName(EventKind Kind, double Value)
     public bool IsPredictable => Kind is EventKind.Altitude or EventKind.Speed or EventKind.Ground or EventKind.Slow;
 
     /// <summary>
-    /// True for an event that comes when its value falls to the target: the height over the ground and the
-    /// slow speed. Such an event needs the value above the target first.
+    /// The value above which a ground or slow event arms, see <see cref="EventDetector"/>. The margin is
+    /// 1 m or 2 percent of the height for a ground event and 0.5 m/s for a slow event, so the noise of a
+    /// vehicle that settles or stands on a slope cannot arm it, and a vehicle in flight passes it at once.
     /// </summary>
-    public bool IsFalling => Kind is EventKind.Ground or EventKind.Slow;
+    public double ArmLevel => Kind == EventKind.Ground ? Value + Math.Max(1.0, 0.02 * Value) : Value + 0.5;
 
     public string Canonical => Kind switch
     {

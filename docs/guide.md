@@ -95,8 +95,8 @@ A shot, a speed key or an action starts **After** the one before, at a **Time** 
 | **Stage 3** | Sequence 3 of the vehicle fired. |
 | **Altitude 5 km** | The altitude reaches a value. Type `altitude:5000` in the event field. |
 | **Speed 300 m/s** | The speed over the surface reaches a value. Type `speed:300`. |
-| **Over ground 100 m** | The lowest point of the vehicle comes down to a height over the terrain or the sea, for a landing. Type `ground:100`. The vehicle must be higher than that in the take first, so it does not come at the start on the pad. |
-| **Slow to 50 m/s** | The speed over the surface falls to a value after it was higher. Type `slow:50`. |
+| **Over ground 100 m** | The lowest corner of the part bounding box comes down to a height over the terrain or the sea, for a landing. Type `ground:100`. The vehicle must fly higher than that in the take first, so it does not come on the pad. |
+| **Slow to 50 m/s** | The speed over the surface falls to a value after the vehicle flew faster. Type `slow:50`. |
 | **Landed** | The vehicle touches the ground again after a lift-off. |
 | **SOI change** | The vehicle enters the sphere of influence of another body. |
 | **Apoapsis**, **Periapsis** | The vehicle passes the highest or lowest point of its orbit. |

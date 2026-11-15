@@ -67,7 +67,7 @@ public sealed record ReplaySample(double Time, V3 Position, ReplayRotation Rotat
 /// <summary>
 /// What the event detector needs and the pose cannot give. <see cref="Altitude"/> is barometric,
 /// <see cref="Speed"/> is the surface speed and <see cref="Radial"/> the speed away from the body center.
-/// <see cref="Ground"/> is the height of the lowest point of the vehicle over the terrain or the sea, see
+/// <see cref="Ground"/> is the height of the lowest corner of the part bounding box over the terrain or the sea, see
 /// <see cref="GroundClearance"/>. A file made before the recorder stored it has no such value, and the replay
 /// then computes it from the pose.
 /// </summary>
