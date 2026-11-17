@@ -125,6 +125,19 @@ static class ReplayFxTests
             }
         });
 
+        check("replay fx: the terminal camera stays on its subject while a prior vehicle survives", () =>
+        {
+            ReplaySample Sample(double time, V3 position) => new(time, position, new ReplayRotation(0, 0, 0, 1), []);
+            var old = new ReplayActor(0, "booster", [new ReplaySegment(0, "parts", [Sample(0, new V3(600000, 0, 0)), Sample(1, new V3(600000, 0, 0))])]);
+            V3 terminal = new(600000, 1000, 0);
+            var subject = new ReplayActor(1, "subject", [new ReplaySegment(0.5, "parts", [Sample(0.5, terminal), Sample(1, terminal)])]) { End = 1 };
+            var flight = new ReplayFlight("game", "system", "body", 0, [old, subject], [])
+                { Follows = [new ReplayFollow(0.5, 1)], EndTime = 190 };
+            var world = new ReplayWorld(flight, 600000, segment => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), null));
+            expect(world.Motion(130).OriginCcf == terminal && ReplayTimeline.Sample(old, 130) != null
+                && ReplayTimeline.Sample(subject, 130) == null, "the surviving booster must not replace the terminal camera anchor");
+        });
+
         check("replay fx: parachute kinds are their own group and the state steps", () =>
         {
             expect(ReplayChannelKind.IsChute(ReplayChannelKind.ChuteFill) && !ReplayChannelKind.IsKnown(ReplayChannelKind.ChuteFill), "groups");

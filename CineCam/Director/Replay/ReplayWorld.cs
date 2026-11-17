@@ -228,6 +228,11 @@ public sealed class ReplayWorld
     {
         if (ReplayTimeline.Sample(followed, time) is { } pose)
             return pose;
+        if (followed.End is double ended && time >= ended)
+        {
+            ReplaySegment terminal = followed.Segments[^1];
+            return (terminal, terminal.Samples[^1]);
+        }
         for (int i = FollowIndex(time); i >= 0; i--)
         {
             if (ReplayTimeline.Sample(_follows[i].Actor, time) is { } before)
