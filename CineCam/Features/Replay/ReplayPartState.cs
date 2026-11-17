@@ -57,14 +57,8 @@ internal sealed class ReplayPartState
         return _values;
     }
 
-    /// <summary>
-    /// True when the recorded channels have the kinds of this tree in the same order, and the parts
-    /// that own them are the same when the segment has their key.
-    /// </summary>
-    public bool Matches(ReplaySegment segment) =>
-        segment.Channels is { } channels && channels.Count == _kinds.Count
-        && channels.Select(channel => channel.Kind).SequenceEqual(_kinds)
-        && (segment.PartKey is not uint key || key == Key);
+    /// <summary>Null when the recorded channels of the segment fit this tree, see <see cref="ReplayPartLayout.Mismatch"/>.</summary>
+    public string? Mismatch(ReplaySegment segment) => ReplayPartLayout.Mismatch(segment, _kinds, Key);
 
     /// <summary>
     /// A binding whose values did not change is skipped, because a new transform makes the render

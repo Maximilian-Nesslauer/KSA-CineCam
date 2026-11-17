@@ -115,7 +115,7 @@ internal static class StatusHeader
         string text = $"\"{takeName}\" on {RecordingName()}  |  {state}" + (shot.Length > 0 ? "  |  " + shot : "");
         double rate = (ReplaySession.Plan?.RecordingRate(ReplaySession.Time) ?? 0.0) * ReplaySession.Speed;
         string tip = string.Create(CultureInfo.InvariantCulture,
-            $"Recording: {ReplaySession.ReplayId}\nFlight time: {ReplaySession.RecordingTime:F1} of {ReplaySession.RecordingDuration:F1} s\nFlight speed now: {rate:0.###}x, preview speed {ReplaySession.Speed:0.##}x\nPlay, pause and move the replay in the timeline at the bottom of the screen.");
+            $"Recording: {ReplaySession.ReplayId}\nGame build of the recording: {ReplaySession.RecordingBuild}\nFlight time: {ReplaySession.RecordingTime:F1} of {ReplaySession.RecordingDuration:F1} s\nFlight speed now: {rate:0.###}x, preview speed {ReplaySession.Speed:0.##}x\nPlay, pause and move the replay in the timeline at the bottom of the screen.");
         Widgets.StatusLine(text, playing ? Widgets.GoodColor : Widgets.WarnColor, tip);
     }
 

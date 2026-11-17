@@ -109,7 +109,10 @@ def parser():
     sub = p.add_subparsers(dest="action", required=True)
     for name in ("status", "list", "record", "stop", "retry-save", "close", "play", "pause", "preview", "render-stop"):
         sub.add_parser(name)
-    sub.add_parser("open").add_argument("id", type=str)
+    p_open = sub.add_parser("open", help="open a recording")
+    p_open.add_argument("id", type=str)
+    p_open.add_argument("--older-build", action="store_true",
+                        help="confirm the open of a recording of an older game build")
     sub.add_parser("seek", help="go to a take time in seconds").add_argument("time", type=float)
     sub.add_parser("speed", help="preview speed on top of the speed track").add_argument("speed", type=float)
     sub.add_parser("camera", help="show the take or use the free camera").add_argument("mode", choices=("take", "free"))
@@ -142,6 +145,8 @@ def command(args):
         result["name"] = args.mode
     elif args.action == "add-key":
         result["name"] = args.kind
+    elif args.action == "open" and args.older_build:
+        result["enabled"] = True
     elif args.action == "render":
         result["name"] = "current" if args.from_here else "whole"
     return result

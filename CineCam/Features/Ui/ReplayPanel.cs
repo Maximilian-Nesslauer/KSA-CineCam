@@ -13,10 +13,11 @@ internal static class ReplayPanel
     private const int ListRowsShown = 6;
     private static readonly string[] StepsHint = { "1 Record a flight.", "2 Open it.", "3 Direct it with the timeline.", "4 Render." };
 
-    private static readonly string[] ListHeads = ["Date", "Vehicle", "Length", "Size"];
+    private static readonly string[] ListHeads = ["Date", "Vehicle", "Build", "Length", "Size"];
 
     private static string? _selectedFile;
     private static string? _confirmDelete;
+    private static string? _confirmOlder;
     private static string _deleteMessage = "";
 
     // The cells are made again only when the list changes.
@@ -31,6 +32,7 @@ internal static class ReplayPanel
     {
         _selectedFile = null;
         _confirmDelete = null;
+        _confirmOlder = null;
         _deleteMessage = "";
         _cellsVersion = -1;
         _cells = [];
@@ -84,6 +86,7 @@ internal static class ReplayPanel
         if (_libraryFrame == int.MinValue || frame - _libraryFrame > 1)
         {
             _confirmDelete = null;
+            _confirmOlder = null;
             _deleteMessage = "";
         }
 
@@ -95,6 +98,8 @@ internal static class ReplayPanel
             _selectedFile = entries.Count > 0 ? entries[0].Path : null;
         if (_confirmDelete != null && _confirmDelete != _selectedFile)
             _confirmDelete = null;
+        if (_confirmOlder != null && _confirmOlder != _selectedFile)
+            _confirmOlder = null;
 
         if (entries.Count == 0)
         {
@@ -144,7 +149,8 @@ internal static class ReplayPanel
         float size = ImGui.GetFontSize();
         float width = ConsoleStyle.ContentAvailWidth();
         float inset = ConsoleWidgets.RowLabelInsetPx;
-        float[] columns = [inset, size * 9.5f, Math.Max(size * 15f, width - size * 9f), Math.Max(size * 19f, width - size * 4.5f)];
+        float[] columns = [inset, size * 9.5f, Math.Max(size * 15f, width - size * 13f), Math.Max(size * 19f, width - size * 9f),
+            Math.Max(size * 23f, width - size * 4.5f)];
         Widgets.ListHeader(ListHeads, columns);
         float rowH = ConsoleStyle.FrameHeightPx + ImGui.GetStyle().ItemSpacing.Y;
         float height = rowH * Math.Min(entries.Count, ListRowsShown);
@@ -170,23 +176,57 @@ internal static class ReplayPanel
     {
         string text = entry.Id;
         if (entry.Header is { } header)
+        {
             text += $"\nKSA {header.GameVersion}, {header.SystemId}, {header.BodyId}";
+            string current = VersionInfo.Current.VersionString;
+            text += ReplayBuild.Compare(header.GameVersion, current) switch
+            {
+                ReplayBuildAge.Same => "\nRecorded on the build of this game.",
+                ReplayBuildAge.Older => $"\nRecorded on an older build than this game ({current}). It opens after a confirm.",
+                _ => $"\nThis game ({current}) cannot open it.",
+            };
+        }
         else if (entry.Error != null)
             text += "\nThe file cannot be read: " + entry.Error;
         return text;
     }
 
+    // A recording of an older game build opens with a second click on a confirm, as a delete does.
     private static void DrawListButtons(IReadOnlyList<RecordingEntry> entries)
     {
         RecordingEntry? selected = entries.FirstOrDefault(e => e.Path == _selectedFile);
+        string current = VersionInfo.Current.VersionString;
+        ReplayBuildAge age = selected?.Header is { } header ? ReplayBuild.Compare(header.GameVersion, current) : ReplayBuildAge.Same;
         string? openReason = ReplaySession.IsRecording ? "Stop the recording first."
             : selected == null ? "Select a recording in the list."
-            : selected.Header is { } header && header.GameVersion.Length > 0 && header.GameVersion != VersionInfo.Current.VersionString
-                ? $"This recording needs KSA {header.GameVersion}."
+            : age is ReplayBuildAge.Newer or ReplayBuildAge.Unknown ? ReplayBuild.OpenBlock(selected.Header!.GameVersion, current, true)?.Message
             : ReplaySession.OpenBlockReason;
-        if (Widgets.Button("OPEN REPLAY", string.IsNullOrEmpty(openReason), openReason
+        bool older = age == ReplayBuildAge.Older && selected != null;
+        if (!older)
+            _confirmOlder = null;
+        if (_confirmOlder != null && string.IsNullOrEmpty(openReason))
+        {
+            if (Widgets.Button("CONFIRM OPEN", true, "Opens the recording of the older build.", Widgets.Tone.Primary))
+            {
+                ReplaySession.Open(_confirmOlder, true);
+                _confirmOlder = null;
+            }
+
+            Widgets.SameLine();
+            if (Widgets.Button("CANCEL##open", true, "Keeps the replay closed."))
+                _confirmOlder = null;
+        }
+        else if (older)
+        {
+            if (Widgets.Button("OPEN OLDER RECORDING", string.IsNullOrEmpty(openReason), openReason
+                    ?? "This recording is from an older game build. You confirm the open with a second click.", Widgets.Tone.Primary))
+                _confirmOlder = selected!.Path;
+        }
+        else if (Widgets.Button("OPEN REPLAY", string.IsNullOrEmpty(openReason), openReason
                 ?? "Opens the recording and plays the selected take of the editor on it.", Widgets.Tone.Primary))
+        {
             ReplaySession.Open(selected!.Path);
+        }
 
         Widgets.SameLine();
         string? deleteReason = ReplaySession.IsRecording ? "Stop the recording first." : selected == null ? "Select a recording in the list." : null;
@@ -212,6 +252,8 @@ internal static class ReplayPanel
         }
 
         Widgets.Reason(openReason ?? "");
+        if (_confirmOlder != null && selected?.Header is { } olderHeader)
+            Widgets.Colored(ReplayBuild.OlderWarning(olderHeader.GameVersion, current), Widgets.WarnColor);
         if (_confirmDelete != null && selected != null)
             Widgets.Colored($"Delete {RecordingList.DisplayName(selected)} ({RecordingList.SizeText(selected.Bytes)})?", Widgets.WarnColor);
         if (_deleteMessage.Length > 0)
@@ -255,6 +297,11 @@ internal static class ReplayPanel
     {
         var session = CineCamWindow.EditorSession;
         StatusHeader.DrawReplay(session);
+        string warning = ReplaySession.OpenWarning;
+        if (warning.Length > 0)
+            Widgets.Colored(warning, Widgets.WarnColor);
+        else
+            Widgets.Muted(ReplayBuild.BuildLine(ReplaySession.RecordingBuild, VersionInfo.Current.VersionString));
         if (session.Validation.IsValid && ReplaySession.TakeProblem.Length > 0)
             Widgets.Colored(ReplaySession.TakeProblem, Widgets.WarnColor);
     }

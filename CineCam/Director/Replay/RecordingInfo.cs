@@ -192,6 +192,7 @@ public static class RecordingList
     [
         DateText(entry.Date),
         entry.Header?.Vehicle ?? (entry.Error != null ? "cannot be read" : "reading..."),
+        entry.Header is { } build ? ReplayBuild.Short(build.GameVersion) : "-",
         entry.Header is { } header ? LengthText(header.Duration) : "-",
         SizeText(entry.Bytes),
     ];

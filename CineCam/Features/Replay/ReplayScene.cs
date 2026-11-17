@@ -36,6 +36,9 @@ internal sealed class ReplayScene : IDisposable
     public ReplayWorld World { get; }
     public ReplayTakePlayer Player { get; }
 
+    /// <summary>What the replay left out because the recording does not fit the parts of this build.</summary>
+    public ReplayFitReport Fit { get; } = new();
+
     // The site frame of the take that plays. It is fixed in the body-fixed frame like the site of a live take.
     public SiteFrame Site { get; private set; }
 
@@ -72,14 +75,21 @@ internal sealed class ReplayScene : IDisposable
         {
             foreach (ReplaySegment segment in flight.Actors.SelectMany(actor => actor.Segments))
             {
-                PartTree parts = ReplayParts.Decode(segment.Definition);
+                PartTree parts = ReplayParts.Decode(segment.Definition, out int dropped);
                 try
                 {
+                    Fit.Segments++;
+                    Fit.ConnectorsDropped += dropped;
                     (double3 min, double3 max) = parts.ComputeBoundingBoxAsmb();
                     RocketNozzle[] nozzles = ReplayParts.OrderedNozzles(parts);
-                    // An empty engine list means that no engine burns in that sample.
-                    if (segment.Samples.Any(sample => sample.Nozzles.Length != 0 && sample.Nozzles.Length != nozzles.Length))
-                        throw new InvalidDataException("A recorded engine layout differs from the installed parts.");
+                    // The recorded engines map to the nozzles by their order, so a segment whose
+                    // engines do not fit shows no plumes rather than plumes at the wrong nozzles.
+                    if (!ReplayPartLayout.NozzlesFit(segment.Samples, nozzles.Length))
+                    {
+                        DefaultCategory.Log.Warning($"[CineCam] The replay shows no engine plumes for a segment of {segment.Start:0.###} s, because its recorded engines differ from the {nozzles.Length} engine nozzles of the installed parts.");
+                        Fit.ExhaustLeftOut++;
+                        nozzles = [];
+                    }
                     var shape = ReplayShape.FromBounds(FlightRecorder.ToV3(min), FlightRecorder.ToV3(max), segment.CenterOfMass,
                         id => FindPart(parts, id));
                     _models.Add(segment, new Model(segment, parts, nozzles, shape, (min + max) * 0.5,
@@ -329,14 +339,15 @@ internal sealed class ReplayScene : IDisposable
 
     // The recorded part state of a segment, or null when the segment has none or its channels do
     // not fit the decoded tree. Then the parts keep the state that the part tree definition holds.
-    private static ReplayPartState? PartStateOf(ReplaySegment segment, PartTree parts)
+    private ReplayPartState? PartStateOf(ReplaySegment segment, PartTree parts)
     {
         if (segment.Channels is not { Count: > 0 })
             return null;
         ReplayPartState state = ReplayPartState.Of(parts);
-        if (state.Matches(segment))
+        if (state.Mismatch(segment) is not { } reason)
             return state;
-        DefaultCategory.Log.Warning($"[CineCam] The replay shows the parts of a segment at {segment.Start:0.###} s without their recorded state, because the part modules differ from the recording.");
+        DefaultCategory.Log.Warning($"[CineCam] The replay shows the parts of a segment at {segment.Start:0.###} s without their recorded state, because the part modules differ from the recording: {reason}.");
+        Fit.PartStateLeftOut++;
         return null;
     }
 
