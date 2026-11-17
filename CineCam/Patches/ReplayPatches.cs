@@ -440,8 +440,6 @@ internal static class ReplayPatches
         return false;
     }
 
-    // A null parent makes VolumetricTrailRenderer.PrepareAndRenderShadowCascades prepare no
-    // trail frame, so RenderWithUpscaling draws no plume trail and no explosion volume.
     private static bool _hideTrails;
 
     // VolumetricTrailRenderer.PrepareFrame copies the live plume trails and their shadow segments only inside

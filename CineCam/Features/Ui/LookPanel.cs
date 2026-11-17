@@ -113,8 +113,10 @@ internal static class LookPanel
             CineCamSettings.SetMuteOfflineCapture(muteOffline);
         bool muteReplay = CineCamSettings.MuteReplay;
         if (Widgets.Check("Mute the game during a replay", ref muteReplay,
-                "The live flight is paused under the replay, so its sounds do not belong to the replay. The volumes come back when the replay closes."))
+                "Mutes all game sound, including recorded engine sounds. Turn this off to hear Engine sounds in a replay. The volumes come back when the replay closes."))
             CineCamSettings.SetMuteReplay(muteReplay);
+        if (muteReplay && CineCamSettings.ReplaySound)
+            Widgets.Muted("Replay engine sounds are enabled but muted here.");
         if (GameSound.Current is { IsFull: false } now)
             Widgets.Muted(string.Create(CultureInfo.InvariantCulture,
                 $"CineCam lowers the game sound now: master {now.Master * 100.0:0} percent, music {now.Music * 100.0:0} percent, effects {now.Effects * 100.0:0} percent of the game settings."));

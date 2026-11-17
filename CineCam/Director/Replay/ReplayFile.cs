@@ -5,8 +5,8 @@ using System.Text.Json;
 namespace CineCam.Director.Replay;
 
 /// <summary>
-/// Optional version 2 fields store part and parachute channels, neighbor and kitten actors, follow changes,
-/// explosions, destructions, event details, ground height and kitten state. A version 1 file has no events, states or centers of mass, so its markers
+/// Version 3 stores crew, parachutes, explosions and additional flight state. Version 2 stores part channels,
+/// neighbors, follow changes, events and vehicle state. A version 1 file has no events, states or centers of mass, so its markers
 /// become events and the rest is derived from the poses.
 /// </summary>
 public static class ReplayFile
