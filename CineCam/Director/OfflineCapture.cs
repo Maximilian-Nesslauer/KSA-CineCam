@@ -18,6 +18,19 @@ public sealed class OfflineCapture
 
     public double Fps { get; }
 
+    public CaptureGrab Grab { get; init; } = CaptureGrab.Swapchain;
+
+    /// <summary>The frame in which the last picture step was given to the game, so the sim step of that frame belongs to a picture.</summary>
+    public long StepFrame { get; set; } = -1;
+
+    /// <summary>The game time on which the step of this frame lands a picture, or null.</summary>
+    public double? LandingTarget { get; set; }
+
+    public string LandingName { get; set; } = "";
+
+    /// <summary>The step that CineCam asked for in this frame to land a picture on a target, or null.</summary>
+    public double? PlannedStep { get; set; }
+
     public string OutputFolder { get; }
 
     public string FramesFolder { get; }

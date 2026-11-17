@@ -264,6 +264,15 @@ public sealed class Take
 
     public PreRoll? PreRoll { get; set; }
 
+    /// <summary>Null keeps the game sound.</summary>
+    public TakeSound? Sound { get; set; }
+
+    /// <summary>Null keeps the graphics settings of the player.</summary>
+    public TakePicture? Picture { get; set; }
+
+    /// <summary>In an offline capture, a picture lands exactly on each apoapsis and periapsis that the orbit forecasts.</summary>
+    public bool ExactApsides { get; set; }
+
     public List<Shot> Shots { get; } = new();
     public List<SpeedKey> Speed { get; } = new();
     public List<TakeAction> Actions { get; } = new();
@@ -290,11 +299,13 @@ public sealed class CaptureOptions
     /// <summary>Only 1 works, because the swapchain grab has the size of the game window.</summary>
     public int Scale { get; set; } = 1;
 
+    public CaptureGrab Grab { get; set; } = CaptureGrab.Swapchain;
+
     public Dictionary<string, JsonElement> Extras { get; } = new();
 
     /// <summary>True when the writer can leave the object out.</summary>
     public bool IsDefault =>
-        Mode == CaptureMode.Realtime && Fps == null && Folder == null && Scale == 1 && Extras.Count == 0;
+        Mode == CaptureMode.Realtime && Fps == null && Folder == null && Scale == 1 && Grab == CaptureGrab.Swapchain && Extras.Count == 0;
 }
 
 public sealed class ShotFile

@@ -216,6 +216,9 @@ public static class ShotEdit
             AutoStart = source.AutoStart,
             AutoStartDelay = source.AutoStartDelay,
             PreRoll = source.PreRoll?.Clone(),
+            Sound = source.Sound?.Clone(),
+            Picture = source.Picture?.Clone(),
+            ExactApsides = source.ExactApsides,
         };
         if (source.KeepOut != null)
             copy.KeepOut = source.KeepOut.Select(b => b.Clone()).ToList();
