@@ -27,13 +27,14 @@ KIND_COLORS = {
     "shot": "Green",
     "speed": "Yellow",
     "action": "Red",
+    "cue": "Purple",
     "marker": "Cyan",
     "info": "Sand",
     "warning": "Rose",
     "pause": "Lavender",
     "take": "Mint",
 }
-DEFAULT_KINDS = "event,shot,speed,action"
+DEFAULT_KINDS = "event,shot,speed,action,cue"
 ALL_KINDS = tuple(KIND_COLORS)
 
 
@@ -169,6 +170,8 @@ def marker_name(kind, name, detail):
         # The detail reads "actions[0]; fires sequence 3; next=3; active=2".
         parts = [part.strip() for part in detail.split(";")]
         return f"{name}: {parts[1]}" if len(parts) > 1 and parts[1] else name
+    if kind == "cue":
+        return f"cue {name}"
     return f"{kind} {name}"
 
 

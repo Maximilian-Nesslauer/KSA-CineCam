@@ -22,6 +22,7 @@ internal static partial class TakeRunner
         if (take.PendingActions.Count == 0)
             return;
 
+        FireCues(take, t);
         if (take.DryRun)
         {
             take.PendingActions.Clear();
@@ -34,6 +35,25 @@ internal static partial class TakeRunner
             if (Run(take, index, take.Take.Actions[index], t) == StageVerdict.Wait)
                 break;
             take.PendingActions.RemoveAt(0);
+        }
+    }
+
+    // A cue changes nothing in the flight, so it fires in a dry run too, and a stage action that waits does not hold it back.
+    private static void FireCues(ActiveTake take, double t)
+    {
+        for (int i = 0; i < take.PendingActions.Count;)
+        {
+            int index = take.PendingActions[i];
+            TakeAction action = take.Take.Actions[index];
+            if (action.Kind != ActionKind.Cue)
+            {
+                i++;
+                continue;
+            }
+
+            take.PendingActions.RemoveAt(i);
+            WriteRow(take, "cue", action.Name, $"actions[{index}]", t);
+            ApiFeed.LiveCue(action.Name, t);
         }
     }
 

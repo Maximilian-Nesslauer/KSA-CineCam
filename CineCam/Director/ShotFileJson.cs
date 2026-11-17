@@ -325,6 +325,7 @@ public static class ShotFileJson
                 }
             }
 
+            shot.Name = ReadName(obj, required: false);
             shot.Duration = obj.ReqNum("duration", 0.0, 3600.0, minExclusive: true);
             shot.Ease = obj.OptEnum<Ease>("ease") ?? (shot.Type == ShotType.Path ? Ease.InOut : Ease.None);
             shot.Fov = obj.OptNum("fov", 1.0, 150.0) ?? 40.0;
@@ -496,11 +497,15 @@ public static class ShotFileJson
         private TakeAction ReadAction(Obj obj)
         {
             string kindText = obj.OptString("action")
-                ?? throw new ShotFileException(obj.Child("action"), "an action needs a kind (stage)");
+                ?? throw new ShotFileException(obj.Child("action"), "an action needs a kind (stage or cue)");
             var action = new TakeAction { Kind = Obj.ParseEnum<ActionKind>(obj.Child("action"), kindText) };
             if (!obj.Has("at"))
                 throw new ShotFileException(obj.Child("at"), "an action needs a trigger: a take time or an event");
             action.At = ReadTrigger(obj, "at");
+
+            // A stage action leaves "name" to the unknown fields, which are kept, so an older file reads as before.
+            if (action.Kind == ActionKind.Cue)
+                action.Name = ReadName(obj, required: true);
 
             double? sequence = obj.OptNum("sequence", 1.0, 1e6);
             if (sequence.HasValue)
@@ -514,6 +519,16 @@ public static class ShotFileJson
 
             obj.CollectExtras(action.Extras);
             return action;
+        }
+
+        private static string ReadName(Obj obj, bool required)
+        {
+            string? name = obj.OptString("name");
+            if (name == null)
+                return required ? throw new ShotFileException(obj.Child("name"), "a cue needs a name, " + TakeAction.NameRule) : "";
+            if (!TakeAction.IsValidName(name))
+                throw new ShotFileException(obj.Child("name"), "expected " + TakeAction.NameRule);
+            return name;
         }
 
         private Transition ReadTransition(Obj obj)
@@ -887,6 +902,8 @@ public static class ShotFileJson
                 json.Item().BeginObject();
                 WriteTrigger(json, action.At);
                 json.Key("action").Str(Lower(action.Kind.ToString()));
+                if (action.Kind == ActionKind.Cue)
+                    json.Key("name").Str(action.Name);
                 if (action.Sequence.HasValue)
                     json.Key("sequence").Num(action.Sequence.Value);
                 WriteExtras(json, action.Extras);
@@ -900,6 +917,8 @@ public static class ShotFileJson
     private static void WriteShot(JsonOut json, Shot shot)
     {
         json.Key("type").Str(Lower(shot.Type.ToString()));
+        if (shot.Name.Length > 0)
+            json.Key("name").Str(shot.Name);
         json.Key("target").Str(shot.Subject == ShotSubject.Separated && Shot.SupportsAim(shot.Type) ? "separated" : Lower(shot.Target.ToString()));
         switch (shot.Type)
         {

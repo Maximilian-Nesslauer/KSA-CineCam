@@ -59,6 +59,9 @@ internal static partial class ReplaySession
         : "";
     public static bool IsPlaying => Scene?.IsPlaying == true;
 
+    /// <summary>True while the player hid the game interface in an open replay. A preview picture hides it only for its frame and does not count.</summary>
+    public static bool HidesInterface => Scene != null && _preview == null && !Program.DrawUI;
+
     /// <summary>The take time of the replay, the time of the video.</summary>
     public static double Time => Scene?.TakeTime ?? 0;
 
@@ -145,6 +148,8 @@ internal static partial class ReplaySession
                 }
 
                 scene.Update(frameTime);
+                if (_render == null)
+                    ApiFeed.ReplayFrame(scene);
             }
             catch (Exception ex)
             {
@@ -348,6 +353,7 @@ internal static partial class ReplaySession
             string imported = ImportLegacy(scene, id);
             SyncTake(scene, true);
             scene.SetCameraMode(scene.Player.Plan.Take is { Shots.Count: > 0 } ? ReplayCameraMode.Take : ReplayCameraMode.Free);
+            ApiFeed.ReplayOpened(id);
             string note = flight.FormatVersion < ReplayFile.CurrentVersion
                 ? " This recording is from an older version: only the lift-off and the ignitions are known as events."
                 : "";
@@ -382,6 +388,7 @@ internal static partial class ReplaySession
         _markers = [];
         if (scene != null)
         {
+            ApiFeed.ReplayClosed();
             scene.Dispose();
             // The result of a render that the close ended stays in the status.
             Status = rendering ? $"Replay closed. {Status}" : "Replay closed. Returned to the live flight.";

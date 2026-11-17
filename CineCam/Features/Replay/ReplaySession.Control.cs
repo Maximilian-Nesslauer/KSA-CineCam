@@ -126,6 +126,7 @@ internal static partial class ReplaySession
                 if (!show)
                     NeedScene();
                 Program.DrawUI = show;
+                ApiFeed.SyncInterface();
                 return Program.DrawUI ? "Interface shown." : "Interface hidden.";
             case ReplayOperation.Unknown:
                 throw new Refusal("unknown_operation", "Choose a supported CineCam operation.");

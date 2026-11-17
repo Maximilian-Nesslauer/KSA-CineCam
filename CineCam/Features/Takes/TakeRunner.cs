@@ -447,6 +447,8 @@ internal static partial class TakeRunner
             return;
         }
 
+        ApiFeed.LiveStarted(active);
+
         V3 vehicleInSite = site.FromEcl(vehicle.GetPositionEcl());
         string siteText = string.Create(CultureInfo.InvariantCulture,
             $"{site.Id} on {site.Body.Id}, vehicle at up {vehicleInSite.X:F2} east {vehicleInSite.Y:F2} north {vehicleInSite.Z:F2} m");
@@ -602,6 +604,9 @@ internal static partial class TakeRunner
             DefaultCategory.Log.Error($"[CineCam] The game interface could not be shown again: {ex.Message}");
         }
 
+        if (take.Preview == null)
+            ApiFeed.LiveEnded(reason);
+
         try
         {
             ReportUnfiredActions(take, seconds);
@@ -717,6 +722,7 @@ internal static partial class TakeRunner
         DirectorFrame frame = take.Director.Update(t, world);
         take.LastFrame = frame;
         LogFrame(take, t, frame);
+        ApiFeed.LiveTick(take.Take, frame, t);
         ApplySpeed(take, frame, t);
         RunActions(take, t);
 
@@ -842,6 +848,7 @@ internal static partial class TakeRunner
         // The console draws over the picture, so new lines get no display time while the interface is hidden.
         Program.ConsoleWindow?.DisableMessageFading();
         GameUiGuard.ClearPartHighlights();
+        ApiFeed.SyncInterface();
     }
 
     private static void LogFrame(ActiveTake take, double t, DirectorFrame frame)
@@ -851,6 +858,7 @@ internal static partial class TakeRunner
             if (seen.Name == "ignition")
                 take.IgnitionGameSeconds = GameSeconds();
             WriteRow(take, "event", seen.Name, seen.Detail, t);
+            ApiFeed.LiveEvent(seen.Name, t);
             if (take.HideUiEvent != null && seen.Name == take.HideUiEvent && !take.HidUi)
             {
                 if (take.IsPaused)
@@ -867,8 +875,10 @@ internal static partial class TakeRunner
         foreach (int index in frame.StartedShots)
         {
             Shot shot = take.Take.Shots[index];
+            string name = shot.Name.Length > 0 ? "; name=" + shot.Name : "";
             WriteRow(take, "shot", $"camera[{index}]",
-                string.Create(CultureInfo.InvariantCulture, $"type={shot.Type}; duration={shot.Duration}; fov={shot.Fov}"), t);
+                string.Create(CultureInfo.InvariantCulture, $"type={shot.Type}; duration={shot.Duration}; fov={shot.Fov}{name}"), t);
+            ApiFeed.LiveShot(take.Take, index);
         }
 
         foreach (int index in frame.StartedSpeedKeys)

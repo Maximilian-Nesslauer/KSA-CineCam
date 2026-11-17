@@ -188,6 +188,7 @@ internal static class CineCamPatches
             ReplaySession.OnRenderFrameEnd();
             SunWarp.Tick();
             AutotestRunner.OnFrameEnd();
+            ApiFeed.SyncInterface();
             if (_commandFrames < CommandRetryFrames && ++_commandFrames % 30 == 1)
             {
                 if (CineCamCommands.TryRegister())

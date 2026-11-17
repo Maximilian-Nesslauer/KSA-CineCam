@@ -150,6 +150,7 @@ public static class ShotEdit
         var copy = new Shot
         {
             Type = source.Type,
+            Name = source.Name,
             Duration = source.Duration,
             Ease = source.Ease,
             Fov = source.Fov,
@@ -197,7 +198,7 @@ public static class ShotEdit
 
     public static TakeAction Clone(TakeAction source)
     {
-        var copy = new TakeAction { At = CloneTrigger(source.At), Kind = source.Kind, Sequence = source.Sequence };
+        var copy = new TakeAction { At = CloneTrigger(source.At), Kind = source.Kind, Sequence = source.Sequence, Name = source.Name };
         foreach (var pair in source.Extras)
             copy.Extras[pair.Key] = pair.Value;
         return copy;
@@ -348,7 +349,8 @@ public static class ShotEdit
 
     public static string Describe(int index, TakeAction action)
     {
-        string number = action.Sequence.HasValue ? $" sequence {action.Sequence.Value}" : "";
+        string number = action.Kind == ActionKind.Cue ? $" {action.Name}"
+            : action.Sequence.HasValue ? $" sequence {action.Sequence.Value}" : "";
         return $"{index + 1}  {action.Kind.ToString().ToLowerInvariant()}{number}  {Describe(action.At)}";
     }
 

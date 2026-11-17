@@ -118,12 +118,12 @@ internal static class TrackPanel
         }
 
         Widgets.Section("Action track");
-        Widgets.Muted("An action changes the vehicle once per run when its trigger is reached. A stage action presses the staging key.");
+        Widgets.Muted("An action runs once per run when its trigger is reached. A stage action presses the staging key. A cue gives a name to other mods, for example to show an overlay at the lift-off.");
         var rows = take.Actions.Select((a, i) => ViewText.ActionRow(i, a) with { Starts = Widgets.TriggerText(a.At, i) }).ToList();
         bool changed = DrawList("actions", ActionHeaders, rows, session.ActionIndex, -1, i => session.ActionIndex = i,
             () => session.SelectedAction is { } action && DrawActionFields(session, action));
         DrawListButtons("action", session.ActionIndex, take.Actions.Count, session.AddAction, session.DuplicateAction, session.RemoveAction, session.MoveAction,
-            "Adds a stage action. It fires the next sequence of the vehicle once per run.");
+            "Adds a stage action. It fires the next sequence of the vehicle once per run. Set the action to Cue for a cue.");
         if (changed)
             session.Changed();
     }
@@ -234,6 +234,13 @@ internal static class TrackPanel
         else
         {
             Widgets.Muted("Frame: " + ShotLabels.Frame(FrameChoice.World, shot.Type) + ". " + ShotLabels.FrameHelp(FrameChoice.World));
+        }
+
+        if (Widgets.Text("Name", id + "-name", shot.Name, out string shotName, 128,
+                "Optional. Other mods and the event log get this name when the shot starts. " + TakeAction.NameRule + "."))
+        {
+            shot.Name = shotName.Trim();
+            changed = true;
         }
 
         double duration = shot.Duration;
@@ -620,10 +627,33 @@ internal static class TrackPanel
         ImGui.PushID(id.AsSpan());
 
         ActionKind kind = action.Kind;
-        if (Widgets.Enum("Action", ref kind))
+        if (Widgets.Enum("Action", ref kind, null, "Stage presses the staging key. Cue gives a name to other mods, for example to show an overlay."))
         {
             action.Kind = kind;
+            if (kind == ActionKind.Cue)
+            {
+                action.Sequence = null;
+                if (action.Name.Length == 0)
+                    action.Name = "cue";
+            }
+            else
+            {
+                action.Name = "";
+            }
+
             changed = true;
+        }
+
+        if (action.Kind == ActionKind.Cue)
+        {
+            if (Widgets.Text("Cue name", id + "-cue", action.Name, out string cueName, 128,
+                    "Other mods get this name when the cue fires, for example overlay-in. " + TakeAction.NameRule + "."))
+            {
+                action.Name = cueName.Trim();
+                changed = true;
+            }
+
+            Widgets.Tip("A cue changes nothing in the flight. It fires in a live take, a dry run, a replay and a render, and it has a row in the event log.");
         }
 
         if (action.Kind == ActionKind.Stage)

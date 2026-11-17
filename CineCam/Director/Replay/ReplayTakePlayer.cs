@@ -61,6 +61,9 @@ public sealed class ReplayTakePlayer
 
     public TakeDirector? Director => _director;
 
+    /// <summary>Counts the seeks, so a caller can tell a move of the play from a jump.</summary>
+    public int Jumps { get; private set; }
+
     /// <summary>Why the take could not be resolved, or an empty text.</summary>
     public string Problem { get; private set; } = "";
 
@@ -125,6 +128,7 @@ public sealed class ReplayTakePlayer
     public void Seek(double takeTime, bool rough)
     {
         double target = double.IsFinite(takeTime) ? Math.Clamp(takeTime, 0.0, Duration) : 0.0;
+        Jumps++;
         if (rough && _director != null && Plan.Take is { } current && target >= _evaluated && target - _evaluated <= WarmUpSeconds(current))
         {
             Time = target;

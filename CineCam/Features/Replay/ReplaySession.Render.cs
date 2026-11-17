@@ -190,7 +190,7 @@ internal static partial class ReplaySession
             var capture = new OfflineCapture(job.Fps, output, frames, collector);
             run = new RenderRun(job, capture, log, folder, plan, scene.Flight.StartTime)
             {
-                EventRows = ReplayRenderLog.EventRows(plan.EventTimes, job),
+                EventRows = ReplayRenderLog.TimedRows(plan, job),
                 SavedTime = scene.TakeTime,
                 SavedPlaying = scene.IsPlaying,
                 SavedSpeed = scene.Player.PreviewSpeed,
@@ -231,6 +231,7 @@ internal static partial class ReplaySession
             Program.DrawUI = false;
             // The console draws its lines over the picture, so new lines get no display time.
             Program.ConsoleWindow?.DisableMessageFading();
+            ApiFeed.RenderStarted(take.Name, folder, plan, job.Start);
         }
         catch (Exception ex)
         {
@@ -381,8 +382,11 @@ internal static partial class ReplaySession
     private static bool WriteRenderRows(RenderRun run, ReplayScene scene, int index)
     {
         int picture = index + 1;
+        int first = run.NextEventRow;
         while (run.NextEventRow < run.EventRows.Count && run.EventRows[run.NextEventRow].Picture <= picture)
             ReplayRenderLog.Write(run.Log, run.EventRows[run.NextEventRow++], run.Plan, run.FlightStart);
+        ApiFeed.RenderPicture(run.Plan, run.FlightStart, run.Job.TakeTime(index), run.EventRows.Skip(first).Take(run.NextEventRow - first),
+            scene.Player.Frame, index == 0);
         if (scene.Player.Frame is not { } frame || run.Plan.Take is not { } take)
             return false;
         List<ReplayRenderRow> rows = ReplayRenderLog.FrameRows(take, frame, run.Job, index, out bool cut);
@@ -535,6 +539,7 @@ internal static partial class ReplaySession
             Program.DrawUI = run.SavedDrawUi;
             Program.ConsoleWindow?.EnableMessageFading();
             RenderAlerts.RemoveNew(run.SavedAlerts);
+            ApiFeed.RenderEnded(run.Plan.Take?.Name ?? "", run.Folder, reason ?? "done");
             if (restoreScene && Scene is { } scene)
             {
                 scene.SetPreviewSpeed(run.SavedSpeed);

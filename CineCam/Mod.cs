@@ -41,6 +41,7 @@ public sealed class Mod
                 "Some features may not work correctly.");
 
         CineCamSettings.Load();
+        ApiFeed.Start();
 
         _harmony = new Harmony("com.maxi.cinecam");
         CineCamPatches.Apply(_harmony);
@@ -101,6 +102,7 @@ public sealed class Mod
         QuickCamera.Shutdown();
         CineCamWindow.Shutdown();
         CineCamCommands.Unregister();
+        ApiFeed.Shutdown();
 
         _harmony?.UnpatchAll(_harmony.Id);
         _harmony = null;

@@ -1011,7 +1011,8 @@ internal static class LiveTimeline
                 if (selected)
                     draw.AddTriangle(new float2(a.X - 2f * scale, a.Y - 2f * scale), new float2(b.X + 2f * scale, b.Y - 2f * scale),
                         new float2(c.X, c.Y + 3f * scale), Selection, 1.5f * scale);
-                string label = action.Sequence is int sequence ? $"Stage {sequence}" : "Stage";
+                string label = action.Kind == ActionKind.Cue ? "Cue " + action.Name
+                    : action.Sequence is int sequence ? $"Stage {sequence}" : "Stage";
                 if (x + r + 2f > labelEnd)
                 {
                     draw.AddText(new float2(x + r + 3f * scale, cy - ImGui.GetFontSize() * 0.5f), mark.Estimated ? EstimateColor : TextColor, label);
