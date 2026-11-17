@@ -67,6 +67,12 @@ static class ReplayFxTests
             };
             expect(ReplayTimeline.Duration(flight) == 190 && ReplayTimeline.Sample(actor, 130) == null,
                 "the timeline continues without a frozen vehicle");
+            var world = new ReplayWorld(flight, 600000, segment => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), segment.CenterOfMass));
+            var player = new ReplayTakePlayer(world);
+            player.Seek(130);
+            expect(player.Time == 130 && player.Sample != null && world.Motion(130).VelocityCcf == V3.Zero,
+                "the player and camera continue through the tail without a drawable actor");
+            expect(ReplayWorld.SurfaceVelocityCcf(actor, 0.99) == V3.Zero, "velocity sampling near an exact actor end stays valid");
             string path = Path.Combine(Path.GetTempPath(), "cinecam-tail-" + Guid.NewGuid().ToString("N") + ".ccreplay");
             try
             {

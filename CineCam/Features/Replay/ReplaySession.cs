@@ -35,7 +35,7 @@ internal static partial class ReplaySession
     private static string? _takeName;
     private static string? _recordingTake;
     private static bool _recordingForTake;
-    private static ulong? _finishTakeFrame;
+    private static (ulong Frame, string? Reason)? _terminalStop;
     private static string _takeProblem = "";
     private static string _openWarning = "";
     private static string Folder => Path.Combine(CineCamPaths.Root, "replays");
@@ -136,10 +136,18 @@ internal static partial class ReplaySession
         {
             try
             {
+                if (_terminalStop is { } pending)
+                {
+                    if (Program.FrameNumber > pending.Frame) FinishRecording(pending.Reason);
+                    return;
+                }
                 if (_recorder.Capture() is { } reason)
-                    FinishRecording(reason);
-                else if (_finishTakeFrame is ulong frame && Program.FrameNumber > frame)
-                    FinishRecording();
+                {
+                    // RefreshVehiclesInFrame runs before ExplosionSystem.Update in this frame.
+                    // Keep the observer alive until the volumes of the terminal destruction exist.
+                    if (_recorder.PrimaryDestroyed) _terminalStop = (Program.FrameNumber, reason);
+                    else FinishRecording(reason);
+                }
                 else if (_recorder.TakeNote() is { } note)
                     Status = $"{Status} {note}";
             }
@@ -300,7 +308,7 @@ internal static partial class ReplaySession
         // Retain the recorder through that frame so the final effects reach the recording.
         if (_recorder.PrimaryDestroyed)
         {
-            _finishTakeFrame ??= Program.FrameNumber;
+            _terminalStop ??= (Program.FrameNumber, null);
             return;
         }
         try
@@ -320,7 +328,7 @@ internal static partial class ReplaySession
         _recorder = null;
         _recordingTake = null;
         _recordingForTake = false;
-        _finishTakeFrame = null;
+        _terminalStop = null;
         if (recorder == null)
             return;
         recorder.Close();

@@ -222,8 +222,8 @@ public sealed class ReplayWorld
         return index;
     }
 
-    // The recorder follows a vehicle only while it records it, so only a damaged file has no pose, and
-    // then the vehicle followed before stands in.
+    // A terminal effects tail has no drawable vehicle. Its last recorded pose remains the camera
+    // anchor, while ReplayTimeline.Sample keeps the destroyed model out of the scene.
     private (ReplaySegment Segment, ReplaySample Sample) Followed(double time, ref ReplayActor followed)
     {
         if (ReplayTimeline.Sample(followed, time) is { } pose)
@@ -237,7 +237,8 @@ public sealed class ReplayWorld
             }
         }
 
-        throw new InvalidDataException($"The recording has no followed vehicle at {time:0.###} s.");
+        ReplaySegment last = followed.Segments[^1];
+        return (last, last.Samples[^1]);
     }
 
     // In the body-fixed frame, and the model origin in a file without the center of mass.
@@ -258,8 +259,10 @@ public sealed class ReplayWorld
     /// </summary>
     public static V3 SurfaceVelocityCcf(ReplayActor actor, double time)
     {
-        var (segment, sample) = ReplayTimeline.Sample(actor, time)!.Value;
+        if (ReplayTimeline.Sample(actor, time) is not { } pose) return V3.Zero;
+        var (segment, sample) = pose;
         double first = segment.Samples[0].Time, last = segment.Samples[^1].Time;
+        if (actor.End is double end) last = Math.Min(last, Math.BitDecrement(end));
         double from = Math.Clamp(time - ReplaySampling.Interval, first, last);
         double to = Math.Clamp(time + ReplaySampling.Interval, first, last);
         if (to - from < 1e-6)
