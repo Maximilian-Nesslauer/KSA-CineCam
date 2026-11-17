@@ -383,7 +383,7 @@ internal static class ReplayPatches
         return list;
     }
 
-    private static double KittenSpeed() => ReplayCrew.InAnimationDraw ? 1 : Universe.GetSimulationSpeed();
+    private static double KittenSpeed() => ReplayCrew.InAnimationDraw ? ReplayCrew.AnimationStepScale : Universe.GetSimulationSpeed();
     private static double KittenFraction() => ReplayCrew.InAnimationDraw ? 1 : Universe.GetAchivedSpeedFraction();
 
     private static bool BeforePowerStatus(PowerConsumer __instance, ref PowerStatus __result)
