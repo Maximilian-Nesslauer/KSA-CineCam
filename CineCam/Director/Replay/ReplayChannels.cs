@@ -62,10 +62,39 @@ public static class ReplayChannelKind
     /// <summary>1 for on and 0 for off.</summary>
     public const string Light = "l";
 
+    /// <summary>The state of a parachute as the number of its ChuteState.</summary>
+    public const string ChuteState = "cs";
+
+    /// <summary>The fill of a parachute canopy, a fraction from 0 to 1.</summary>
+    public const string ChuteFill = "cf";
+
+    /// <summary>Seconds that a parachute was reefed.</summary>
+    public const string ChuteReef = "cr";
+
+    /// <summary>Seconds of the line stretch of a parachute.</summary>
+    public const string ChuteStretch = "cl";
+
+    /// <summary>Seconds of the disreef of a parachute.</summary>
+    public const string ChuteDisreef = "cd";
+
+    /// <summary>The canopy direction of a parachute in the vehicle frame, a component of a unit vector.</summary>
+    public const string ChuteDirectionX = "cx";
+
+    /// <summary>See <see cref="ChuteDirectionX"/>.</summary>
+    public const string ChuteDirectionY = "cy";
+
+    /// <summary>See <see cref="ChuteDirectionX"/>.</summary>
+    public const string ChuteDirectionZ = "cz";
+
+    /// <summary>The kinds of the look of the parts, see <see cref="ReplaySegment.Channels"/>.</summary>
     public static bool IsKnown(string? kind) => kind is Animation or AnimationTracking or Tracker or GimbalY or GimbalZ
         or Heat or ThinFilm or Wetness or Light;
 
-    public static bool IsStep(string kind) => kind == Light;
+    /// <summary>The kinds of the parachutes, see <see cref="ReplaySegment.Chutes"/>.</summary>
+    public static bool IsChute(string? kind) => kind is ChuteState or ChuteFill or ChuteReef or ChuteStretch or ChuteDisreef
+        or ChuteDirectionX or ChuteDirectionY or ChuteDirectionZ;
+
+    public static bool IsStep(string kind) => kind is Light or ChuteState;
 
     // SolarTrackingExtension.Update keeps its angle in the range of half a turn with
     // Math.IEEERemainder, so the recorded value jumps by a full turn where the panel turns past it.
@@ -76,13 +105,14 @@ public static class ReplayChannelKind
     {
         Animation => 1e-3,
         AnimationTracking or Tracker or GimbalY or GimbalZ => 1e-4,
-        Light => 1.0,
+        Light or ChuteState => 1.0,
+        ChuteReef or ChuteStretch or ChuteDisreef => 1e-2,
         _ => 1e-3,
     };
 
     private static double Tolerance(string kind) => kind switch
     {
-        Heat or ThinFilm or Wetness => 4e-3,
+        Heat or ThinFilm or Wetness or ChuteDirectionX or ChuteDirectionY or ChuteDirectionZ => 4e-3,
         _ => Quantum(kind) * 0.5,
     };
 
@@ -92,6 +122,8 @@ public static class ReplayChannelKind
             return 0f;
         if (kind == Light)
             return value > 0.5f ? 1f : 0f;
+        if (kind == ChuteState)
+            return MathF.Round(Math.Clamp(value, 0f, 255f));
         double quantum = Quantum(kind);
         return (float)(Math.Round(value / quantum) * quantum);
     }
@@ -116,7 +148,7 @@ public sealed class ReplayChannelWriter
     {
         foreach (string kind in kinds)
         {
-            if (!ReplayChannelKind.IsKnown(kind))
+            if (!ReplayChannelKind.IsKnown(kind) && !ReplayChannelKind.IsChute(kind))
                 throw new ArgumentException($"Unknown channel kind {kind}.", nameof(kinds));
         }
         Channels = kinds.Select(kind => new ReplayChannel(kind, new List<double>(), new List<float>())).ToList();

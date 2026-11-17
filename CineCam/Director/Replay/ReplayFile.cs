@@ -5,8 +5,8 @@ using System.Text.Json;
 namespace CineCam.Director.Replay;
 
 /// <summary>
-/// The part channels, the neighbor flag and end time of an actor, the follow changes and the height over the
-/// ground in the state of a sample are optional fields of version 2. A file of version 1 has no events, states or centers of mass, so its markers
+/// The part channels, the parachute channels, the neighbor flag and end time of an actor, the follow changes, the
+/// explosions, the destructions and the height over the ground in the state of a sample are optional fields of version 2. A file of version 1 has no events, states or centers of mass, so its markers
 /// become events and the rest is derived from the poses.
 /// </summary>
 public static class ReplayFile
@@ -51,6 +51,8 @@ public static class ReplayFile
     // The sizes include the comma that separates an item from the next one.
     public static long MeasureSample(ReplaySample sample) => JsonSerializer.SerializeToUtf8Bytes(sample, Options).Length + 1;
     public static long MeasureText(string text) => JsonSerializer.SerializeToUtf8Bytes(text, Options).Length + 1;
+    public static long MeasureExplosion(ReplayExplosion item) => JsonSerializer.SerializeToUtf8Bytes(item, Options).Length + 1;
+    public static long MeasureDestruction(ReplayDestruction item) => JsonSerializer.SerializeToUtf8Bytes(item, Options).Length + 1;
     public static long MeasureNumber(double value) => JsonSerializer.SerializeToUtf8Bytes(value, Options).Length + 1;
     public static long MeasureNumber(float value) => JsonSerializer.SerializeToUtf8Bytes(value, Options).Length + 1;
 
@@ -125,32 +127,10 @@ public static class ReplayFile
                         Require(float.IsFinite(nozzle.DutyCycle) && float.IsFinite(nozzle.ExhaustVelocity) && float.IsFinite(nozzle.ExhaustPressure) && float.IsFinite(nozzle.Temperature) && float.IsFinite(nozzle.Gamma) && float.IsFinite(nozzle.SpecificGasConstant) && float.IsFinite(nozzle.ChamberPressure) && float.IsFinite(nozzle.ChamberTemperature) && float.IsFinite(nozzle.ExitPressure) && float.IsFinite(nozzle.ExitTemperature) && SupportedVector(nozzle.Position) && SupportedVector(nozzle.Axis) && SupportedVector(nozzle.RestPosition) && SupportedVector(nozzle.RestAxis), "nozzle");
                     samples.Add(sample with { Rotation = ReplayTimeline.Normalize(sample.Rotation) });
                 }
-                List<ReplayChannel>? channels = segment.Channels;
-                if (channels != null)
-                {
-                    Require(channels.TrueForAll(channel => channel != null && ReplayChannelKind.IsKnown(channel.Kind) && channel.Times != null && channel.Values != null
-                        && channel.Times.Count > 0 && channel.Times.Count == channel.Values.Count), "part channel");
-                    foreach (ReplayChannel channel in channels)
-                    {
-                        double previousKey = double.NegativeInfinity;
-                        for (int k = 0; k < channel.Times.Count; k++)
-                        {
-                            double key = channel.Times[k];
-                            float value = channel.Values[k];
-                            Require(double.IsFinite(key) && key >= 0 && key > previousKey && float.IsFinite(value) && Math.Abs(value) <= 1e6f, "part channel key");
-                            previousKey = key;
-                        }
-                    }
-
-                    // The part state only changes the look of the parts, so a segment over a limit keeps
-                    // its flight and loses its channels.
-                    long values = channels.Sum(channel => (long)channel.Times.Count);
-                    if (channels.Count > ChannelLimit || channelValues + values > ChannelValueLimit)
-                        channels = null;
-                    else
-                        channelValues += values;
-                }
-                segments.Add(segment with { Samples = samples, Channels = channels, PartKey = channels == null ? null : segment.PartKey });
+                List<ReplayChannel>? channels = Channels(segment.Channels, ReplayChannelKind.IsKnown, ref channelValues);
+                List<ReplayChannel>? chutes = Channels(segment.Chutes, ReplayChannelKind.IsChute, ref channelValues);
+                segments.Add(segment with { Samples = samples, Channels = channels, PartKey = channels == null ? null : segment.PartKey,
+                    Chutes = chutes, ChuteKey = chutes == null ? null : segment.ChuteKey });
             }
             double lastTime = segments[^1].Samples[^1].Time;
             Require(actor.End is not double end || (double.IsFinite(end) && end >= lastTime), "actor end");
@@ -181,6 +161,54 @@ public static class ReplayFile
         }
         views.Sort(static (a, b) => a.Time.CompareTo(b.Time));
         var events = flight.Events.OrderBy(item => item.Time).ToList();
-        return flight with { Actors = actors, Views = views, Events = events, Follows = flight.Follows is { Count: > 0 } follows ? [.. follows] : null };
+        Require((flight.Explosions?.Count ?? 0) <= EventLimit && (flight.Destructions?.Count ?? 0) <= EventLimit, "too many explosions");
+        foreach (ReplayExplosion item in flight.Explosions ?? [])
+        {
+            Require(item != null && double.IsFinite(item.Time) && item.Time >= 0 && item.Time <= duration && Text(item.Template) && item.Template.Length <= 256
+                && Text(item.Body) && item.Body.Length <= 256 && SupportedVector(item.Position) && SupportedVector(item.Velocity)
+                && float.IsFinite(item.Intensity) && item.Intensity >= 0 && float.IsFinite(item.AmbientPressure) && item.AmbientPressure >= 0
+                && item.Seed >= 0, "explosion");
+        }
+        foreach (ReplayDestruction item in flight.Destructions ?? [])
+        {
+            Require(item != null && double.IsFinite(item.Time) && item.Time >= 0 && item.Time <= duration && Text(item.Cause) && item.Cause.Length <= 64
+                && float.IsFinite(item.Intensity) && float.IsFinite(item.PropellantMass) && float.IsFinite(item.AmbientPressure)
+                && (item.Part == null || item.Part.Length <= 256), "destruction");
+        }
+        return flight with
+        {
+            Actors = actors, Views = views, Events = events, Follows = flight.Follows is { Count: > 0 } follows ? [.. follows] : null,
+            Explosions = flight.Explosions is { Count: > 0 } explosions ? explosions.OrderBy(item => item.Time).ToList() : null,
+            Destructions = flight.Destructions is { Count: > 0 } destructions ? destructions.OrderBy(item => item.Time).ToList() : null,
+        };
+    }
+
+    // The part state only changes the look of the parts, so a segment over a limit keeps its flight and
+    // loses these channels.
+    private static List<ReplayChannel>? Channels(List<ReplayChannel>? channels, Func<string?, bool> known, ref long channelValues)
+    {
+        if (channels == null)
+            return null;
+        if (!channels.TrueForAll(channel => channel != null && known(channel.Kind) && channel.Times != null && channel.Values != null
+                && channel.Times.Count > 0 && channel.Times.Count == channel.Values.Count))
+            throw new InvalidDataException("Invalid replay: part channel");
+        foreach (ReplayChannel channel in channels)
+        {
+            double previousKey = double.NegativeInfinity;
+            for (int k = 0; k < channel.Times.Count; k++)
+            {
+                double key = channel.Times[k];
+                float value = channel.Values[k];
+                if (!(double.IsFinite(key) && key >= 0 && key > previousKey && float.IsFinite(value) && Math.Abs(value) <= 1e6f))
+                    throw new InvalidDataException("Invalid replay: part channel key");
+                previousKey = key;
+            }
+        }
+
+        long values = channels.Sum(channel => (long)channel.Times.Count);
+        if (channels.Count > ChannelLimit || channelValues + values > ChannelValueLimit)
+            return null;
+        channelValues += values;
+        return channels;
     }
 }

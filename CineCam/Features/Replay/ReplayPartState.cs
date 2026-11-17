@@ -1,24 +1,29 @@
+using Brutal.Logging;
 using Brutal.Numerics;
 using CineCam.Director.Replay;
+using HarmonyLib;
 using KSA;
 
 namespace CineCam.Features.Replay;
 
 /// <summary>
-/// The module states that change the look of a part tree. The recorder reads them from the live
-/// tree and the replay writes them into a decoded tree, with the channels in the part order of the tree.
+/// The module states that change the look of a part tree, or the state of its parachutes. The recorder
+/// reads them from the live tree and the replay writes them into a decoded tree, with the channels in the
+/// part order of the tree.
 /// </summary>
 internal sealed class ReplayPartState
 {
     private readonly PartTree _tree;
+    private readonly bool _chutes;
     private readonly List<Binding> _bindings = [];
     private readonly List<string> _kinds = [];
     private float[] _applied = [];
     private float[] _values = [];
 
-    private ReplayPartState(PartTree tree)
+    private ReplayPartState(PartTree tree, bool chutes)
     {
         _tree = tree;
+        _chutes = chutes;
         var iterator = new PartTreeIterator(tree.Root);
         while (iterator.GetNextNode() is { } part)
             Visit(part);
@@ -37,7 +42,13 @@ internal sealed class ReplayPartState
     /// <summary>The <see cref="ReplayPartKey"/> of the parts that own the channels.</summary>
     public uint Key { get; }
 
-    public static ReplayPartState Of(PartTree tree) => new(tree);
+    public static ReplayPartState Of(PartTree tree) => new(tree, false);
+
+    /// <summary>The state of the parachutes, see <see cref="ReplaySegment.Chutes"/>. It has no channel when the game members of a parachute are missing.</summary>
+    public static ReplayPartState OfChutes(PartTree tree) => new(tree, true);
+
+    /// <summary>The parachutes in the order of the channels.</summary>
+    public IEnumerable<Parachute> Chutes => _bindings.OfType<ChuteBinding>().Select(binding => binding.Module);
 
     /// <summary>The part of the first module whose state the last <see cref="Read"/> did not find, or null.</summary>
     public string? Missed { get; private set; }
@@ -61,10 +72,10 @@ internal sealed class ReplayPartState
     /// True when the recorded channels have the kinds of this tree in the same order, and the parts
     /// that own them are the same when the segment has their key.
     /// </summary>
-    public bool Matches(ReplaySegment segment) =>
-        segment.Channels is { } channels && channels.Count == _kinds.Count
+    public bool Matches(List<ReplayChannel>? channels, uint? key) =>
+        channels != null && channels.Count == _kinds.Count
         && channels.Select(channel => channel.Kind).SequenceEqual(_kinds)
-        && (segment.PartKey is not uint key || key == Key);
+        && (key is not uint value || value == Key);
 
     /// <summary>
     /// A binding whose values did not change is skipped, because a new transform makes the render
@@ -93,6 +104,18 @@ internal sealed class ReplayPartState
 
     private void Visit(Part part)
     {
+        if (_chutes)
+        {
+            if (ChuteBinding.Available)
+            {
+                foreach (Parachute module in part.Modules.Get<Parachute>())
+                    _bindings.Add(new ChuteBinding(module));
+            }
+            foreach (Part subpart in part.SubParts)
+                Visit(subpart);
+            return;
+        }
+
         foreach (SolarTracker module in part.Modules.Get<SolarTracker>())
             _bindings.Add(new TrackerBinding(module));
         foreach (KeyframeAnimationModule module in part.Modules.Get<KeyframeAnimationModule>())
@@ -288,6 +311,57 @@ internal sealed class ReplayPartState
             bool on = values[0] > 0.5f;
             module.LightIsActive = on;
             SetState(tree, module, (ref PowerConsumerState state) => state.Active = on);
+        }
+    }
+
+    // Parachute keeps its state in fields of the module, not in a state list. Parachute.DeployExtension
+    // and DisreefProgress come from the private elapsed times of the line stretch and the disreef, so
+    // those are recorded as they are. The direction is the one that ChuteClothSystem turns the canopy to.
+    private sealed class ChuteBinding(Parachute module) : Binding(module.Parent, 0, ReplayChannelKind.ChuteState,
+        ReplayChannelKind.ChuteFill, ReplayChannelKind.ChuteReef, ReplayChannelKind.ChuteStretch, ReplayChannelKind.ChuteDisreef,
+        ReplayChannelKind.ChuteDirectionX, ReplayChannelKind.ChuteDirectionY, ReplayChannelKind.ChuteDirectionZ)
+    {
+        private static readonly AccessTools.FieldRef<Parachute, float>? Stretch = Field("_lineStretchElapsedS");
+        private static readonly AccessTools.FieldRef<Parachute, float>? Disreef = Field("_disreefElapsedS");
+
+        public static bool Available => Stretch != null && Disreef != null;
+
+        public Parachute Module => module;
+
+        private static AccessTools.FieldRef<Parachute, float>? Field(string name)
+        {
+            try
+            {
+                return AccessTools.FieldRefAccess<Parachute, float>(name);
+            }
+            catch (Exception ex)
+            {
+                DefaultCategory.Log.Warning($"[CineCam] The replay records no parachutes, because Parachute.{name} is missing: {ex.Message}");
+                return null;
+            }
+        }
+
+        public override bool Read(PartTree tree, Span<float> values)
+        {
+            values[0] = (byte)module.State;
+            values[1] = module.Fill;
+            values[2] = module.ReefElapsedS;
+            values[3] = Stretch!(module);
+            values[4] = Disreef!(module);
+            values[5] = module.CanopyDirBody.X;
+            values[6] = module.CanopyDirBody.Y;
+            values[7] = module.CanopyDirBody.Z;
+            return true;
+        }
+
+        public override void Apply(PartTree tree, ReadOnlySpan<float> values)
+        {
+            module.State = (ChuteState)(byte)Math.Clamp(MathF.Round(values[0]), 0f, (float)ChuteState.SeveredLines);
+            module.Fill = values[1];
+            module.ReefElapsedS = values[2];
+            Stretch!(module) = values[3];
+            Disreef!(module) = values[4];
+            module.CanopyDirBody = new float3(values[5], values[6], values[7]);
         }
     }
 }

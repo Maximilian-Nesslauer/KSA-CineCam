@@ -17,6 +17,14 @@ public sealed record ReplayFlight(string GameVersion, string SystemId, string Bo
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<ReplayFollow>? Follows { get; init; }
 
+    /// <summary>The explosion volumes that the game made during the recording, in time order, or null in an older file.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<ReplayExplosion>? Explosions { get; init; }
+
+    /// <summary>The destructions of vehicles and parts that asked the game for an explosion, in time order, or null in an older file.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<ReplayDestruction>? Destructions { get; init; }
+
     [JsonIgnore]
     public int FormatVersion { get; init; } = ReplayFile.CurrentVersion;
 }
@@ -56,6 +64,17 @@ public sealed record ReplaySegment(double Start, string Definition, List<ReplayS
     /// <summary>When it is null, the replay checks only the kinds of the channels.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public uint? PartKey { get; init; }
+
+    /// <summary>
+    /// The state of the parachutes in the order of the part tree, apart from <see cref="Channels"/>, so a reader that
+    /// does not know these kinds skips them, or null when the segment has no parachute or the file is older.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<ReplayChannel>? Chutes { get; init; }
+
+    /// <summary>The <see cref="ReplayPartKey"/> of the parts that own <see cref="Chutes"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public uint? ChuteKey { get; init; }
 }
 
 // Poses use the body-fixed frame and the vehicle model origin. Times are relative simulation seconds.

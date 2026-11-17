@@ -262,7 +262,8 @@ internal static partial class ReplaySession
         ReplayTakePlan plan = scene.Player.Plan;
         if (ReferenceEquals(plan, _markersPlan))
             return _markers;
-        _markers = scene.Flight.Markers.Where(m => m.Label.StartsWith("Separation", StringComparison.Ordinal) || m.Label.StartsWith("Breakup", StringComparison.Ordinal))
+        _markers = scene.Flight.Markers.Where(m => m.Label.StartsWith("Separation", StringComparison.Ordinal) || m.Label.StartsWith("Breakup", StringComparison.Ordinal)
+                || m.Label.StartsWith(ReplayEffectLog.MarkerLabel, StringComparison.Ordinal))
             .Select(m => new ReplayMarkerStatus(m.Label, m.Time, plan.TakeTime(m.Time))).ToArray();
         _markersPlan = plan;
         return _markers;
