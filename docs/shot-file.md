@@ -45,7 +45,7 @@ Fields of every shot:
 | Field | Meaning |
 | --- | --- |
 | `type` | `orbit`, `crane`, `tripod`, `track`, `chase`, `part` or `path`. The window calls a tripod "Fixed" and a part shot "Part mount" |
-| `name` | Optional. A name that other mods (see [Integration for other mods](integration.md)) and the event log get when the shot starts: 1 to 64 letters, digits and the signs `-`, `_`, `.` and `:` |
+| `name` | Optional. A name that other mods (see [Integration for other mods](integration.md)) and the event log get when the shot starts: 1 to 64 letters, digits and the signs `-`, `_`, `.` and `:`. A `name` that is not such a name (an older file can have a free label there) is kept as an unknown field with a warning, and the shot has no name |
 | `duration` | Length in seconds, greater than 0 |
 | `target` | `site` or `vehicle`. A chase, part, path or track shot can also use `separated`, see below |
 | `fov` | Vertical field of view, 1 to 150. Default 40 |

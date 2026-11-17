@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using CineCam.Api;
 using CineCam.Director;
 using CineCam.Director.Replay;
@@ -48,15 +49,55 @@ internal static class IntegrationTests
             expect(ShotFileValidator.Validate(file).IsValid, "valid");
         });
 
-        check("integration: a cue needs a valid name and a shot name is checked", () =>
+        check("integration: a cue needs a valid name", () =>
         {
             expect(Invalid(CueFile.Replace("\"name\": \"intro\"", "\"note\": \"x\"")).Contains("a cue needs a name"), "missing");
             expect(Invalid(CueFile.Replace("\"intro\"", "\"two words\"")).Contains("takes[0].actions[0].name"), "space");
             expect(Invalid(CueFile.Replace("\"intro\"", "\"\"")).Contains("expected 1 to 64"), "empty");
             expect(Invalid(CueFile.Replace("\"intro\"", "\"" + new string('a', 65) + "\"")).Contains("expected"), "too long");
-            expect(Invalid(CueFile.Replace("\"pad-wide\"", "\"a;b\"")).Contains("camera[0].name"), "shot name");
             expect(Invalid(CueFile.Replace("\"name\": \"intro\"", "\"name\": \"intro\", \"sequence\": 2")).Contains("only a stage action"), "sequence on a cue");
             expect(TakeAction.IsValidName("Overlay_In.2:a-b") && !TakeAction.IsValidName("ue" + (char)0xE4) && !TakeAction.IsValidName(null), "rule");
+        });
+
+        check("integration: an old free label in a shot name still loads and is kept", () =>
+        {
+            foreach (string label in new[] { "\"Pad close-up\"", "5", "\"\"" })
+            {
+                ShotFileReadResult read = ShotFileJson.Parse(CueFile.Replace("\"pad-wide\"", label));
+                Shot shot = read.File.Takes[0].Shots[0];
+                expect(shot.Name.Length == 0 && shot.Extras["name"].GetRawText() == label, "kept as an extra: " + label);
+                expect(read.Warnings.Any(w => w.Contains("camera[0].name: this is not used")), "a warning: " + label);
+                ShotFile again = ShotFileJson.Parse(ShotFileJson.Write(read.File)).File;
+                expect(again.Takes[0].Shots[0].Extras["name"].GetRawText() == label && again.Takes[0].Shots[0].Name.Length == 0, "round trip: " + label);
+                expect(ShotFileValidator.Validate(read.File).IsValid, "valid: " + label);
+            }
+        });
+
+        check("integration: a new name replaces an old name field and is written once", () =>
+        {
+            ShotFile file = ShotFileJson.Parse(CueFile.Replace("\"pad-wide\"", "\"Pad close-up\"")).File;
+            Take take = file.Takes[0];
+            ShotEdit.SetName(take.Shots[0], " pad-close ");
+            TakeAction stage = take.Actions[2];
+            ShotEdit.ChangeKind(stage, ActionKind.Cue);
+            expect(stage.Name == "cue" && stage.Sequence == null && !stage.Extras.ContainsKey("name"), "the kind change drops the old name");
+            stage.Name = "fairing";
+            string written = ShotFileJson.Write(file);
+            expect(written.Split("\"Pad close-up\"").Length == 1 && written.Split("\"kept\"").Length == 1, "the old values are gone");
+            Take again = ShotFileJson.Parse(written).File.Takes[0];
+            expect(again.Shots[0].Name == "pad-close" && again.Actions[2].Name == "fairing", "the new names read back");
+            ShotEdit.ChangeKind(again.Actions[2], ActionKind.Stage);
+            expect(again.Actions[2].Name.Length == 0, "a stage action has no name");
+
+            // The writer alone also leaves out an extra with the key of a field it wrote.
+            ShotFile raw = ShotFileJson.Parse(CueFile).File;
+            raw.Takes[0].Actions[2].Kind = ActionKind.Cue;
+            raw.Takes[0].Actions[2].Name = "fresh";
+            raw.Takes[0].Shots[0].Extras["name"] = JsonDocument.Parse("\"old\"").RootElement.Clone();
+            string direct = ShotFileJson.Write(raw);
+            expect(!direct.Contains("\"kept\"") && !direct.Contains("\"old\""), "no second name key");
+            Take reread = ShotFileJson.Parse(direct).File.Takes[0];
+            expect(reread.Actions[2].Name == "fresh" && reread.Shots[0].Name == "pad-wide", "the written names count");
         });
 
         check("integration: the editor helpers keep and show the names", () =>

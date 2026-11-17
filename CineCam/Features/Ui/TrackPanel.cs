@@ -239,7 +239,7 @@ internal static class TrackPanel
         if (Widgets.Text("Name", id + "-name", shot.Name, out string shotName, 128,
                 "Optional. Other mods and the event log get this name when the shot starts. " + TakeAction.NameRule + "."))
         {
-            shot.Name = shotName.Trim();
+            ShotEdit.SetName(shot, shotName);
             changed = true;
         }
 
@@ -629,18 +629,7 @@ internal static class TrackPanel
         ActionKind kind = action.Kind;
         if (Widgets.Enum("Action", ref kind, null, "Stage presses the staging key. Cue gives a name to other mods, for example to show an overlay."))
         {
-            action.Kind = kind;
-            if (kind == ActionKind.Cue)
-            {
-                action.Sequence = null;
-                if (action.Name.Length == 0)
-                    action.Name = "cue";
-            }
-            else
-            {
-                action.Name = "";
-            }
-
+            ShotEdit.ChangeKind(action, kind);
             changed = true;
         }
 
