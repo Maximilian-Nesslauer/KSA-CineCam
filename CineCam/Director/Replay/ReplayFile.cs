@@ -31,7 +31,7 @@ public static class ReplayFile
         ReplayFlight clean = Validate(flight);
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(new Envelope(CurrentVersion, clean), Options);
         if (json.Length > MaxBytes)
-            throw new InvalidDataException("Replay is too large.");
+            throw new InvalidDataException(UiText.MessageText("text.73601aaa1792", "Replay is too large."));
         string full = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         string temporary = full + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -66,20 +66,20 @@ public static class ReplayFile
     public static ReplayFlight Load(string path)
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (file.Length > MaxBytes) throw new InvalidDataException("Replay is too large.");
+        if (file.Length > MaxBytes) throw new InvalidDataException(UiText.MessageText("text.73601aaa1792", "Replay is too large."));
         using var gzip = new GZipStream(file, CompressionMode.Decompress);
         using var buffer = new MemoryStream();
         byte[] block = new byte[81920];
         int count;
         while ((count = gzip.Read(block)) != 0)
         {
-            if (buffer.Length + count > MaxBytes) throw new InvalidDataException("Replay is too large.");
+            if (buffer.Length + count > MaxBytes) throw new InvalidDataException(UiText.MessageText("text.73601aaa1792", "Replay is too large."));
             buffer.Write(block, 0, count);
         }
         Envelope envelope;
-        try { envelope = JsonSerializer.Deserialize<Envelope>(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), Options) ?? throw new InvalidDataException("Replay is empty."); }
-        catch (JsonException ex) { throw new InvalidDataException("Replay JSON is invalid.", ex); }
-        if (envelope.Version is not (1 or 2 or CurrentVersion)) throw new InvalidDataException($"Unsupported replay version {envelope.Version}.");
+        try { envelope = JsonSerializer.Deserialize<Envelope>(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), Options) ?? throw new InvalidDataException(UiText.MessageText("text.717965eb0500", "Replay is empty.")); }
+        catch (JsonException ex) { throw new InvalidDataException(UiText.MessageText("text.bd0bad70f515", "Replay JSON is invalid."), ex); }
+        if (envelope.Version is not (1 or 2 or CurrentVersion)) throw new InvalidDataException(UiText.Format("text.fb88d5052042", $"Unsupported replay version {envelope.Version}."));
         ReplayFlight flight = Validate(envelope.Flight) with { FormatVersion = envelope.Version };
         if (envelope.Version == 1)
             flight = flight with { Events = ReplayEvents.FromMarkers(flight.Markers), FormatVersion = 1 };
@@ -90,15 +90,15 @@ public static class ReplayFile
     {
         static void Require([DoesNotReturnIf(false)] bool condition, string message)
         {
-            if (!condition) throw new InvalidDataException("Invalid replay: " + message);
+            if (!condition) throw new InvalidDataException(UiText.Concat(UiText.MessageText("text.77f8f6f7fde6", "Invalid replay: "), message));
         }
         static bool SupportedVector(V3 v) => v.Length <= 1e16;
         static bool Text(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 16 * 1024 * 1024;
-        Require(flight != null, "missing flight");
-        Require(Text(flight!.GameVersion) && Text(flight.SystemId) && Text(flight.BodyId) && double.IsFinite(flight.StartTime), "flight metadata");
-        Require(flight.Actors != null && flight.Markers != null && flight.Views != null && flight.Events != null, "missing lists");
+        Require(flight != null, UiText.MessageText("text.23b36cdd183b", "missing flight"));
+        Require(Text(flight!.GameVersion) && Text(flight.SystemId) && Text(flight.BodyId) && double.IsFinite(flight.StartTime), UiText.MessageText("text.e40f52febf80", "flight metadata"));
+        Require(flight.Actors != null && flight.Markers != null && flight.Views != null && flight.Events != null, UiText.MessageText("text.20fb4589303a", "missing lists"));
         Require(flight.Actors!.Count > 0 && flight.Actors.Count <= ReplaySampling.ActorLimit && flight.Markers!.Count <= 100000 && flight.Views!.Count <= 100000
-            && flight.Events!.Count <= EventLimit, "invalid number of items");
+            && flight.Events!.Count <= EventLimit, UiText.MessageText("text.49a74a7e3fbc", "invalid number of items"));
         var ids = new HashSet<int>();
         var actors = new List<ReplayActor>();
         int sampleCount = 0;
@@ -106,27 +106,27 @@ public static class ReplayFile
         foreach (ReplayActor actor in flight.Actors)
         {
             Require(actor != null && ids.Add(actor.Id) && Text(actor.Name) && actor.Segments != null && actor.Segments.Count > 0 && actor.Segments.Count <= 10000, "actor");
-            Require(actor!.Kitten is not string kitten || (!string.IsNullOrWhiteSpace(kitten) && kitten.Length <= 256), "actor kitten");
+            Require(actor!.Kitten is not string kitten || (!string.IsNullOrWhiteSpace(kitten) && kitten.Length <= 256), UiText.MessageText("text.6e3e3d06e5ca", "actor kitten"));
             var segments = new List<ReplaySegment>();
             double previousStart = -1;
             for (int i = 0; i < actor!.Segments.Count; i++)
             {
                 ReplaySegment segment = actor.Segments[i];
                 Require(segment != null && double.IsFinite(segment.Start) && segment.Start >= 0 && segment.Start > previousStart && Text(segment.Definition) && segment.Samples != null && segment.Samples.Count > 0, "segment");
-                Require(segment!.CenterOfMass is not V3 center || (double.IsFinite(center.Length) && center.Length <= 1e5), "segment center of mass");
+                Require(segment!.CenterOfMass is not V3 center || (double.IsFinite(center.Length) && center.Length <= 1e5), UiText.MessageText("text.51e49d8a84a6", "segment center of mass"));
                 previousStart = segment.Start;
                 sampleCount += segment.Samples.Count;
-                Require(sampleCount <= 2000000, "too many samples");
+                Require(sampleCount <= 2000000, UiText.MessageText("text.299663edc03a", "too many samples"));
                 var samples = new List<ReplaySample>();
                 double previousTime = -1;
                 foreach (ReplaySample sample in segment.Samples)
                 {
                     Require(sample != null && double.IsFinite(sample.Time) && sample.Time >= segment.Start && sample.Time > previousTime && SupportedVector(sample.Position) && sample.Nozzles != null && sample.Nozzles.Length <= 4096 && float.IsFinite(sample.AmbientPressure) && float.IsFinite(sample.AirDensity) && SupportedVector(sample.AirVelocity), "sample");
                     Require(sample!.State is not ReplayState state || (float.IsFinite(state.Altitude) && float.IsFinite(state.Speed) && float.IsFinite(state.Radial)
-                        && (state.Ground is not float ground || float.IsFinite(ground)) && state.Sequence >= 0 && state.Sequence <= 1000000 && state.Docked >= 0 && state.Docked <= 100000), "sample state");
-                    Require(sample.Kitten is not ReplayKitten kittenState || kittenState.IsValid(), "sample kitten");
+                        && (state.Ground is not float ground || float.IsFinite(ground)) && state.Sequence >= 0 && state.Sequence <= 1000000 && state.Docked >= 0 && state.Docked <= 100000), UiText.MessageText("text.73cb9224fbec", "sample state"));
+                    Require(sample.Kitten is not ReplayKitten kittenState || kittenState.IsValid(), UiText.MessageText("text.f0c510fd05ce", "sample kitten"));
                     if (i + 1 < actor.Segments.Count)
-                        Require(actor.Segments[i + 1] != null && sample.Time < actor.Segments[i + 1].Start, "sample crosses segment boundary");
+                        Require(actor.Segments[i + 1] != null && sample.Time < actor.Segments[i + 1].Start, UiText.MessageText("text.ee74bd2ca21a", "sample crosses segment boundary"));
                     previousTime = sample.Time;
                     foreach (ReplayNozzle nozzle in sample.Nozzles)
                         Require(float.IsFinite(nozzle.DutyCycle) && float.IsFinite(nozzle.ExhaustVelocity) && float.IsFinite(nozzle.ExhaustPressure) && float.IsFinite(nozzle.Temperature) && float.IsFinite(nozzle.Gamma) && float.IsFinite(nozzle.SpecificGasConstant) && float.IsFinite(nozzle.ChamberPressure) && float.IsFinite(nozzle.ChamberTemperature) && float.IsFinite(nozzle.ExitPressure) && float.IsFinite(nozzle.ExitTemperature) && SupportedVector(nozzle.Position) && SupportedVector(nozzle.Axis) && SupportedVector(nozzle.RestPosition) && SupportedVector(nozzle.RestAxis)
@@ -139,12 +139,12 @@ public static class ReplayFile
                     Chutes = chutes, ChuteKey = chutes == null ? null : segment.ChuteKey });
             }
             double lastTime = segments[^1].Samples[^1].Time;
-            Require(actor.End is not double end || (double.IsFinite(end) && end >= lastTime), "actor end");
+            Require(actor.End is not double end || (double.IsFinite(end) && end >= lastTime), UiText.MessageText("text.613c60cfaa34", "actor end"));
             actors.Add(actor with { Segments = segments });
         }
         double duration = ReplayTimeline.Duration(flight);
         Require(flight.EndTime is not double terminalEnd || (double.IsFinite(terminalEnd) && terminalEnd >= 0), "terminal effect end");
-        Require(actors[0].Segments[0].Start == 0, "the primary vehicle does not start at time zero");
+        Require(actors[0].Segments[0].Start == 0, UiText.MessageText("text.d0e0e8215631", "the primary vehicle does not start at time zero"));
         foreach (ReplayMarker marker in flight.Markers)
             Require(marker != null && double.IsFinite(marker.Time) && marker.Time >= 0 && marker.Time <= duration && Text(marker.Label), "marker");
         foreach (ReplayEvent item in flight.Events)
@@ -159,7 +159,7 @@ public static class ReplayFile
                 && (followed.End is not double followEnd || followEnd > follow.Time), "follow");
             previousFollow = follow!.Time;
         }
-        Require((flight.Follows?.Count ?? 0) <= EventLimit, "too many follow changes");
+        Require((flight.Follows?.Count ?? 0) <= EventLimit, UiText.MessageText("text.300e9a121282", "too many follow changes"));
         var views = new List<ReplayView>();
         foreach (ReplayView view in flight.Views)
         {
@@ -169,7 +169,7 @@ public static class ReplayFile
         }
         views.Sort(static (a, b) => a.Time.CompareTo(b.Time));
         var events = flight.Events.OrderBy(item => item.Time).ToList();
-        Require((flight.Explosions?.Count ?? 0) <= EventLimit && (flight.Destructions?.Count ?? 0) <= EventLimit, "too many explosions");
+        Require((flight.Explosions?.Count ?? 0) <= EventLimit && (flight.Destructions?.Count ?? 0) <= EventLimit, UiText.MessageText("text.bd7859d82dac", "too many explosions"));
         foreach (ReplayExplosion item in flight.Explosions ?? [])
         {
             Require(item != null && double.IsFinite(item.Time) && item.Time >= 0 && item.Time <= duration && Text(item.Template) && item.Template.Length <= 256
@@ -199,7 +199,7 @@ public static class ReplayFile
             return null;
         if (!channels.TrueForAll(channel => channel != null && known(channel.Kind) && channel.Times != null && channel.Values != null
                 && channel.Times.Count > 0 && channel.Times.Count == channel.Values.Count))
-            throw new InvalidDataException("Invalid replay: part channel");
+            throw new InvalidDataException(UiText.MessageText("text.45ceb8ec251c", "Invalid replay: part channel"));
         foreach (ReplayChannel channel in channels)
         {
             double previousKey = double.NegativeInfinity;
@@ -208,7 +208,7 @@ public static class ReplayFile
                 double key = channel.Times[k];
                 float value = channel.Values[k];
                 if (!(double.IsFinite(key) && key >= 0 && key > previousKey && float.IsFinite(value) && Math.Abs(value) <= 1e6f))
-                    throw new InvalidDataException("Invalid replay: part channel key");
+                    throw new InvalidDataException(UiText.MessageText("text.1f23ae8606d3", "Invalid replay: part channel key"));
                 previousKey = key;
             }
         }

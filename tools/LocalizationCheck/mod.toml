@@ -1,0 +1,8 @@
+name = "LocalizationCheck"
+
+[StarMap]
+EntryAssembly = "LocalizationCheck"
+
+[[StarMap.ModDependencies]]
+ModId = "CineCam"
+Optional = false

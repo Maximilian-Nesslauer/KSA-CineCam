@@ -23,7 +23,7 @@ public sealed record ReplayDestruction(double Time, string Cause, float Intensit
 public sealed class ReplayEffectLog
 {
     /// <summary>The label of a destruction marker. The marker list of the replay shows the labels that start with it.</summary>
-    public const string MarkerLabel = "Explosion";
+    public static readonly string MarkerLabel = UiText.MessageText("text.ca6482a42bab", "Explosion");
 
     private readonly List<ReplayExplosion> _explosions = [];
     private readonly List<(ReplayDestruction Item, string? Vehicle)> _destructions = [];

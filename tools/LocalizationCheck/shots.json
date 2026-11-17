@@ -1,0 +1,16 @@
+{
+  "fps": 30,
+  "hideUi": false,
+  "takes": [
+    {
+      "name": "Ready",
+      "default": true,
+      "camera": [
+        { "type": "chase", "name": "Ignition", "frame": "local", "offset": [5, -40, -30], "lookAt": [15, 0, 0], "duration": 10 },
+        { "type": "orbit", "radius": 50, "height": 20, "duration": 10, "at": { "event": "ignition" } }
+      ],
+      "speed": [ { "at": 0, "to": 0.5, "ramp": 2 } ],
+      "actions": [ { "action": "cue", "name": "overlay-in", "at": { "event": "liftoff" } } ]
+    }
+  ]
+}

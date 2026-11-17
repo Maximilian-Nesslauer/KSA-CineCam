@@ -198,7 +198,7 @@ internal sealed class ReplayScene : IDisposable
         string reason = note;
         fellBack = true;
         site = SiteFrame.FromPosition(_body, start, null, null, out note);
-        note = $"{reason}; the replay uses {note}";
+        note = UiText.Format("text.499ba562876a", $"{reason}; the replay uses {note}");
         return site!;
     }
 

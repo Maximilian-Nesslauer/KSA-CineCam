@@ -86,8 +86,8 @@ internal static partial class TakeRunner
             ApiFeed.SyncInterface();
             int shot = take.LastFrame?.ShotIndex ?? -1;
             string detail = string.Create(CultureInfo.InvariantCulture,
-                $"the take is paused for an edit; simSpeedBefore={take.PausedSpeed}; shot={(shot >= 0 ? (shot + 1).ToString(CultureInfo.InvariantCulture) : "none")}; pause={take.Clock.PauseCount}");
-            WriteRow(take, "pause", "start", detail);
+                $"the take is paused for an edit; simSpeedBefore={take.PausedSpeed}; shot={(shot >= 0 ? (shot + 1).ToString(CultureInfo.InvariantCulture) : UiText.MessageText("text.140bedbf9c3f", "none"))}; pause={take.Clock.PauseCount}");
+            WriteRow(take, "pause", UiText.MessageText("text.cced28c6dc3f", "start"), detail);
             DefaultCategory.Log.Info(FormattableString.Invariant($"[CineCam] Take \"{take.Take.Name}\" paused at {take.Seconds:F1} s for an edit."));
         }
         catch (Exception ex)

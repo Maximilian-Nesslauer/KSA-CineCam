@@ -12,9 +12,9 @@ namespace CineCam.Features.Ui;
 internal static class ReplayPanel
 {
     private const int ListRowsShown = 6;
-    private static readonly string[] StepsHint = { "1 Record a flight.", "2 Open it.", "3 Direct it with the timeline.", "4 Render." };
+    private static readonly string[] StepsHint = { UiText.MessageText("text.52001e35c686", "1 Record a flight."), UiText.MessageText("text.c9143aeb6a0f", "2 Open it."), UiText.MessageText("text.74ca6f31cb75", "3 Direct it with the timeline."), UiText.MessageText("text.672e9434a7fc", "4 Render.") };
 
-    private static readonly string[] ListHeads = ["Date", "Vehicle", "Build", "Length", "Size"];
+    private static readonly string[] ListHeads = [UiText.MessageText("text.99c40ab40592", "Date"), UiText.MessageText("text.a62394ba4acc", "Vehicle"), UiText.MessageText("text.bdd254b65baa", "Build"), UiText.MessageText("text.adc95605a1b3", "Length"), UiText.MessageText("text.1af851907331", "Size")];
 
     private static string? _selectedFile;
     private static string? _confirmDelete;
@@ -46,13 +46,13 @@ internal static class ReplayPanel
         if (ReplaySession.IsRecording)
         {
             Widgets.SameLine();
-            if (Widgets.Button("STOP RECORDING", true, null, Widgets.Tone.Danger))
+            if (Widgets.Button(UiText.MessageText("text.3a93055fe99f", "STOP RECORDING"), true, null, Widgets.Tone.Danger))
                 ReplaySession.StopRecording();
         }
         else if (ReplaySession.IsPlayingBack)
         {
             Widgets.SameLine();
-            if (Widgets.Button("EXIT REPLAY", true, "Closes the replay and goes back to the live flight."))
+            if (Widgets.Button(UiText.MessageText("text.8bd891fd01cb", "EXIT REPLAY"), true, UiText.MessageText("text.55466996d856", "Closes the replay and goes back to the live flight.")))
                 ReplaySession.Close();
         }
 
@@ -72,11 +72,11 @@ internal static class ReplayPanel
     private static string StateText()
     {
         if (ReplaySession.IsRecording)
-            return FormattableString.Invariant($"RECORDING  {ReplaySession.RecordingSeconds:F1} s");
+            return UiText.Format("text.0e0bb60ce279", $"RECORDING  {ReplaySession.RecordingSeconds:F1} s");
         if (!ReplaySession.IsPlayingBack)
-            return "READY";
-        string state = ReplaySession.IsPlaying ? "PLAYING" : "PAUSED";
-        return FormattableString.Invariant($"REPLAY {state}  {ReplaySession.Time:F1} / {ReplaySession.Duration:F1} s");
+            return UiText.MessageText("text.c2e3ac47f4a3", "READY");
+        string state = ReplaySession.IsPlaying ? UiText.MessageText("text.86042b89c731", "PLAYING") : UiText.MessageText("text.5b5f8d4f6743", "PAUSED");
+        return UiText.Format("text.55df75f64af8", $"REPLAY {state}  {ReplaySession.Time:F1} / {ReplaySession.Duration:F1} s");
     }
 
     #region No replay open
@@ -104,7 +104,7 @@ internal static class ReplayPanel
 
         if (entries.Count == 0)
         {
-            Widgets.Muted("No recordings yet. Press Record flight while you fly, and Stop recording when the part that you want to film is over.");
+            Widgets.Muted(UiText.MessageText("text.632d3214fddc", "No recordings yet. Press Record flight while you fly, and Stop recording when the part that you want to film is over."));
         }
         else
         {
@@ -122,18 +122,18 @@ internal static class ReplayPanel
         {
             Widgets.Label(StateText(), Widgets.GoodColor);
             Widgets.SameLine();
-            if (Widgets.Button("STOP RECORDING", true, "Stops the recording and saves it as a new recording.", Widgets.Tone.Danger))
+            if (Widgets.Button(UiText.MessageText("text.3a93055fe99f", "STOP RECORDING"), true, UiText.MessageText("text.33fd56c88683", "Stops the recording and saves it as a new recording."), Widgets.Tone.Danger))
                 ReplaySession.StopRecording();
         }
         else if (ReplaySession.HasUnsavedFlight)
         {
-            if (Widgets.Button("RETRY SAVE", true, "The last flight is still in memory, because it could not be saved."))
+            if (Widgets.Button(UiText.MessageText("text.4737fde6ff55", "RETRY SAVE"), true, UiText.MessageText("text.9afd4a592a63", "The last flight is still in memory, because it could not be saved.")))
                 ReplaySession.RetrySave();
         }
         else
         {
             string? reason = ReplaySession.StartBlockReason;
-            if (Widgets.Button("RECORD FLIGHT", string.IsNullOrEmpty(reason), reason ?? RecordTip(), Widgets.Tone.Primary))
+            if (Widgets.Button(UiText.MessageText("text.ec8bb18f4996", "RECORD FLIGHT"), string.IsNullOrEmpty(reason), reason ?? RecordTip(), Widgets.Tone.Primary))
                 ReplaySession.StartRecording();
             Widgets.Reason(reason ?? "");
         }
@@ -161,7 +161,7 @@ internal static class ReplayPanel
             for (int i = 0; i < entries.Count; i++)
             {
                 RecordingEntry entry = entries[i];
-                if (Widgets.ListRow("recording-" + i, _cells[i], columns, entry.Path == _selectedFile, false, entry.Error != null ? 1 : -1))
+                if (Widgets.ListRow(UiText.Concat("recording-", i), _cells[i], columns, entry.Path == _selectedFile, false, entry.Error != null ? 1 : -1))
                     _selectedFile = entry.Path;
                 if (ImGui.IsItemHovered())
                     Widgets.Tip(RowTip(entry));
@@ -178,17 +178,17 @@ internal static class ReplayPanel
         string text = entry.Id;
         if (entry.Header is { } header)
         {
-            text += $"\nKSA {header.GameVersion}, {header.SystemId}, {header.BodyId}";
+            text = UiText.Concat(text, UiText.Format("text.a9a34768f794", $"\nKSA {header.GameVersion}, {header.SystemId}, {header.BodyId}"));
             string current = VersionInfo.Current.VersionString;
-            text += ReplayBuild.Compare(header.GameVersion, current) switch
+            text = UiText.Concat(text, ReplayBuild.Compare(header.GameVersion, current) switch
             {
-                ReplayBuildAge.Same => "\nRecorded on the build of this game.",
-                ReplayBuildAge.Older => $"\nRecorded on an older build than this game ({current}). It opens after a confirm.",
-                _ => $"\nThis game ({current}) cannot open it.",
-            };
+                ReplayBuildAge.Same => UiText.MessageText("text.62323cc960ad", "\nRecorded on the build of this game."),
+                ReplayBuildAge.Older => UiText.Format("text.c05156f81af4", $"\nRecorded on an older build than this game ({current}). It opens after a confirm."),
+                _ => UiText.Format("text.6aa727adec41", $"\nThis game ({current}) cannot open it."),
+            });
         }
         else if (entry.Error != null)
-            text += "\nThe file cannot be read: " + entry.Error;
+            text = UiText.Concat(text, UiText.Concat(UiText.MessageText("text.48c1315cd966", "\nThe file cannot be read: "), entry.Error));
         return text;
     }
 
@@ -198,8 +198,8 @@ internal static class ReplayPanel
         RecordingEntry? selected = entries.FirstOrDefault(e => e.Path == _selectedFile);
         string current = VersionInfo.Current.VersionString;
         ReplayBuildAge age = selected?.Header is { } header ? ReplayBuild.Compare(header.GameVersion, current) : ReplayBuildAge.Same;
-        string? openReason = ReplaySession.IsRecording ? "Stop the recording first."
-            : selected == null ? "Select a recording in the list."
+        string? openReason = ReplaySession.IsRecording ? UiText.MessageText("text.bceedc4c4eda", "Stop the recording first.")
+            : selected == null ? UiText.MessageText("text.5365173884d9", "Select a recording in the list.")
             : age is ReplayBuildAge.Newer or ReplayBuildAge.Unknown ? ReplayBuild.OpenBlock(selected.Header!.GameVersion, current, true)?.Message
             : ReplaySession.OpenBlockReason;
         bool older = age == ReplayBuildAge.Older && selected != null;
@@ -207,33 +207,33 @@ internal static class ReplayPanel
             _confirmOlder = null;
         if (_confirmOlder != null && string.IsNullOrEmpty(openReason))
         {
-            if (Widgets.Button("CONFIRM OPEN", true, "Opens the recording of the older build.", Widgets.Tone.Primary))
+            if (Widgets.Button(UiText.MessageText("text.a4d3916b21ae", "CONFIRM OPEN"), true, UiText.MessageText("text.4a902ffe503e", "Opens the recording of the older build."), Widgets.Tone.Primary))
             {
                 ReplaySession.Open(_confirmOlder, true);
                 _confirmOlder = null;
             }
 
             Widgets.SameLine();
-            if (Widgets.Button("CANCEL##open", true, "Keeps the replay closed."))
+            if (Widgets.Button(UiText.MessageText("text.646608e6b907", "CANCEL##open"), true, UiText.MessageText("text.c08d773e64fa", "Keeps the replay closed.")))
                 _confirmOlder = null;
         }
         else if (older)
         {
-            if (Widgets.Button("OPEN OLDER RECORDING", string.IsNullOrEmpty(openReason), openReason
-                    ?? "This recording is from an older game build. You confirm the open with a second click.", Widgets.Tone.Primary))
+            if (Widgets.Button(UiText.MessageText("text.b27beaccb83e", "OPEN OLDER RECORDING"), string.IsNullOrEmpty(openReason), openReason
+                    ?? UiText.MessageText("text.e7cbd4a6e985", "This recording is from an older game build. You confirm the open with a second click."), Widgets.Tone.Primary))
                 _confirmOlder = selected!.Path;
         }
-        else if (Widgets.Button("OPEN REPLAY", string.IsNullOrEmpty(openReason), openReason
-                ?? "Opens the recording and plays the selected take of the editor on it.", Widgets.Tone.Primary))
+        else if (Widgets.Button(UiText.MessageText("text.80e21fe9dab5", "OPEN REPLAY"), string.IsNullOrEmpty(openReason), openReason
+                ?? UiText.MessageText("text.81aa533731a2", "Opens the recording and plays the selected take of the editor on it."), Widgets.Tone.Primary))
         {
             ReplaySession.Open(selected!.Path);
         }
 
         Widgets.SameLine();
-        string? deleteReason = ReplaySession.IsRecording ? "Stop the recording first." : selected == null ? "Select a recording in the list." : null;
+        string? deleteReason = ReplaySession.IsRecording ? UiText.MessageText("text.bceedc4c4eda", "Stop the recording first.") : selected == null ? UiText.MessageText("text.5365173884d9", "Select a recording in the list.") : null;
         if (_confirmDelete == null || selected == null)
         {
-            if (Widgets.Button("DELETE", deleteReason == null, deleteReason ?? "Deletes the selected recording file. You confirm it with a second click."))
+            if (Widgets.Button(UiText.MessageText("text.65daeb378bde", "DELETE"), deleteReason == null, deleteReason ?? UiText.MessageText("text.7546bc2ff5f0", "Deletes the selected recording file. You confirm it with a second click.")))
             {
                 _confirmDelete = selected!.Path;
                 _deleteMessage = "";
@@ -241,14 +241,14 @@ internal static class ReplayPanel
         }
         else
         {
-            if (Widgets.Button("CONFIRM DELETE", deleteReason == null, "Deletes the file of this recording for good.", Widgets.Tone.Danger))
+            if (Widgets.Button(UiText.MessageText("text.1907dc9aff8b", "CONFIRM DELETE"), deleteReason == null, UiText.MessageText("text.29ba3ea67777", "Deletes the file of this recording for good."), Widgets.Tone.Danger))
             {
                 _deleteMessage = ReplaySession.DeleteRecording(_confirmDelete) ?? "";
                 _confirmDelete = null;
             }
 
             Widgets.SameLine();
-            if (Widgets.Button("CANCEL##delete", true, "Keeps the recording."))
+            if (Widgets.Button(UiText.MessageText("text.389bd79c0dc2", "CANCEL##delete"), true, UiText.MessageText("text.2a91fee14264", "Keeps the recording.")))
                 _confirmDelete = null;
         }
 
@@ -256,14 +256,14 @@ internal static class ReplayPanel
         if (_confirmOlder != null && selected?.Header is { } olderHeader)
             Widgets.Colored(ReplayBuild.OlderWarning(olderHeader.GameVersion, current), Widgets.WarnColor);
         if (_confirmDelete != null && selected != null)
-            Widgets.Colored($"Delete {RecordingList.DisplayName(selected)} ({RecordingList.SizeText(selected.Bytes)})?", Widgets.WarnColor);
+            Widgets.Colored(UiText.Format("text.2f57935aeb2b", $"Delete {RecordingList.DisplayName(selected)} ({RecordingList.SizeText(selected.Bytes)})?"), Widgets.WarnColor);
         if (_deleteMessage.Length > 0)
             Widgets.Colored(_deleteMessage, Widgets.ErrorColor);
     }
 
     private static string RecordTip() => ReplaySession.SelectedVehicleName is { Length: > 0 } vehicle
-        ? $"Records the flight of {vehicle} until you stop it."
-        : "Records the flight of the controlled vehicle until you stop it.";
+        ? UiText.Format("text.ddce142998f4", $"Records the flight of {vehicle} until you stop it.")
+        : UiText.MessageText("text.d9345bb81cc9", "Records the flight of the controlled vehicle until you stop it.");
 
     #endregion
 
@@ -272,20 +272,20 @@ internal static class ReplayPanel
     private static void DrawOpen((float2 Position, float2 Size)? window)
     {
         DrawStatus();
-        if (Widgets.Button("EXIT REPLAY", true, "Closes the replay and goes back to the live flight."))
+        if (Widgets.Button(UiText.MessageText("text.8bd891fd01cb", "EXIT REPLAY"), true, UiText.MessageText("text.55466996d856", "Closes the replay and goes back to the live flight.")))
             ReplaySession.Close();
         if (window is { } bounds && !LiveTimeline.FitsBeside(bounds))
         {
             Widgets.SameLine();
-            if (Widgets.Button("CLOSE WINDOW, SHOW TIMELINE", true,
-                    "The timeline with the replay controls has no room beside this window. This closes the window, and the window key opens it again."))
+            if (Widgets.Button(UiText.MessageText("text.3f3e212178b0", "CLOSE WINDOW, SHOW TIMELINE"), true,
+                    UiText.MessageText("text.4a847001bd9c", "The timeline with the replay controls has no room beside this window. This closes the window, and the window key opens it again.")))
                 CineCamWindow.Instance.Close();
         }
 
         Widgets.SameLine();
-        if (Widgets.Button("HIDE INTERFACE", ReplaySession.CanHideInterface,
-                ReplaySession.CanHideInterface ? "Hides the game interface and this window, for a clean picture. " + KeyHelp()
-                : "Set a key for \"Open or close this window\" on the Settings page first. That key shows the interface again."))
+        if (Widgets.Button(UiText.MessageText("text.3bba856e1544", "HIDE INTERFACE"), ReplaySession.CanHideInterface,
+                ReplaySession.CanHideInterface ? UiText.Concat(UiText.MessageText("text.19fb0cfa10f3", "Hides the game interface and this window, for a clean picture. "), KeyHelp())
+                : UiText.MessageText("text.f32da6cda0e3", "Set a key for \"Open or close this window\" on the Settings page first. That key shows the interface again.")))
             ReplaySession.ToggleInterface();
 
         DrawRender();
@@ -310,14 +310,14 @@ internal static class ReplayPanel
     private static void DrawRender()
     {
         string? renderBlock = ReplaySession.RenderBlockReason;
-        if (Widgets.Button("RENDER VIDEO", renderBlock == null, renderBlock ?? "Saves one picture per frame of the whole take, at the pictures per second and into the output folder of the Video settings.", Widgets.Tone.Primary))
+        if (Widgets.Button(UiText.MessageText("text.19ea3a1259c0", "RENDER VIDEO"), renderBlock == null, renderBlock ?? UiText.MessageText("text.5a17121dee1b", "Saves one picture per frame of the whole take, at the pictures per second and into the output folder of the Video settings."), Widgets.Tone.Primary))
             ReplaySession.StartRender(ReplayRenderRange.Whole);
         Widgets.SameLine();
-        if (Widgets.Button("RENDER FROM THIS TIME", renderBlock == null, renderBlock ?? "Renders from the replay time to the end of the take."))
+        if (Widgets.Button(UiText.MessageText("text.9484a2e0950e", "RENDER FROM THIS TIME"), renderBlock == null, renderBlock ?? UiText.MessageText("text.508c87db7819", "Renders from the replay time to the end of the take.")))
             ReplaySession.StartRender(ReplayRenderRange.FromCurrent);
         Widgets.SameLine();
         string? stillBlock = StillCapture.BlockReason;
-        if (Widgets.Button("TAKE STILL", stillBlock == null, stillBlock ?? $"Pauses the replay and saves one picture of this view at {CineCamSettings.StillScale} times the window size into the stills folder. The size is on the Settings page."))
+        if (Widgets.Button(UiText.MessageText("text.e4626f6cb291", "TAKE STILL"), stillBlock == null, stillBlock ?? UiText.Format("text.abd0da2a417d", $"Pauses the replay and saves one picture of this view at {CineCamSettings.StillScale} times the window size into the stills folder. The size is on the Settings page.")))
             StillCapture.Request(null);
         Widgets.Reason(renderBlock ?? "");
         if (StillCapture.Status.Length > 0)
@@ -329,7 +329,7 @@ internal static class ReplayPanel
         Widgets.Muted(text);
         if (!ReplaySession.IsRendering && ReplaySession.RenderStatus is { Folder.Length: > 0 } last)
         {
-            if (Widgets.Button("COPY FOLDER PATH", true, "Copies the path of the render folder, to paste it into the file explorer:\n" + last.Folder))
+            if (Widgets.Button(UiText.MessageText("text.e823a2075509", "COPY FOLDER PATH"), true, UiText.Concat(UiText.MessageText("text.5f61cb750369", "Copies the path of the render folder, to paste it into the file explorer:\n"), last.Folder)))
                 ImGui.SetClipboardText(last.Folder);
         }
     }
@@ -338,12 +338,12 @@ internal static class ReplayPanel
     {
         var parts = new List<string>();
         if (CineCamSettings.PlayPauseKey.HasValue)
-            parts.Add($"{KeyName(CineCamSettings.PlayPauseKey)} plays and pauses");
+            parts.Add(UiText.Format("text.bb69017adb44", $"{KeyName(CineCamSettings.PlayPauseKey)} plays and pauses"));
         if (CineCamSettings.StartStopKey.HasValue)
-            parts.Add($"{KeyName(CineCamSettings.StartStopKey)} closes the replay");
+            parts.Add(UiText.Format("text.504f02cfe369", $"{KeyName(CineCamSettings.StartStopKey)} closes the replay"));
         if (CineCamSettings.WindowKey.HasValue)
-            parts.Add($"{KeyName(CineCamSettings.WindowKey)} shows the interface again");
-        return parts.Count == 0 ? "No keys are set for the replay. Set them on the Settings page." : "Keys: " + string.Join(", ", parts) + ".";
+            parts.Add(UiText.Format("text.2a05b9ad7080", $"{KeyName(CineCamSettings.WindowKey)} shows the interface again"));
+        return parts.Count == 0 ? UiText.MessageText("text.e44b33a7183f", "No keys are set for the replay. Set them on the Settings page.") : UiText.Concat(UiText.Concat(UiText.MessageText("text.8ed6153fc892", "Keys: "), UiText.Join(", ", parts)), ".");
     }
 
     private static string KeyName(GlfwKey? key) => key.HasValue ? key.Value.ToString() : "";
@@ -351,12 +351,12 @@ internal static class ReplayPanel
     private static void DrawFreeCamera()
     {
         var flight = ReplaySession.Flight;
-        string selected = flight?.Actors.FirstOrDefault(actor => ReplaySession.FollowActorId == actor.Id)?.Name ?? "Nothing";
-        if (Widgets.BeginComboRow("Free camera follows", selected))
+        string selected = flight?.Actors.FirstOrDefault(actor => ReplaySession.FollowActorId == actor.Id)?.Name ?? UiText.MessageText("text.67e1bca0889b", "Nothing");
+        if (Widgets.BeginComboRow(UiText.MessageText("text.f9d6a0ff7cfd", "Free camera follows"), selected))
         {
             try
             {
-                if (ImGui.Selectable("Nothing".AsSpan(), ReplaySession.FollowActorId == null))
+                if (ImGui.Selectable(UiText.Control(UiText.MessageText("text.67e1bca0889b", "Nothing")).AsSpan(), ReplaySession.FollowActorId == null))
                     ReplaySession.Follow(null);
                 if (flight != null)
                 {
@@ -369,11 +369,11 @@ internal static class ReplayPanel
                             ImGui.BeginDisabled(!available);
                             try
                             {
-                                if (ImGui.Selectable(actor.Name.AsSpan(), ReplaySession.FollowActorId == actor.Id))
+                                if (ImGui.Selectable(UiText.Control(actor.Name).AsSpan(), ReplaySession.FollowActorId == actor.Id))
                                     ReplaySession.Follow(actor.Id);
                             }
                             finally { ImGui.EndDisabled(); }
-                            Widgets.Tip(available ? null : "This stage is not present at the current time.");
+                            Widgets.Tip(available ? null : UiText.MessageText("text.4450dfce1484", "This stage is not present at the current time."));
                         }
                         finally { ImGui.PopID(); }
                     }
@@ -386,7 +386,7 @@ internal static class ReplayPanel
         }
 
         double fov = ReplaySession.FieldOfView;
-        if (Widgets.Num("Field of view", ref fov, 0.1f, 1, ReplaySession.MaximumFieldOfView, "%.1f deg"))
+        if (Widgets.Num(UiText.MessageText("text.1fab91bbb0d3", "Field of view"), ref fov, 0.1f, 1, ReplaySession.MaximumFieldOfView, "%.1f deg"))
             ReplaySession.SetFov(fov);
     }
 

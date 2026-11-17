@@ -24,24 +24,24 @@ public static class StatusText
     /// <param name="seconds">Take time, or null when no take runs.</param>
     public static string TakeState(RunState state, double? seconds)
     {
-        string time = seconds is double s ? " " + ViewTextSeconds(s) : "";
+        string time = seconds is double s ? UiText.Concat(" ", ViewTextSeconds(s)) : "";
         return state switch
         {
-            RunState.Idle => "Ready",
-            RunState.Ready => "Ready at the checkpoint",
-            RunState.Recording => "Running" + time,
-            RunState.DryRun => "Dry run" + time,
-            RunState.Preview => "Preview",
-            RunState.Capturing => "Saving pictures" + time,
-            RunState.Paused => seconds is double p ? "Paused at " + ViewTextSeconds(p) : "Paused",
-            _ => "Loading the checkpoint",
+            RunState.Idle => UiText.MessageText("text.5fa7aac5375c", "Ready"),
+            RunState.Ready => UiText.MessageText("text.403948314f69", "Ready at the checkpoint"),
+            RunState.Recording => UiText.Concat(UiText.MessageText("text.f4ccae29e1bb", "Running"), time),
+            RunState.DryRun => UiText.Concat(UiText.MessageText("text.d5da154d9f00", "Dry run"), time),
+            RunState.Preview => UiText.MessageText("text.324b134f57c7", "Preview"),
+            RunState.Capturing => UiText.Concat(UiText.MessageText("text.d9b9141680a0", "Saving pictures"), time),
+            RunState.Paused => seconds is double p ? UiText.Concat(UiText.MessageText("text.0a8f55808772", "Paused at "), ViewTextSeconds(p)) : UiText.MessageText("text.e159b06187d3", "Paused"),
+            _ => UiText.MessageText("text.cfe10bae25da", "Loading the checkpoint"),
         };
     }
 
     public static string LiveLine(string? takeName, string state, string next)
     {
-        string name = string.IsNullOrEmpty(takeName) ? "No take" : $"\"{takeName}\"";
-        return next.Length == 0 ? $"{name}  |  {state}" : $"{name}  |  {state}  |  {next}";
+        string name = string.IsNullOrEmpty(takeName) ? UiText.MessageText("text.fa0b729cee1c", "No take") : UiText.Format("", $"\"{takeName}\"");
+        return next.Length == 0 ? UiText.Format("", $"{name}  |  {state}") : UiText.Format("", $"{name}  |  {state}  |  {next}");
     }
 
     /// <summary>
@@ -67,8 +67,8 @@ public static class StatusText
             pending |= sorted[i].Pending;
         }
 
-        string tip = sorted.Count > shown.Count ? string.Join("\n", sorted.Select(item => item.Text)) : "";
-        return new FooterLine(string.Join("  |  ", shown), tip, pending);
+        string tip = sorted.Count > shown.Count ? UiText.Join("\n", sorted.Select(item => item.Text)) : "";
+        return new FooterLine(UiText.Join("  |  ", shown), tip, pending);
     }
 
     /// <summary>Cuts after a whole word and adds "...", and returns an empty text when not even one word fits.</summary>
@@ -84,7 +84,7 @@ public static class StatusText
             int space = text.IndexOf(' ', at);
             if (space < 0)
                 break;
-            string candidate = text[..space].TrimEnd(' ', ',', ';', ':', '|', '-') + Dots;
+            string candidate = UiText.Concat(text[..space].TrimEnd(' ', ',', ';', ':', '|', '-'), Dots);
             if (measure(candidate) > room)
                 break;
             best = candidate;
@@ -129,7 +129,7 @@ public static class StatusText
         }
     }
 
-    public static string NotReached(int count) => count.ToString(CultureInfo.InvariantCulture) + " NOT REACHED";
+    public static string NotReached(int count) => UiText.Concat(count.ToString(CultureInfo.InvariantCulture), UiText.MessageText("text.ec5064a46cc0", " NOT REACHED"));
 
-    private static string ViewTextSeconds(double seconds) => Math.Max(0.0, seconds).ToString("0.0", CultureInfo.InvariantCulture) + " s";
+    private static string ViewTextSeconds(double seconds) => UiText.Concat(Math.Max(0.0, seconds).ToString("0.0", CultureInfo.InvariantCulture), " s");
 }

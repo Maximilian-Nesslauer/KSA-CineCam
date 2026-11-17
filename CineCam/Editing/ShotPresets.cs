@@ -27,22 +27,22 @@ public static class ShotPresets
 
     public static string Label(ShotPreset preset) => preset switch
     {
-        ShotPreset.TowerCam => "Tower cam",
-        ShotPreset.GroundTracker => "Ground tracker, long lens",
-        ShotPreset.ChaseLow => "Chase, low",
-        ShotPreset.OnboardStack => "Onboard, down the stack",
-        ShotPreset.OrbitReveal => "Orbit reveal",
-        _ => "Flyby",
+        ShotPreset.TowerCam => UiText.MessageText("text.9eaf2b7c948e", "Tower cam"),
+        ShotPreset.GroundTracker => UiText.MessageText("text.39a241e43045", "Ground tracker, long lens"),
+        ShotPreset.ChaseLow => UiText.MessageText("text.c49ba5df103a", "Chase, low"),
+        ShotPreset.OnboardStack => UiText.MessageText("text.666fa6153093", "Onboard, down the stack"),
+        ShotPreset.OrbitReveal => UiText.MessageText("text.9a9455a162fe", "Orbit reveal"),
+        _ => UiText.MessageText("text.6c435a230c44", "Flyby"),
     };
 
     public static string Help(ShotPreset preset) => preset switch
     {
-        ShotPreset.TowerCam => "A fixed camera low and close beside the vehicle that looks up along it. Good on the pad before and at lift-off.",
-        ShotPreset.GroundTracker => "A fixed camera far away at the height of the base that turns to follow the vehicle and keeps it framed, like a long lens on a tracking mount.",
-        ShotPreset.ChaseLow => "Follows the vehicle from behind and below, along the direction of flight, with the horizon level.",
-        ShotPreset.OnboardStack => "A camera mounted at the top of the vehicle that looks down along its side to the base.",
-        ShotPreset.OrbitReveal => "Turns slowly around the vehicle and looks at its middle.",
-        _ => "A fixed point ahead on the path of the vehicle. The vehicle flies past the camera at the middle of the shot.",
+        ShotPreset.TowerCam => UiText.MessageText("text.3c198e4cb306", "A fixed camera low and close beside the vehicle that looks up along it. Good on the pad before and at lift-off."),
+        ShotPreset.GroundTracker => UiText.MessageText("text.d2606fed3b27", "A fixed camera far away at the height of the base that turns to follow the vehicle and keeps it framed, like a long lens on a tracking mount."),
+        ShotPreset.ChaseLow => UiText.MessageText("text.b46b909bd5ab", "Follows the vehicle from behind and below, along the direction of flight, with the horizon level."),
+        ShotPreset.OnboardStack => UiText.MessageText("text.bba28e6a878a", "A camera mounted at the top of the vehicle that looks down along its side to the base."),
+        ShotPreset.OrbitReveal => UiText.MessageText("text.2562214102fd", "Turns slowly around the vehicle and looks at its middle."),
+        _ => UiText.MessageText("text.276f902296d4", "A fixed point ahead on the path of the vehicle. The vehicle flies past the camera at the middle of the shot."),
     };
 
     public static Shot Make(ShotPreset preset, PresetInput input)
@@ -151,24 +151,24 @@ public static class ShotLabels
 {
     public static string Type(ShotType type) => type switch
     {
-        ShotType.Orbit => "Orbit",
-        ShotType.Crane => "Crane",
-        ShotType.Tripod => "Fixed",
-        ShotType.Track => "Track",
-        ShotType.Chase => "Chase",
-        ShotType.Part => "Part mount",
-        _ => "Path",
+        ShotType.Orbit => UiText.MessageText("text.29ac7e56b3b4", "Orbit"),
+        ShotType.Crane => UiText.MessageText("text.cf5445e943f7", "Crane"),
+        ShotType.Tripod => UiText.MessageText("text.1246fc93bca0", "Fixed"),
+        ShotType.Track => UiText.MessageText("text.051f01f095a2", "Track"),
+        ShotType.Chase => UiText.MessageText("text.1ae6e6416a7a", "Chase"),
+        ShotType.Part => UiText.MessageText("text.24568053844f", "Part mount"),
+        _ => UiText.MessageText("text.62fa5a5b0d3c", "Path"),
     };
 
     public static string TypeHelp(ShotType type) => type switch
     {
-        ShotType.Orbit => "Turns around an axis at a fixed radius and height, around a world point or around the vehicle.",
-        ShotType.Crane => "Moves up or down beside an axis and always looks at the axis.",
-        ShotType.Tripod => "Stands still at one position and looks at one point.",
-        ShotType.Track => "Stands still at a world point and turns to follow the vehicle.",
-        ShotType.Chase => "Moves with the vehicle at an offset, with smooth turns.",
-        ShotType.Part => "Is fixed to a part of the vehicle, like an onboard camera.",
-        _ => "Moves through a list of camera points on a smooth curve.",
+        ShotType.Orbit => UiText.MessageText("text.b9a1ff542520", "Turns around an axis at a fixed radius and height, around a world point or around the vehicle."),
+        ShotType.Crane => UiText.MessageText("text.0cf611243b84", "Moves up or down beside an axis and always looks at the axis."),
+        ShotType.Tripod => UiText.MessageText("text.8f805830b973", "Stands still at one position and looks at one point."),
+        ShotType.Track => UiText.MessageText("text.6f3537b18452", "Stands still at a world point and turns to follow the vehicle."),
+        ShotType.Chase => UiText.MessageText("text.9edbdabf0d69", "Moves with the vehicle at an offset, with smooth turns."),
+        ShotType.Part => UiText.MessageText("text.5c16a318d574", "Is fixed to a part of the vehicle, like an onboard camera."),
+        _ => UiText.MessageText("text.edd451c95436", "Moves through a list of camera points on a smooth curve."),
     };
 
     /// <summary>Empty for a type with one fixed frame.</summary>
@@ -226,22 +226,22 @@ public static class ShotLabels
 
     public static string Frame(FrameChoice choice, ShotType type)
     {
-        string name = type == ShotType.Part ? "Part" : "Vehicle";
+        string name = type == ShotType.Part ? UiText.MessageText("text.8570a2e1669f", "Part") : UiText.MessageText("text.a62394ba4acc", "Vehicle");
         return choice switch
         {
-            FrameChoice.World => "World point",
-            FrameChoice.Horizon => name + ", horizon level",
-            FrameChoice.Flight => name + ", along flight",
+            FrameChoice.World => UiText.MessageText("text.83d5fdd0af5e", "World point"),
+            FrameChoice.Horizon => UiText.Concat(name, UiText.MessageText("text.f15834d1facd", ", horizon level")),
+            FrameChoice.Flight => UiText.Concat(name, UiText.MessageText("text.36138ad2e537", ", along flight")),
             _ => name,
         };
     }
 
     public static string FrameHelp(FrameChoice choice) => choice switch
     {
-        FrameChoice.World => "The camera is placed relative to a point on the ground that does not move. +X is up, +Y east, +Z north (m).",
-        FrameChoice.Horizon => "The camera moves with the vehicle, but keeps the horizon level when the vehicle turns. +X is away from the ground, +Y east, +Z north (m).",
-        FrameChoice.Flight => "The camera moves with the vehicle and turns with its direction of flight, with the horizon level. +Z points along the flight (m).",
-        _ => "The camera moves and turns with the vehicle. +X points to the nose (m).",
+        FrameChoice.World => UiText.MessageText("text.45180ff5e872", "The camera is placed relative to a point on the ground that does not move. +X is up, +Y east, +Z north (m)."),
+        FrameChoice.Horizon => UiText.MessageText("text.eab3339437bb", "The camera moves with the vehicle, but keeps the horizon level when the vehicle turns. +X is away from the ground, +Y east, +Z north (m)."),
+        FrameChoice.Flight => UiText.MessageText("text.9c6eefc86fb6", "The camera moves with the vehicle and turns with its direction of flight, with the horizon level. +Z points along the flight (m)."),
+        _ => UiText.MessageText("text.5795d9fcd42b", "The camera moves and turns with the vehicle. +X points to the nose (m)."),
     };
 }
 

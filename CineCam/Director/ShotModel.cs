@@ -217,7 +217,7 @@ public sealed class TakeAction
 
     public const int MaxNameLength = 64;
 
-    public const string NameRule = "1 to 64 letters, digits and the signs - _ . :";
+    public static readonly string NameRule = UiText.MessageText("text.e11e879151bb", "1 to 64 letters, digits and the signs - _ . :");
 
     /// <summary>
     /// The rule of a cue name and a shot name. It keeps the name safe in the event log, in a marker name of a
@@ -360,7 +360,7 @@ public sealed class ShotFile
     public string? HideUiAt { get; set; }
 
     public static bool IsHideUiAtStart(string? value) =>
-        value == null || value.Trim().Equals("start", StringComparison.OrdinalIgnoreCase);
+        value == null || value.Trim().Equals(UiText.MessageText("text.cced28c6dc3f", "start"), StringComparison.OrdinalIgnoreCase);
 
     public string? HideUiAtFor(Take take) => take.HideUiAt ?? HideUiAt;
 
@@ -403,7 +403,7 @@ public sealed class ShotFileException : Exception
     public string FieldPath { get; }
 
     public ShotFileException(string fieldPath, string message)
-        : base(fieldPath.Length == 0 ? message : $"{fieldPath}: {message}")
+        : base(fieldPath.Length == 0 ? message : UiText.Format("", $"{fieldPath}: {message}"))
     {
         FieldPath = fieldPath;
     }

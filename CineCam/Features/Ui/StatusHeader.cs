@@ -41,9 +41,9 @@ internal static class StatusHeader
         double? seconds = running is { Preview: null } ? running.Seconds : null;
         string text = StatusText.TakeState(state, seconds);
         if (running?.Offline != null)
-            text += string.Create(CultureInfo.InvariantCulture, $", picture {running.Offline.Count}");
+            text = UiText.Concat(text, UiText.Format("text.7beb5db6268f", $", picture {running.Offline.Count}"));
         else if (state == RunState.Resetting && flow.SecondsToStart(TakeRunner.ClockSeconds) is double left)
-            text += string.Create(CultureInfo.InvariantCulture, $", the take starts in {left:F1} s");
+            text = UiText.Concat(text, UiText.Format("text.8310e2a68452", $", the take starts in {left:F1} s"));
         return text;
     }
 
@@ -52,9 +52,9 @@ internal static class StatusHeader
         if (running is not { Preview: null })
         {
             if (state is RunState.Idle or RunState.Ready)
-                return session.Take == null ? "next: pick New take in the Take list"
-                    : session.Validation.IsValid ? "next: press Start take"
-                    : "the take has a problem, fix the problem below";
+                return session.Take == null ? UiText.MessageText("text.1059e9fc8ae3", "next: pick New take in the Take list")
+                    : session.Validation.IsValid ? UiText.MessageText("text.47c01a57a1ff", "next: press Start take")
+                    : UiText.MessageText("text.930bbd6a6dc5", "the take has a problem, fix the problem below");
             return "";
         }
 
@@ -62,8 +62,8 @@ internal static class StatusHeader
         NextTrigger? next = ViewText.FindNext(running.Take, aliases, running.Director.Events.Seen,
             running.Director.Events.Predictions, running.Seconds, running.LastFrame?.ShotIndex ?? -1);
         return next is { } n
-            ? "next: " + (n with { Starts = Widgets.StartsText(n.Starts, aliases) }).Text
-            : "the take ends with its last shot";
+            ? UiText.Concat(UiText.MessageText("text.efc352c94c21", "next: "), (n with { Starts = Widgets.StartsText(n.Starts, aliases) }).Text)
+            : UiText.MessageText("text.6837d6038f3b", "the take ends with its last shot");
     }
 
     private static string FactsTip(EditSession session, ActiveTake? running)
@@ -72,8 +72,8 @@ internal static class StatusHeader
         double? target = running is { IsRecording: true, Preview: null } ? running.LastFrame?.TargetSpeed : null;
         Vehicle? vehicle = Program.ControlledVehicle;
         bool hasVehicle = vehicle != null && !vehicle.IsDisposed && Program.Editor == null;
-        string checkpoint = session.Take?.Checkpoint is { } save ? save : "none (see Take setup)";
-        return $"Game speed: {ViewText.SimSpeedText(current, target)}\nVehicle: {(hasVehicle ? vehicle!.Id : "no controlled vehicle")}\nCheckpoint: {checkpoint}";
+        string checkpoint = session.Take?.Checkpoint is { } save ? save : UiText.MessageText("text.6f37858e1c7a", "none (see Take setup)");
+        return UiText.Format("text.a66f4fb0dc77", $"Game speed: {ViewText.SimSpeedText(current, target)}\nVehicle: {(hasVehicle ? vehicle!.Id : UiText.MessageText("text.64032a80512e", "no controlled vehicle"))}\nCheckpoint: {checkpoint}");
     }
 
     private static void DrawShotLine(ActiveTake running)
@@ -97,7 +97,7 @@ internal static class StatusHeader
         try
         {
             dl.AddText(at + new float2(ConsoleWidgets.ComboTextPaddingPx, (h - ImGui.GetFontSize()) * 0.5f),
-                ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), text);
+                ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), UiText.Render(text));
         }
         finally { ConsoleStyle.PopFont(); }
         ImGui.Dummy(new float2(width, h));
@@ -107,16 +107,15 @@ internal static class StatusHeader
 
     public static void DrawReplay(EditSession session)
     {
-        string takeName = ReplaySession.TakeName ?? session.Take?.Name ?? "no take";
+        string takeName = ReplaySession.TakeName ?? session.Take?.Name ?? UiText.MessageText("text.0782a8b1e893", "no take");
         bool playing = ReplaySession.IsPlaying;
-        string state = string.Create(CultureInfo.InvariantCulture, $"{(playing ? "Playing" : "Paused")} at {ReplaySession.Time:F1} s");
+        string state = UiText.Format("text.5943e9558542", $"{(playing ? UiText.MessageText("text.deaf6f9d23bc", "Playing") : UiText.MessageText("text.e159b06187d3", "Paused"))} at {ReplaySession.Time:F1} s");
         string shot = ReplaySession.Plan?.Take is { } take && ReplaySession.Frame is { } frame
             ? ViewText.ShotText(take, frame.ShotIndex, frame.Progress)
             : "";
-        string text = $"\"{takeName}\" on {RecordingName()}  |  {state}" + (shot.Length > 0 ? "  |  " + shot : "");
+        string text = UiText.Concat(UiText.Format("text.84b2d5518a67", $"\"{takeName}\" on {RecordingName()}  |  {state}"), (shot.Length > 0 ? UiText.Concat("  |  ", shot) : ""));
         double rate = (ReplaySession.Plan?.RecordingRate(ReplaySession.Time) ?? 0.0) * ReplaySession.Speed;
-        string tip = string.Create(CultureInfo.InvariantCulture,
-            $"Recording: {ReplaySession.ReplayId}\nGame build of the recording: {ReplaySession.RecordingBuild}\nFlight time: {ReplaySession.RecordingTime:F1} of {ReplaySession.RecordingDuration:F1} s\nFlight speed now: {rate:0.###}x, preview speed {ReplaySession.Speed:0.##}x\nPlay, pause and move the replay in the timeline at the bottom of the screen.");
+        string tip = UiText.Format("text.8f259434a806", $"Recording: {ReplaySession.ReplayId}\nGame build of the recording: {ReplaySession.RecordingBuild}\nFlight time: {ReplaySession.RecordingTime:F1} of {ReplaySession.RecordingDuration:F1} s\nFlight speed now: {rate:0.###}x, preview speed {ReplaySession.Speed:0.##}x\nPlay, pause and move the replay in the timeline at the bottom of the screen.");
         bool problem = ReplayProblem(session).Length > 0;
         Widgets.StatusLine(text, playing && !problem ? Widgets.GoodColor : Widgets.WarnColor, tip, warning: problem);
     }
@@ -126,7 +125,7 @@ internal static class StatusHeader
     {
         string? id = ReplaySession.ReplayId;
         if (id == null)
-            return "no recording";
+            return UiText.MessageText("text.370d46ecb842", "no recording");
         foreach (RecordingEntry entry in ReplaySession.Recordings())
         {
             if (entry.Id == id)
@@ -146,8 +145,8 @@ internal static class StatusHeader
         int errors = session.Validation.Errors.Count;
         if (errors > 0)
             return errors == 1
-                ? "The take has 1 error, so the replay plays it as it was before. The window lists it."
-                : $"The take has {errors} errors, so the replay plays it as it was before. The window lists them.";
+                ? UiText.MessageText("text.7762236fdd98", "The take has 1 error, so the replay plays it as it was before. The window lists it.")
+                : UiText.Format("text.e600d5ab5e34", $"The take has {errors} errors, so the replay plays it as it was before. The window lists them.");
         return problem;
     }
 
@@ -164,10 +163,10 @@ internal static class StatusHeader
             FooterParts.Add(new FooterItem(StatusText.Priority.Render, ReplaySession.RenderStatusText, true));
         if (ReplaySession.IsRecording)
             FooterParts.Add(new FooterItem(StatusText.Priority.Recording,
-                string.Create(CultureInfo.InvariantCulture, $"Flight recording {ReplaySession.RecordingSeconds:F1} s"), true));
+                UiText.Format("text.6529532442c1", $"Flight recording {ReplaySession.RecordingSeconds:F1} s"), true));
         int errors = session.Validation.Errors.Count;
         if (errors > 0)
-            FooterParts.Add(new FooterItem(StatusText.Priority.Problem, errors == 1 ? "The take has 1 error" : $"The take has {errors} errors", true));
+            FooterParts.Add(new FooterItem(StatusText.Priority.Problem, errors == 1 ? UiText.MessageText("text.3868f6fd5c07", "The take has 1 error") : UiText.Format("text.e44430775b34", $"The take has {errors} errors"), true));
         else if (ReplayProblem(session) is { Length: > 0 } problem)
             FooterParts.Add(new FooterItem(StatusText.Priority.Problem, problem, true));
         bool replay = ReplaySession.IsPlayingBack;
@@ -175,10 +174,9 @@ internal static class StatusHeader
             FooterParts.Add(new FooterItem(StatusText.Priority.Take,
                 StatusText.TakeState(state, running is { Preview: null } ? running.Seconds : null), running is { IsRecording: true }));
         if (replay)
-            FooterParts.Add(new FooterItem(StatusText.Priority.Replay, string.Create(CultureInfo.InvariantCulture,
-                $"Replay {(ReplaySession.IsPlaying ? "playing" : "paused")} at {ReplaySession.Time:F1} s"), false));
+            FooterParts.Add(new FooterItem(StatusText.Priority.Replay, UiText.Format("text.5ce2e88a7bb3", $"Replay {(ReplaySession.IsPlaying ? UiText.MessageText("text.0db79e63c517", "playing") : UiText.MessageText("text.a7a9dc5bcf71", "paused"))} at {ReplaySession.Time:F1} s"), false));
         if (QuickCamera.Mode is QuickMode mode)
-            FooterParts.Add(new FooterItem(StatusText.Priority.Quick, "Quick camera: " + QuickCamera.Describe(mode), false));
+            FooterParts.Add(new FooterItem(StatusText.Priority.Quick, UiText.Concat(UiText.MessageText("text.5eb7954a0fc7", "Quick camera: "), QuickCamera.Describe(mode)), false));
         if (!ReplaySession.IsRendering && ReplaySession.RenderStatusText is { Length: > 0 } render)
             FooterParts.Add(new FooterItem(StatusText.Priority.Note, render, false));
         if (ReplaySession.Status.Length > 0)

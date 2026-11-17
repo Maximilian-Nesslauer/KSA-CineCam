@@ -112,7 +112,7 @@ internal static class FlightHooks
             if (!Program.IsMainThread() || context.Vehicle is not { } vehicle)
                 return;
             string cause = EventText.Words(context.Cause.ToString());
-            string detail = context.Part is { } part ? $"{part.DisplayName}, {cause}" : $"the whole vehicle, {cause}";
+            string detail = context.Part is { } part ? $"{part.DisplayName}, {cause}" : UiText.Format("text.97ae53330ffa", $"the whole vehicle, {cause}");
             Add(vehicle, Kind.Explosion, detail);
         }
         catch (Exception ex)

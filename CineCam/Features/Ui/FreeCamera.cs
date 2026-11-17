@@ -20,13 +20,13 @@ internal static class FreeCamera
         get
         {
             if (Program.Editor != null)
-                return "The camera does not work in the vehicle editor.";
+                return UiText.MessageText("text.1f11f8af4780", "The camera does not work in the vehicle editor.");
             if (Quick.QuickCamera.IsActive)
-                return "A quick camera holds the camera. Stop it on the Quick page first.";
+                return UiText.MessageText("text.54e02c34e711", "A quick camera holds the camera. Stop it on the Quick page first.");
             if (TakeRunner.Current is { IsPaused: false } take)
                 return take.Preview != null
-                    ? "The shot preview holds the camera. Stop the preview first."
-                    : "The running take holds the camera. Pause the take for an edit, or stop it.";
+                    ? UiText.MessageText("text.5e7f7facf74a", "The shot preview holds the camera. Stop the preview first.")
+                    : UiText.MessageText("text.5b516df07394", "The running take holds the camera. Pause the take for an edit, or stop it.");
             return "";
         }
     }

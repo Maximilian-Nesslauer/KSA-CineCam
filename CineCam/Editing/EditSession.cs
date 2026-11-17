@@ -59,18 +59,18 @@ public sealed class EditSession
             ActionIndex = -1;
             Revalidate();
             SetMessage(result.Warnings.Count == 0
-                ? $"Loaded {Document.Takes.Count} take(s)."
-                : $"Loaded {Document.Takes.Count} take(s). Warning: {result.Warnings[0]}", false);
+                ? UiText.Format("text.05d34287004d", $"Loaded {Document.Takes.Count} take(s).")
+                : UiText.Format("text.6965c35809c6", $"Loaded {Document.Takes.Count} take(s). Warning: {result.Warnings[0]}"), false);
             Version++;
             return true;
         }
         catch (ShotFileException ex)
         {
-            SetMessage($"The file is not valid: {ex.Message}", true);
+            SetMessage(UiText.Format("text.4703024c79de", $"The file is not valid: {ex.Message}"), true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            SetMessage($"The file could not be read: {ex.Message}", true);
+            SetMessage(UiText.Format("text.8bfe47988e62", $"The file could not be read: {ex.Message}"), true);
         }
 
         return false;
@@ -87,7 +87,7 @@ public sealed class EditSession
         ActionIndex = -1;
         Dirty = true;
         Revalidate();
-        SetMessage("A new file from the default shots. Save it to keep it.", false);
+        SetMessage(UiText.MessageText("text.f925f18dfa90", "A new file from the default shots. Save it to keep it."), false);
         Version++;
     }
 
@@ -102,20 +102,20 @@ public sealed class EditSession
     {
         if (Document == null)
         {
-            SetMessage("There is nothing to save.", true);
+            SetMessage(UiText.MessageText("text.0fde902f2054", "There is nothing to save."), true);
             return false;
         }
 
         if (string.IsNullOrWhiteSpace(Path))
         {
-            SetMessage("The file path is empty.", true);
+            SetMessage(UiText.MessageText("text.7dafed1c5adf", "The file path is empty."), true);
             return false;
         }
 
         Revalidate();
         if (!Validation.IsValid)
         {
-            SetMessage($"Not saved. Fix {Validation.Errors.Count} problem(s) first.", true);
+            SetMessage(UiText.Format("text.aa987af549b0", $"Not saved. Fix {Validation.Errors.Count} problem(s) first."), true);
             return false;
         }
 
@@ -126,30 +126,30 @@ public sealed class EditSession
                 Directory.CreateDirectory(folder);
             if (File.Exists(Path) && !string.Equals(_backedUpPath, Path, StringComparison.OrdinalIgnoreCase))
             {
-                File.Copy(Path, Path + ".bak", overwrite: true);
+                File.Copy(Path, UiText.Concat(Path, ".bak"), overwrite: true);
                 _backedUpPath = Path;
             }
 
-            string temp = Path + ".tmp";
+            string temp = UiText.Concat(Path, ".tmp");
             File.WriteAllText(temp, ShotFileJson.Write(Document), new UTF8Encoding(false));
             File.Move(temp, Path, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            SetMessage($"The file could not be written: {ex.Message}", true);
+            SetMessage(UiText.Format("text.fecd42697782", $"The file could not be written: {ex.Message}"), true);
             return false;
         }
 
         Dirty = false;
         Version++;
         SaveCount++;
-        SetMessage("Saved.", false);
+        SetMessage(UiText.MessageText("text.fca046ccd586", "Saved."), false);
         return true;
     }
 
     /// <summary>Throws <see cref="ShotFileException"/> when the document is not valid.</summary>
     public ShotFile CopyForRun() =>
-        Document == null ? throw new ShotFileException("", "no file is loaded") : ShotFileValidator.Copy(Document);
+        Document == null ? throw new ShotFileException("", UiText.MessageText("text.c812d4e4665c", "no file is loaded")) : ShotFileValidator.Copy(Document);
 
     public void SetMessage(string text, bool isError)
     {
@@ -253,7 +253,7 @@ public sealed class EditSession
     {
         if (Document == null || Take is not { } source)
             return;
-        Take copy = ShotEdit.Clone(source, ShotEdit.UniqueTakeName(Document.Takes, source.Name + "-copy"));
+        Take copy = ShotEdit.Clone(source, ShotEdit.UniqueTakeName(Document.Takes, UiText.Concat(source.Name, "-copy")));
         Document.Takes.Insert(TakeIndex + 1, copy);
         Document.UsesTakeList = true;
         TakeIndex++;

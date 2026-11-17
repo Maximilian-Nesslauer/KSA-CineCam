@@ -23,15 +23,15 @@ internal static class KeyCapture
     public static string Block(EditSession session)
     {
         if (session.Take == null)
-            return "Make a take first with New take.";
+            return UiText.MessageText("text.682b6101ae57", "Make a take first with New take.");
         if (ReplaySession.IsPlayingBack)
             return ReplaySession.TakeName != null && string.Equals(ReplaySession.TakeName, session.Take.Name, StringComparison.OrdinalIgnoreCase)
-                ? "" : ReplaySession.TakeProblem.Length > 0 ? ReplaySession.TakeProblem : "The replay has not played the selected take yet. Wait a moment.";
+                ? "" : ReplaySession.TakeProblem.Length > 0 ? ReplaySession.TakeProblem : UiText.MessageText("text.d89bcf68728c", "The replay has not played the selected take yet. Wait a moment.");
         if (FreeCamera.Block is { Length: > 0 } camera)
             return camera;
         Vehicle? vehicle = Program.ControlledVehicle;
         if (vehicle == null || vehicle.IsDisposed)
-            return "Needs a controlled vehicle in flight.";
+            return UiText.MessageText("text.5a23f4ade198", "Needs a controlled vehicle in flight.");
         return PausedTakeBlock(session);
     }
 
@@ -41,7 +41,7 @@ internal static class KeyCapture
     {
         if (TakeRunner.Current is not { IsPaused: true } paused || IsSameTake(session, paused.Take.Name))
             return "";
-        return $"The take \"{paused.Take.Name}\" is paused. Select it in the take list to add a key at the moment of the pause.";
+        return UiText.Format("text.ec41f82e4acb", $"The take \"{paused.Take.Name}\" is paused. Select it in the take list to add a key at the moment of the pause.");
     }
 
     private static bool IsSameTake(EditSession session, string name) =>
@@ -89,14 +89,14 @@ internal static class KeyCapture
         Vehicle? vehicle = Program.ControlledVehicle;
         if (vehicle == null || vehicle.IsDisposed)
         {
-            message = "Needs a controlled vehicle in flight.";
+            message = UiText.MessageText("text.5a23f4ade198", "Needs a controlled vehicle in flight.");
             return false;
         }
 
         SiteFrame? site = SiteFrame.FromVehicle(vehicle, siteId, anchor, out string note);
         if (site == null)
         {
-            message = $"No world point frame here: {note}.";
+            message = UiText.Format("text.c9d1345a9863", $"No world point frame here: {note}.");
             return false;
         }
 
@@ -119,7 +119,7 @@ internal static class KeyCapture
         if (message.Length > 0 || scene.Player.Sample is not { } world)
         {
             if (message.Length == 0)
-                message = "The replay has no picture yet.";
+                message = UiText.MessageText("text.3940537aaf66", "The replay has no picture yet.");
             return false;
         }
 
@@ -213,38 +213,36 @@ internal static class KeyCapture
                 shot.Duration = duration;
             session.InsertShot(shot, place.Index);
             if (place.Duration != null && place.Delay > 1e-9)
-                note = string.Create(CultureInfo.InvariantCulture,
-                    $" It lasts {shot.Duration:0.##} s, the shortest length, so the shots after it start {place.Delay:0.##} s later.");
+                note = UiText.Format("text.f2ec65a9d499", $" It lasts {shot.Duration:0.##} s, the shortest length, so the shots after it start {place.Delay:0.##} s later.");
             else if (place.Duration != null)
-                note = string.Create(CultureInfo.InvariantCulture,
-                    $" It lasts {shot.Duration:0.##} s, until the next shot starts, so the shots after it keep their times.");
+                note = UiText.Format("text.b325e3bb19be", $" It lasts {shot.Duration:0.##} s, until the next shot starts, so the shots after it keep their times.");
             if (place.InPreRoll)
-                note += " The pre-roll loop runs at this moment, so its next pass takes the picture back.";
+                note = UiText.Concat(note, UiText.MessageText("text.bf0c51d414fc", " The pre-roll loop runs at this moment, so its next pass takes the picture back."));
         }
 
         session.AdoptAnchor(GroundAnchor(c.Site));
-        string added = $"Added {what} as shot {session.ShotIndex + 1}.";
+        string added = UiText.Format("text.b9da4eddb8ff", $"Added {what} as shot {session.ShotIndex + 1}.");
         if (c.At == null)
         {
-            message = $"{added} Save to keep it.";
+            message = UiText.Format("text.c9c751ed2ecf", $"{added} Save to keep it.");
             return true;
         }
 
-        string starts = " It starts " + Widgets.DescribeTrigger(c.At);
+        string starts = UiText.Concat(UiText.MessageText("text.228fa0b3c37e", " It starts "), Widgets.DescribeTrigger(c.At));
         if (!c.Replay)
         {
-            message = $"{added}{starts} in the next take; this run is not changed.{note} Until the next take, the other camera edits of this pause change this run only. Save to keep it.";
+            message = UiText.Format("text.096f3f364cc2", $"{added}{starts} in the next take; this run is not changed.{note} Until the next take, the other camera edits of this pause change this run only. Save to keep it.");
             return true;
         }
 
         ReplaySession.EnsureCurrentTake();
         if (ReplaySession.TakeName == null)
         {
-            message = $"{added}{starts}, but the replay cannot play the take with it. {ReplaySession.TakeProblem}";
+            message = UiText.Format("text.4c8f12704ccc", $"{added}{starts}, but the replay cannot play the take with it. {ReplaySession.TakeProblem}");
             return false;
         }
 
-        message = $"{added}{starts}, and the replay plays it now.{note} Save to keep it.";
+        message = UiText.Format("text.2d1ecb2c580a", $"{added}{starts}, and the replay plays it now.{note} Save to keep it.");
         return true;
     }
 

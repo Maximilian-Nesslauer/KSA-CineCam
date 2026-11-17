@@ -48,12 +48,12 @@ public readonly record struct EventName(EventKind Kind, double Value)
         EventKind.Ignition => Counted("ignition", Value),
         EventKind.Liftoff => "liftoff",
         EventKind.Burnout => Counted("burnout", Value),
-        EventKind.Sequence => "sequence:" + Value.ToString("0", CultureInfo.InvariantCulture),
-        EventKind.Altitude => "altitude:" + Value.ToString("R", CultureInfo.InvariantCulture),
-        EventKind.Speed => "speed:" + Value.ToString("R", CultureInfo.InvariantCulture),
-        EventKind.Ground => "ground:" + Value.ToString("R", CultureInfo.InvariantCulture),
-        EventKind.Slow => "slow:" + Value.ToString("R", CultureInfo.InvariantCulture),
-        EventKind.Q => "q:" + Value.ToString("R", CultureInfo.InvariantCulture),
+        EventKind.Sequence => UiText.Concat("sequence:", Value.ToString("0", CultureInfo.InvariantCulture)),
+        EventKind.Altitude => UiText.Concat("altitude:", Value.ToString("R", CultureInfo.InvariantCulture)),
+        EventKind.Speed => UiText.Concat("speed:", Value.ToString("R", CultureInfo.InvariantCulture)),
+        EventKind.Ground => UiText.Concat("ground:", Value.ToString("R", CultureInfo.InvariantCulture)),
+        EventKind.Slow => UiText.Concat("slow:", Value.ToString("R", CultureInfo.InvariantCulture)),
+        EventKind.Q => UiText.Concat("q:", Value.ToString("R", CultureInfo.InvariantCulture)),
         _ => Counted(CountedHead(Kind), Value),
     };
 
@@ -102,7 +102,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
 
     /// <summary>The canonical name of the Nth time of a counted event. The first one has no number.</summary>
     public static string Counted(string head, double count) =>
-        count < 1.5 ? head : head + ":" + count.ToString("0", CultureInfo.InvariantCulture);
+        count < 1.5 ? head : UiText.Concat(UiText.Concat(head, ":"), count.ToString("0", CultureInfo.InvariantCulture));
 
     /// <summary>
     /// The names are case insensitive. Altitude and the height over the ground are in meters, speed is in
@@ -114,7 +114,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
         error = "";
         if (string.IsNullOrWhiteSpace(text))
         {
-            error = "the event name is empty";
+            error = UiText.MessageText("text.19d7ee4fd564", "the event name is empty");
             return false;
         }
 
@@ -128,7 +128,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
             case "liftoff":
                 if (colon >= 0)
                 {
-                    error = "the event \"liftoff\" takes no number";
+                    error = UiText.MessageText("text.cf4a642d051d", "the event \"liftoff\" takes no number");
                     return false;
                 }
 
@@ -141,7 +141,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
                     && (!double.TryParse(tail, NumberStyles.Float, CultureInfo.InvariantCulture, out count)
                         || double.IsNaN(count) || double.IsInfinity(count) || count < 1 || count != Math.Floor(count)))
                 {
-                    error = $"the event \"{head}\" takes a whole number from 1 after the colon, for example \"{head}:2\"";
+                    error = UiText.Format("text.ec6ec82fb0e5", $"the event \"{head}\" takes a whole number from 1 after the colon, for example \"{head}:2\"");
                     return false;
                 }
 
@@ -152,31 +152,31 @@ public readonly record struct EventName(EventKind Kind, double Value)
                 if (!double.TryParse(tail, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
                     || double.IsNaN(value) || double.IsInfinity(value))
                 {
-                    error = $"the event \"{head}\" needs a number after the colon, for example \"{head}:3\"";
+                    error = UiText.Format("text.d84ab71ab93b", $"the event \"{head}\" needs a number after the colon, for example \"{head}:3\"");
                     return false;
                 }
 
-                if (head == "sequence" && (value < 1 || value != Math.Floor(value)))
+                if (head == UiText.MessageText("text.bf37c7c20871", "sequence") && (value < 1 || value != Math.Floor(value)))
                 {
-                    error = "a sequence number is a whole number from 1";
+                    error = UiText.MessageText("text.2f3d1d9d943b", "a sequence number is a whole number from 1");
                     return false;
                 }
 
                 if (head == "ground" && value < 0)
                 {
-                    error = "the height over the ground is 0 or more meters";
+                    error = UiText.MessageText("text.d3a1efdba16f", "the height over the ground is 0 or more meters");
                     return false;
                 }
 
                 if (head == "slow" && value <= 0)
                 {
-                    error = "the speed of \"slow\" is more than 0 meters per second, because a vehicle seldom stands fully still";
+                    error = UiText.MessageText("text.06cb2106bb4b", "the speed of \"slow\" is more than 0 meters per second, because a vehicle seldom stands fully still");
                     return false;
                 }
 
                 if (head == "q" && value <= 0)
                 {
-                    error = "the dynamic pressure of \"q\" is more than 0 pascals, for example \"q:20000\"";
+                    error = UiText.MessageText("text.4356768a179a", "the dynamic pressure of \"q\" is more than 0 pascals, for example \"q:20000\"");
                     return false;
                 }
 
@@ -191,7 +191,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
                 }, value);
                 return true;
             default:
-                error = $"unknown event \"{trimmed}\" (known: ignition, liftoff, burnout, landed, soi, apoapsis, periapsis, docked, undocked, mark, control-lost, control-back, reboot, probe-failed, power-low, life-support-low, incapacitated, arrival, eva, board, explosion, gimbal-limit and maxq, each counted with :N, and sequence:N, altitude:M, speed:V, ground:M, slow:V, q:PASCALS, or an alias from \"events\")";
+                error = UiText.Format("text.69105f47e2de", $"unknown event \"{trimmed}\" (known: ignition, liftoff, burnout, landed, soi, apoapsis, periapsis, docked, undocked, mark, control-lost, control-back, reboot, probe-failed, power-low, life-support-low, incapacitated, arrival, eva, board, explosion, gimbal-limit and maxq, each counted with :N, and sequence:N, altitude:M, speed:V, ground:M, slow:V, q:PASCALS, or an alias from \"events\")");
                 return false;
         }
     }
@@ -237,48 +237,48 @@ public static class EventDisplay
 
         return name.Kind switch
         {
-            EventKind.Ignition => Counted("Ignition", name.Value),
-            EventKind.Liftoff => "Lift-off",
-            EventKind.Burnout => Counted("Burnout", name.Value),
-            EventKind.Sequence => "Stage " + Whole(name.Value),
-            EventKind.Altitude => "Altitude " + Distance(name.Value),
-            EventKind.Speed => "Speed " + Short(name.Value) + " m/s",
-            EventKind.Ground => "Over ground " + Distance(name.Value),
-            EventKind.Slow => "Slow to " + Short(name.Value) + " m/s",
+            EventKind.Ignition => Counted(UiText.MessageText("text.ae1c32802c31", "Ignition"), name.Value),
+            EventKind.Liftoff => UiText.MessageText("text.cf343cf67ee7", "Lift-off"),
+            EventKind.Burnout => Counted(UiText.MessageText("text.efbc3e50f6b3", "Burnout"), name.Value),
+            EventKind.Sequence => UiText.Concat(UiText.MessageText("text.fa33951b7cba", "Stage "), Whole(name.Value)),
+            EventKind.Altitude => UiText.Concat(UiText.MessageText("text.523ebac116d3", "Altitude "), Distance(name.Value)),
+            EventKind.Speed => UiText.Concat(UiText.Concat(UiText.MessageText("text.3d896822b102", "Speed "), Short(name.Value)), " m/s"),
+            EventKind.Ground => UiText.Concat(UiText.MessageText("text.adcd2aabca3b", "Over ground "), Distance(name.Value)),
+            EventKind.Slow => UiText.Concat(UiText.Concat(UiText.MessageText("text.f4475b17b777", "Slow to "), Short(name.Value)), " m/s"),
             EventKind.Landed => Counted("Landed", name.Value),
-            EventKind.Soi => Counted("SOI change", name.Value),
+            EventKind.Soi => Counted(UiText.MessageText("text.e8894c1924d5", "SOI change"), name.Value),
             EventKind.Apoapsis => Counted("Apoapsis", name.Value),
-            EventKind.Periapsis => Counted("Periapsis", name.Value),
-            EventKind.Docked => Counted("Docked", name.Value),
-            EventKind.Undocked => Counted("Undocked", name.Value),
-            EventKind.Mark => Counted("Mark", name.Value),
-            EventKind.ControlLost => Counted("Control lost", name.Value),
-            EventKind.ControlBack => Counted("Control back", name.Value),
-            EventKind.Reboot => Counted("Probe core reboot", name.Value),
-            EventKind.ProbeFailed => Counted("Probe core failed", name.Value),
-            EventKind.PowerLow => Counted("Probe power low", name.Value),
-            EventKind.LifeSupportLow => Counted("Life support low", name.Value),
-            EventKind.Incapacitated => Counted("Crew incapacitated", name.Value),
-            EventKind.Arrival => Counted("Mission arrival", name.Value),
-            EventKind.Eva => Counted("EVA", name.Value),
-            EventKind.Board => Counted("Boarding", name.Value),
-            EventKind.Explosion => Counted("Explosion", name.Value),
-            EventKind.GimbalLimit => Counted("Gimbal at limit", name.Value),
-            EventKind.MaxQ => Counted("Max Q", name.Value),
-            EventKind.Q => "Dynamic pressure " + Pressure(name.Value),
+            EventKind.Periapsis => Counted(UiText.MessageText("text.7e64e2e442b6", "Periapsis"), name.Value),
+            EventKind.Docked => Counted(UiText.MessageText("text.5e055c3d1755", "Docked"), name.Value),
+            EventKind.Undocked => Counted(UiText.MessageText("text.654dcc689d68", "Undocked"), name.Value),
+            EventKind.Mark => Counted(UiText.MessageText("text.d7cda0ca2c85", "Mark"), name.Value),
+            EventKind.ControlLost => Counted(UiText.MessageText("text.4756a4f3516a", "Control lost"), name.Value),
+            EventKind.ControlBack => Counted(UiText.MessageText("text.60d9e7bd5242", "Control back"), name.Value),
+            EventKind.Reboot => Counted(UiText.MessageText("text.84b7f5d9562b", "Probe core reboot"), name.Value),
+            EventKind.ProbeFailed => Counted(UiText.MessageText("text.33d0b54bbf76", "Probe core failed"), name.Value),
+            EventKind.PowerLow => Counted(UiText.MessageText("text.b26d5dbb38a2", "Probe power low"), name.Value),
+            EventKind.LifeSupportLow => Counted(UiText.MessageText("text.afeae943e602", "Life support low"), name.Value),
+            EventKind.Incapacitated => Counted(UiText.MessageText("text.883919dead2c", "Crew incapacitated"), name.Value),
+            EventKind.Arrival => Counted(UiText.MessageText("text.9d47b93d2e16", "Mission arrival"), name.Value),
+            EventKind.Eva => Counted(UiText.MessageText("text.5517bab65366", "EVA"), name.Value),
+            EventKind.Board => Counted(UiText.MessageText("text.e74749876753", "Boarding"), name.Value),
+            EventKind.Explosion => Counted(UiText.MessageText("text.ca6482a42bab", "Explosion"), name.Value),
+            EventKind.GimbalLimit => Counted(UiText.MessageText("text.e7aacd7a39c7", "Gimbal at limit"), name.Value),
+            EventKind.MaxQ => Counted(UiText.MessageText("text.ec9422135b02", "Max Q"), name.Value),
+            EventKind.Q => UiText.Concat(UiText.MessageText("text.3e44f4366ef1", "Dynamic pressure "), Pressure(name.Value)),
             _ => eventName,
         };
     }
 
-    private static string Counted(string head, double count) => count < 1.5 ? head : head + " " + Whole(count);
+    private static string Counted(string head, double count) => count < 1.5 ? head : UiText.Format("", $"{head} {Whole(count)}");
 
     private static string Whole(double value) => value.ToString("0", CultureInfo.InvariantCulture);
 
     private static string Short(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     private static string Pressure(double pascals) =>
-        Math.Abs(pascals) >= 1000.0 ? Short(pascals / 1000.0) + " kPa" : Short(pascals) + " Pa";
+        Math.Abs(pascals) >= 1000.0 ? UiText.Concat(Short(pascals / 1000.0), " kPa") : UiText.Concat(Short(pascals), " Pa");
 
     private static string Distance(double meters) =>
-        Math.Abs(meters) >= 1000.0 ? Short(meters / 1000.0) + " km" : Short(meters) + " m";
+        Math.Abs(meters) >= 1000.0 ? UiText.Concat(Short(meters / 1000.0), " km") : UiText.Concat(Short(meters), " m");
 }

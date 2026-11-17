@@ -269,7 +269,7 @@ public static class PoseMath
                 return new CameraPose(PoseFrame.Vehicle, part + shot.Offset, part + shot.LookAt, up, shot.Fov);
             }
             default:
-                throw new ArgumentOutOfRangeException(nameof(shot), shot.Type, "unknown shot type");
+                throw new ArgumentOutOfRangeException(nameof(shot), shot.Type, UiText.MessageText("text.7714daa238fe", "unknown shot type"));
         }
     }
 
@@ -290,7 +290,7 @@ public static class PoseMath
     {
         weight = Math.Clamp(weight, 0.0, 1.0);
         if (from.Frame != to.Frame)
-            throw new ArgumentException("both poses must be in the same frame");
+            throw new ArgumentException(UiText.MessageText("text.cee5a7975a6c", "both poses must be in the same frame"));
 
         V3 position = curved ? CurvedPosition(from, to, weight) : V3.Lerp(from.Position, to.Position, weight);
         V3 up = V3.Lerp(from.Up, to.Up, weight).NormalizedOr(from.Up);

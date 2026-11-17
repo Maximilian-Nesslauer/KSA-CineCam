@@ -26,10 +26,10 @@ internal static class ShotFileStore
         switch (recorded?.Record)
         {
             case Editing.CheckpointRecord.Stored:
-                result = "the file of the window";
+                result = UiText.MessageText("text.e569a8f9c13d", "the file of the window");
                 return true;
             case Editing.CheckpointRecord.NotSaved:
-                result = "the window has it as an unsaved change, because the window could not save the file: " + recorded.Value.Message.TrimEnd('.');
+                result = UiText.MessageText("text.cd9ccf636870", "the window has it as an unsaved change, because the window could not save the file: ") + recorded.Value.Message.TrimEnd('.');
                 return false;
         }
 

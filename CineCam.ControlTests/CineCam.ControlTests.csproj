@@ -7,6 +7,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Using Include="CineCam.Localization" />
+    <Compile Include="..\CineCam\Localization\*.cs" Link="Localization\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\CineCam\Localization\*.json" LogicalName="CineCam.Localization.%(Filename)%(Extension)" />
     <PackageReference Include="Lib.Harmony" Version="2.4.2" />
     <Compile Include="..\CineCam\Director\**\*.cs" Link="Director\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\CineCam\Editing\**\*.cs" Link="Editing\%(RecursiveDir)%(Filename)%(Extension)" />

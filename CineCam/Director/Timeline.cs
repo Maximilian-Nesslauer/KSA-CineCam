@@ -118,18 +118,18 @@ public sealed class TimelineRunner
             if (_shotEvents[i] is not EventName name || name.Canonical != until.Canonical)
                 continue;
             if (i == 0)
-                throw new ArgumentException($"preRoll.until: the first shot waits for \"{preRoll.Until}\", so no shot is left to loop");
+                throw new ArgumentException(UiText.Format("text.11b2e0f9ea5d", $"preRoll.until: the first shot waits for \"{preRoll.Until}\", so no shot is left to loop"));
             for (int j = 0; j < i; j++)
             {
                 TriggerKind kind = take.Shots[j].At.Kind;
                 if (kind == TriggerKind.Event || (j > 0 && kind == TriggerKind.Time))
-                    throw new ArgumentException($"camera[{j}].at: a shot of the pre-roll loop starts after the one before (only the first may start at a time)");
+                    throw new ArgumentException(UiText.Format("text.491947277f45", $"camera[{j}].at: a shot of the pre-roll loop starts after the one before (only the first may start at a time)"));
             }
 
             return i;
         }
 
-        throw new ArgumentException($"preRoll.until: no shot starts on the event \"{preRoll.Until}\", so the loop would never end");
+        throw new ArgumentException(UiText.Format("text.7179f0157412", $"preRoll.until: no shot starts on the event \"{preRoll.Until}\", so the loop would never end"));
     }
 
     public Take Take => _take;
@@ -154,7 +154,7 @@ public sealed class TimelineRunner
     public void Preset(TimelineStarts starts)
     {
         if (starts.Shots.Length != _shotStart.Length || starts.Speed.Length != _speedStart.Length || starts.Actions.Length != _actionStart.Length)
-            throw new ArgumentException("the starts belong to another take");
+            throw new ArgumentException(UiText.MessageText("text.d0a21b3bbde2", "the starts belong to another take"));
         Reset();
         Array.Copy(starts.Shots, _shotStart, _shotStart.Length);
         Array.Copy(starts.Speed, _speedStart, _speedStart.Length);

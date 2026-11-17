@@ -22,7 +22,7 @@ public static class RecordingHeaderReader
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         if (file.Length > ReplayFile.MaxBytes)
-            throw new InvalidDataException("Replay is too large.");
+            throw new InvalidDataException(UiText.MessageText("text.73601aaa1792", "Replay is too large."));
         using var gzip = new GZipStream(file, CompressionMode.Decompress);
         return Read(gzip, cancel);
     }
@@ -47,13 +47,13 @@ public static class RecordingHeaderReader
                     // The reader needs a whole token in the buffer, so a huge token of a hostile file
                     // must not grow it without end. A real recording has no token near this size.
                     if (buffer.Length >= MaxBuffer)
-                        throw new InvalidDataException("Replay has a value that is too long.");
+                        throw new InvalidDataException(UiText.MessageText("text.f0a6b1d6770c", "Replay has a value that is too long."));
                     Array.Resize(ref buffer, Math.Min(buffer.Length * 2, MaxBuffer));
                 }
                 int read = json.Read(buffer, length, buffer.Length - length);
                 total += read;
                 if (total > ReplayFile.MaxBytes)
-                    throw new InvalidDataException("Replay is too large.");
+                    throw new InvalidDataException(UiText.MessageText("text.73601aaa1792", "Replay is too large."));
                 length += read;
                 final = read == 0;
                 var reader = new Utf8JsonReader(buffer.AsSpan(0, length), final, state);
@@ -67,13 +67,13 @@ public static class RecordingHeaderReader
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException("Replay JSON is invalid.", ex);
+            throw new InvalidDataException(UiText.MessageText("text.bd0bad70f515", "Replay JSON is invalid."), ex);
         }
 
         if (scan.Version is not (1 or 2 or ReplayFile.CurrentVersion))
-            throw new InvalidDataException($"Unsupported replay version {scan.Version}.");
+            throw new InvalidDataException(UiText.Format("text.fb88d5052042", $"Unsupported replay version {scan.Version}."));
         if (scan.Vehicle == null)
-            throw new InvalidDataException("Invalid replay: actor");
+            throw new InvalidDataException(UiText.MessageText("text.5f4d64ac30bb", "Invalid replay: actor"));
         return new RecordingHeader(scan.Version, scan.GameVersion ?? "", scan.SystemId ?? "", scan.BodyId ?? "", scan.Vehicle,
             double.IsFinite(scan.Duration) ? Math.Max(0.0, scan.Duration) : 0.0);
     }
@@ -193,7 +193,7 @@ public static class RecordingList
     public static string[] Cells(RecordingEntry entry) =>
     [
         DateText(entry.Date),
-        entry.Header?.Vehicle ?? (entry.Error != null ? "cannot be read" : "reading..."),
+        entry.Header?.Vehicle ?? (entry.Error != null ? UiText.MessageText("text.f2477db4085c", "cannot be read") : "reading..."),
         entry.Header is { } build ? ReplayBuild.Short(build.GameVersion) : "-",
         entry.Header is { } header ? LengthText(header.Duration) : "-",
         SizeText(entry.Bytes),

@@ -218,3 +218,14 @@ The sound features use no Harmony patch except the pitch prefix above, but they 
 - `ExplosionFlashSystem.SubmitLights(IViewport)` skips the main replay viewport. Live flash slots remain unchanged while the simulation is held, and become visible again after closing.
 - `ExplosionVolumeStore.Add` can replace an existing slot at capacity. Recording and replay compare volume identities across `ExplosionVolumeManager.Spawn` to preserve the inserted volume seed after replacement. A merge retains the existing object and seed. Seeks consider all earlier explosions and use `ExplosionVolumeTemplate.GetScaledLifeSeconds` to skip expired volumes.
 - Format 3 can retain a terminal effects tail in `ReplayFlight.EndTime`; actors stop at their recorded end and are not sampled after destruction. A take that ends on a destroyed vehicle leaves its recorder alive through the effects frame. `MissionProgress.FindRelation` supplies the read-only arrival state at an SOI boundary before `ArrivedAt` is populated.
+
+## Localization maintenance
+
+The interface text and the language support decision are documented in [localization.md](localization.md).
+Add an English fallback and entries in both embedded JSON tables for each new visible message.
+Use `UiText.Format` for interpolated messages and `UiText.Concat` or `UiText.Join` when messages are combined.
+Call `UiText.Render` only at a presentation boundary.
+Keep control IDs, user text and protocol data canonical.
+Run the localization coverage tool and the locale tests after a UI change.
+On a game update, check `GameContentTags.Build`, `LanguageFileReference.DoLoad`, `Languages.AddOrAppend`, the `LStrings` provider setup, the available stock locales and any exposed active-language setting.
+The language table adds no Harmony target or reflection key to the runtime mod.

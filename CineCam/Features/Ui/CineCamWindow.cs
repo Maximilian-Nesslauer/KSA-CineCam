@@ -13,7 +13,7 @@ namespace CineCam.Features.Ui;
 internal sealed class CineCamWindow
 {
     private const string WindowId = "cinecam-window";
-    private const string WindowTitle = "CAMERA DIRECTOR";
+    private static readonly string WindowTitle = UiText.MessageText("text.d5c16cf7386a", "CAMERA DIRECTOR");
     private const string WindowSignature = "CINECAM";
 
     private static CineCamWindow? _instance;
@@ -204,7 +204,7 @@ internal sealed class CineCamWindow
         _lastDrawUi = drawUi;
         _lastPlayback = playback;
         bool open = true;
-        if (!ConsoleStyle.BeginWindow(WindowId.AsSpan(), WindowTitle.AsSpan(), WindowSignature.AsSpan(), ref open,
+        if (!ConsoleStyle.BeginWindow(WindowId.AsSpan(), UiText.Render(WindowTitle).AsSpan(), WindowSignature.AsSpan(), ref open,
                 new float2(640f, 760f) * ImGuiHelper.InterfaceScale, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
             _focused = false;
@@ -315,13 +315,13 @@ internal sealed class CineCamWindow
 
     private enum LiveTab { Shots, Speed, Actions, PauseEdit, TakeSetup }
 
-    private static readonly string[] PageNames = ["Quick", "Editor", "Settings"];
-    private static readonly string[] LiveTabNames = ["Shots", "Speed", "Actions", "Pause edit", "Take setup"];
+    private static readonly string[] PageNames = [UiText.MessageText("text.9f49fadb6a86", "Quick"), UiText.MessageText("text.936a161c3931", "Editor"), UiText.MessageText("text.74a883a037bc", "Settings")];
+    private static readonly string[] LiveTabNames = [UiText.MessageText("text.2bce1f4a654f", "Shots"), UiText.MessageText("text.c372fee9b456", "Speed"), UiText.MessageText("text.ff8059dc6752", "Actions"), UiText.MessageText("text.dff466d6f51d", "Pause edit"), UiText.MessageText("text.b82721c4c8da", "Take setup")];
 
     // A replay has no pause edit tab, because the replay itself pauses and the take is always open for edits.
     private static readonly LiveTab[] ReplayTabs = [LiveTab.Shots, LiveTab.Speed, LiveTab.Actions, LiveTab.TakeSetup];
-    private static readonly string[] ReplayTabNames = ["Shots", "Speed", "Actions", "Take setup"];
-    private static readonly string[] SourceNames = ["DIRECT LIVE", "RECORD AND REPLAY"];
+    private static readonly string[] ReplayTabNames = [UiText.MessageText("text.2bce1f4a654f", "Shots"), UiText.MessageText("text.c372fee9b456", "Speed"), UiText.MessageText("text.ff8059dc6752", "Actions"), UiText.MessageText("text.b82721c4c8da", "Take setup")];
+    private static readonly string[] SourceNames = [UiText.MessageText("text.56f76fe047b2", "DIRECT LIVE"), UiText.MessageText("text.0fd82eb78aba", "RECORD AND REPLAY")];
 
     private const int MaxProblemLines = 5;
 
@@ -333,7 +333,7 @@ internal sealed class CineCamWindow
 
     private static List<ProblemLine> _problems = [];
     private static string[] _problemTips = [];
-    private static readonly string[] ProblemIds = Enumerable.Range(0, MaxProblemLines).Select(i => "problem-" + i).ToArray();
+    private static readonly string[] ProblemIds = Enumerable.Range(0, MaxProblemLines).Select(i => UiText.Concat("problem-", i)).ToArray();
     private static ValidationResult? _problemsOf;
     private static int _problemsTake = -1;
 
@@ -396,9 +396,9 @@ internal sealed class CineCamWindow
             string?[] tips =
             [
                 ReplaySession.IsPlayingBack
-                    ? "Exit the replay first. The take of the editor plays in the replay now."
-                    : "The take runs in the live flight, while you fly.",
-                "Record a flight first, then play the take on the recording as often as you like, and render it to pictures. Experimental.",
+                    ? UiText.MessageText("text.eef3fcc3270b", "Exit the replay first. The take of the editor plays in the replay now.")
+                    : UiText.MessageText("text.234d9b6f3f49", "The take runs in the live flight, while you fly."),
+                UiText.MessageText("text.c2fc849b80a9", "Record a flight first, then play the take on the recording as often as you like, and render it to pictures. Experimental."),
             ];
             int picked = Widgets.Segmented("cinecam-source", SourceNames, (int)_source, tips);
             if (picked == (int)Source.Live)
@@ -461,7 +461,7 @@ internal sealed class CineCamWindow
     // The child has no background, so the console panel shows through.
     private static void Scroll(string id, Action body)
     {
-        ImGui.BeginChild(("##cinecam-scroll-" + id).AsSpan(), new float2?(new float2(0f, 0f)), ImGuiChildFlags.None, ImGuiWindowFlags.NoBackground);
+        ImGui.BeginChild((UiText.Concat("##cinecam-scroll-", id)).AsSpan(), new float2?(new float2(0f, 0f)), ImGuiChildFlags.None, ImGuiWindowFlags.NoBackground);
         try
         {
             body();
@@ -475,7 +475,7 @@ internal sealed class CineCamWindow
     private static void WithTake(Action<EditSession> draw)
     {
         if (Session.Document == null)
-            Widgets.Muted("There is no take yet. A take is a shot list: the cameras of a flight, with the game speed and the stage actions. Pick New take in the Take list above.");
+            Widgets.Muted(UiText.MessageText("text.be781f7e10c1", "There is no take yet. A take is a shot list: the cameras of a flight, with the game speed and the stage actions. Pick New take in the Take list above."));
         else
             draw(Session);
     }
@@ -488,13 +488,12 @@ internal sealed class CineCamWindow
             return;
         }
 
-        Widgets.Muted("This tab works while a take is paused. Start a take, then press the edit key (see Settings) or Pause and edit. " +
-            "The sim stops, the camera is free, and you can move the camera into a shot, add keys, and set when a shot, a speed key or a stage action starts.");
+        Widgets.Muted(UiText.Concat(UiText.MessageText("text.cb32d3b29076", "This tab works while a take is paused. Start a take, then press the edit key (see Settings) or Pause and edit. "), UiText.MessageText("text.94685cde7595", "The sim stops, the camera is free, and you can move the camera into a shot, add keys, and set when a shot, a speed key or a stage action starts.")));
         bool canPause = running is { Preview: null, Offline: null };
-        if (Widgets.Button("PAUSE AND EDIT", canPause, running == null ? "Needs a running take."
-                : "An offline capture or a preview cannot be paused."))
+        if (Widgets.Button(UiText.MessageText("text.dcc0670ed57d", "PAUSE AND EDIT"), canPause, running == null ? UiText.MessageText("text.0a87acfbf4db", "Needs a running take.")
+                : UiText.MessageText("text.dc511c8cb8d4", "An offline capture or a preview cannot be paused.")))
             TakeRunner.RequestPause();
-        Widgets.Reason(canPause ? "" : running == null ? "Start a take first." : "This run cannot be paused.");
+        Widgets.Reason(canPause ? "" : running == null ? UiText.MessageText("text.580cc7c207c2", "Start a take first.") : UiText.MessageText("text.8f04df3052be", "This run cannot be paused."));
     }
 
     private static void DrawProblems()
@@ -504,7 +503,7 @@ internal sealed class CineCamWindow
         {
             List<string> names = Session.Document?.Takes.Select(t => t.Name).ToList() ?? [];
             _problems = ProblemText.DescribeAll(result, names, Session.TakeIndex);
-            _problemTips = _problems.Select(line => (line.Item is ProblemItem.None ? "" : "Click to select it in the editor.\n\n") + "File reader: " + line.Raw).ToArray();
+            _problemTips = _problems.Select(line => UiText.Concat(UiText.Concat((line.Item is ProblemItem.None ? "" : UiText.MessageText("text.e04bc1aef236", "Click to select it in the editor.\n\n")), UiText.MessageText("text.94afb96c07bd", "File reader: ")), line.Raw)).ToArray();
             _problemsOf = result;
             _problemsTake = Session.TakeIndex;
         }
@@ -519,7 +518,7 @@ internal sealed class CineCamWindow
         if (_problems.Count > MaxProblemLines)
         {
             int more = _problems.Count - MaxProblemLines;
-            Widgets.Muted(more == 1 ? "1 more problem. Fix the ones above first." : $"{more} more problems. Fix the ones above first.");
+            Widgets.Muted(more == 1 ? UiText.MessageText("text.e36fd38886e8", "1 more problem. Fix the ones above first.") : UiText.Format("text.db75275558d6", $"{more} more problems. Fix the ones above first."));
         }
     }
 

@@ -131,11 +131,11 @@ internal static partial class ReplaySession
     public static string? DeleteRecording(string path)
     {
         if (IsRecording)
-            return "Stop the recording first.";
+            return UiText.MessageText("text.bceedc4c4eda", "Stop the recording first.");
         if (IsPlayingBack)
-            return "Exit the replay first.";
+            return UiText.MessageText("text.145913213b93", "Exit the replay first.");
         if (!RecordingList.IsDeletable(Folder, path, ListFiles()))
-            return "This file is not in the list of recordings.";
+            return UiText.MessageText("text.bd7396ebf3a5", "This file is not in the list of recordings.");
         string id = Path.GetFileNameWithoutExtension(path);
         try
         {
@@ -149,14 +149,14 @@ internal static partial class ReplaySession
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return $"The recording could not be deleted: {ex.Message}";
+            return UiText.Format("text.18aa835e6412", $"The recording could not be deleted: {ex.Message}");
         }
         finally
         {
             _files = null;
         }
 
-        Status = $"Deleted the recording {id}.";
+        Status = UiText.Format("text.33725df4f5b0", $"Deleted the recording {id}.");
         return null;
     }
 }

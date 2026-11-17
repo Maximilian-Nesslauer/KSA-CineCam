@@ -28,11 +28,11 @@ internal static class CineCamPatches
 
     /// <summary>Why the requests that run in the frame hook cannot run on this game build, or null.</summary>
     internal static string? FrameBlock => FrameAvailable ? null
-        : "This game build does not run the CineCam frame hook, see the log at the start of the game.";
+        : UiText.MessageText("text.2274500964fc", "This game build does not run the CineCam frame hook, see the log at the start of the game.");
 
     /// <summary>Why a take, a dry run, a shot preview or a quick camera cannot start on this game build, or null.</summary>
     internal static string? CameraBlock => FrameBlock ?? (CameraAvailable ? null
-        : "This game build does not let CineCam move the camera, see the log at the start of the game.");
+        : UiText.MessageText("text.bdb395621dac", "This game build does not let CineCam move the camera, see the log at the start of the game."));
 
     public static void Apply(Harmony harmony)
     {

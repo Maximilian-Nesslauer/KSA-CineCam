@@ -56,8 +56,8 @@ internal static partial class ReplaySession
     /// saved when the reset ends the take.
     /// </summary>
     public static string CheckpointBlock(bool reset) =>
-        IsPlayingBack ? "Exit the replay first."
-        : reset && IsRecording && !_recordingForTake ? "Stop the recording first. A reset loads a save, which ends the recording."
+        IsPlayingBack ? UiText.MessageText("text.145913213b93", "Exit the replay first.")
+        : reset && IsRecording && !_recordingForTake ? UiText.MessageText("text.b011474294de", "Stop the recording first. A reset loads a save, which ends the recording.")
         : "";
     public static bool IsPlaying => Scene?.IsPlaying == true;
 
@@ -110,12 +110,12 @@ internal static partial class ReplaySession
         try
         {
             return _files ??= Directory.Exists(Folder)
-                ? Directory.GetFiles(Folder, "*" + Extension).OrderDescending(StringComparer.Ordinal).ToArray()
+                ? Directory.GetFiles(Folder, UiText.Concat("*", Extension)).OrderDescending(StringComparer.Ordinal).ToArray()
                 : [];
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Status = $"The replay folder could not be read: {ex.Message}";
+            Status = UiText.Format("text.7ab73bfcf605", $"The replay folder could not be read: {ex.Message}");
             return [];
         }
     }
@@ -149,12 +149,12 @@ internal static partial class ReplaySession
                     else FinishRecording(reason);
                 }
                 else if (_recorder.TakeNote() is { } note)
-                    Status = $"{Status} {note}";
+                    Status = UiText.Format("", $"{Status} {note}");
             }
             catch (Exception ex)
             {
                 Report(ex);
-                FinishAfterError("The recording stopped after an error.");
+                FinishAfterError(UiText.MessageText("text.a7c326471da4", "The recording stopped after an error."));
             }
         }
     }
@@ -212,8 +212,8 @@ internal static partial class ReplaySession
     public static void OnWorldChange()
     {
         CancelRequests();
-        CancelPreview("The scene changed.");
-        FinishAfterError("The recording ended when the scene changed.");
+        CancelPreview(UiText.MessageText("text.744a647943e9", "The scene changed."));
+        FinishAfterError(UiText.MessageText("text.40d6a4cc72dc", "The recording ended when the scene changed."));
         try
         {
             CloseCore();
@@ -273,7 +273,7 @@ internal static partial class ReplaySession
         _recorder = new FlightRecorder(system, body, vehicle);
         _recordingTake = takeName;
         _recordingForTake = false;
-        Status = takeName == null ? $"Recording {vehicle.Id}." : $"Recording {vehicle.Id} with the take \"{takeName}\".";
+        Status = takeName == null ? UiText.Format("text.ae6ed48f2411", $"Recording {vehicle.Id}.") : UiText.Format("text.79625d745ef5", $"Recording {vehicle.Id} with the take \"{takeName}\".");
     }
 
     /// <summary>
@@ -335,16 +335,16 @@ internal static partial class ReplaySession
         ReplayFlight flight = recorder.Flight;
         if (flight.Actors.Count == 0 || flight.Actors[0].Segments.Count == 0)
         {
-            Status = reason ?? "The recording contained no flight samples.";
+            Status = reason ?? UiText.MessageText("text.225a5896c4e5", "The recording contained no flight samples.");
             return;
         }
         string suffix = Guid.NewGuid().ToString("N")[..8];
-        string take = takeName != null && RecordingTakePart(takeName) is { Length: > 0 } part ? " " + part : "";
-        string name = $"Flight {DateTime.Now:yyyy-MM-dd HH-mm-ss}{take} {suffix}";
+        string take = takeName != null && RecordingTakePart(takeName) is { Length: > 0 } part ? UiText.Concat(" ", part) : "";
+        string name = UiText.Format("", $"Flight {DateTime.Now:yyyy-MM-dd HH-mm-ss}{take} {suffix}");
         _unsavedFlight = flight;
-        _unsavedPath = Path.Combine(Folder, name + Extension);
+        _unsavedPath = Path.Combine(Folder, UiText.Concat(name, Extension));
         SaveRecording();
-        Status = reason == null ? "Flight saved. It is at the top of the list below." : $"{reason} The recorded portion was saved.";
+        Status = reason == null ? UiText.MessageText("text.3890d72d1274", "Flight saved. It is at the top of the list below.") : UiText.Format("text.08bfeff1b4f4", $"{reason} The recorded portion was saved.");
     }
 
     // The take name in the name of a recording: safe in a file name and short enough for the id of a recording.
@@ -362,7 +362,7 @@ internal static partial class ReplaySession
         _unsavedFlight = null;
         _unsavedPath = null;
         _files = null;
-        Status = "Flight saved. It is at the top of the list below.";
+        Status = UiText.MessageText("text.3890d72d1274", "Flight saved. It is at the top of the list below.");
     }
 
     private static void FinishAfterError(string reason)
@@ -385,7 +385,7 @@ internal static partial class ReplaySession
         string? path = IsRecordingId(id) ? ListFiles().FirstOrDefault(path =>
             string.Equals(Path.GetFileNameWithoutExtension(path), id, StringComparison.Ordinal)) : null;
         if (path == null)
-            throw new Refusal("recording_not_found", "Choose a recording from the library.");
+            throw new Refusal("recording_not_found", UiText.MessageText("text.f793fb1207f3", "Choose a recording from the library."));
         CelestialSystem system = Universe.CurrentSystem!;
         ReplayFlight flight = ReplayFile.Load(path);
         string gameVersion = VersionInfo.Current.VersionString;
@@ -393,9 +393,9 @@ internal static partial class ReplaySession
             throw new Refusal(block.Code, block.Message);
         bool older = ReplayBuild.Compare(flight.GameVersion, gameVersion) == ReplayBuildAge.Older;
         if (!string.Equals(flight.SystemId, system.Id, StringComparison.Ordinal) || system.Get<Celestial>(flight.BodyId) is not { } body)
-            throw new Refusal("system_mismatch", $"Open the {flight.SystemId} system with {flight.BodyId} to play this replay.");
+            throw new Refusal("system_mismatch", UiText.Format("text.852f1fdf6f5e", $"Open the {flight.SystemId} system with {flight.BodyId} to play this replay."));
 
-        Quick.QuickCamera.Stop("a replay opens");
+        Quick.QuickCamera.Stop(UiText.MessageText("text.f167652802a5", "a replay opens"));
         ReplayScene scene;
         try
         {
@@ -403,7 +403,7 @@ internal static partial class ReplaySession
         }
         catch (InvalidDataException ex) when (older)
         {
-            throw new InvalidDataException($"{ex.Message} The recording is from KSA {flight.GameVersion}, and this build can have other parts.", ex);
+            throw new InvalidDataException(UiText.Format("text.bae0482b5ee3", $"{ex.Message} The recording is from KSA {flight.GameVersion}, and this build can have other parts."), ex);
         }
         try
         {
@@ -415,12 +415,12 @@ internal static partial class ReplaySession
             scene.SetCameraMode(scene.Player.Plan.Take is { Shots.Count: > 0 } ? ReplayCameraMode.Take : ReplayCameraMode.Free);
             ApiFeed.ReplayOpened(id);
             string note = flight.FormatVersion == 1
-                ? " This recording is from an older version: only the lift-off and the ignitions are known as events."
+                ? UiText.MessageText("text.1ff3526d8155", " This recording is from an older version: only the lift-off and the ignitions are known as events.")
                 : "";
             _openWarning = OpenWarningOf(flight.GameVersion, gameVersion, scene.Fit);
             if (_openWarning.Length > 0)
                 DefaultCategory.Log.Warning($"[CineCam] Opened the recording {id} on KSA {gameVersion}: {_openWarning}");
-            Status = $"Opened {id}.{note}{imported}";
+            Status = UiText.Format("status.opened", $"Opened {id}.{note}{imported}");
         }
         catch
         {
@@ -435,12 +435,12 @@ internal static partial class ReplaySession
     private static string OpenWarningOf(string recorded, string current, ReplayFitReport fit)
     {
         string build = ReplayBuild.Compare(recorded, current) == ReplayBuildAge.Same ? "" : ReplayBuild.BuildLine(recorded, current);
-        return string.Join(" ", new[] { build, fit.Text() }.Where(text => text.Length > 0));
+        return UiText.Join(" ", new[] { build, fit.Text() }.Where(text => text.Length > 0));
     }
 
     private static void CloseCore()
     {
-        CancelPreview("The replay closed.");
+        CancelPreview(UiText.MessageText("text.9fe3a625ce60", "The replay closed."));
         bool rendering = _render != null;
         FinishRender("the replay closed", false);
         ReplayScene? scene = Scene;
@@ -462,7 +462,7 @@ internal static partial class ReplaySession
             ApiFeed.ReplayClosed();
             scene.Dispose();
             // The result of a render that the close ended stays in the status.
-            Status = rendering ? $"Replay closed. {Status}" : "Replay closed. Returned to the live flight.";
+            Status = rendering ? UiText.Format("text.c9acf2733111", $"Replay closed. {Status}") : UiText.MessageText("text.09e5d7c01fb3", "Replay closed. Returned to the live flight.");
         }
     }
 
@@ -520,7 +520,7 @@ internal static partial class ReplaySession
             scene.LoadTake(null, null);
             _appliedVersion = session.Version;
             _takeName = null;
-            _takeProblem = "The editor has no take. Make one on the Editor page.";
+            _takeProblem = UiText.MessageText("text.70ee0b527edc", "The editor has no take. Make one on the Editor page.");
             return;
         }
 
@@ -533,7 +533,7 @@ internal static partial class ReplaySession
         {
             _appliedVersion = session.Version;
             _takeName = null;
-            _takeProblem = "The take has errors, so the replay plays it as it was before. " + PlainProblem(ex.Message);
+            _takeProblem = UiText.Concat(UiText.MessageText("text.2d1cb8d58845", "The take has errors, so the replay plays it as it was before. "), PlainProblem(ex.Message));
             return;
         }
 
@@ -575,12 +575,12 @@ internal static partial class ReplaySession
     private static void Apply(ReplayScene scene, int version, ReplayScene.TakeRequest request, ReplayTakePlan plan, string problem, bool rough)
     {
         _appliedVersion = version;
-        string site = request.SiteNote.Length > 0 ? $" Site: {request.SiteNote}." : "";
+        string site = request.SiteNote.Length > 0 ? UiText.Format("text.f9fa934c4a19", $" Site: {request.SiteNote}.") : "";
         if (problem.Length > 0 && scene.Player.Problem.Length == 0 && scene.Player.Plan.Take is { } last
             && request.Take != null && string.Equals(last.Name, request.Take.Name, StringComparison.OrdinalIgnoreCase))
         {
             _takeName = null;
-            _takeProblem = "The take cannot play, so the replay plays it as it was before. " + PlainProblem(problem) + site;
+            _takeProblem = UiText.Concat(UiText.Concat(UiText.MessageText("text.5e4dd6870492", "The take cannot play, so the replay plays it as it was before. "), PlainProblem(problem)), site);
             return;
         }
 
@@ -588,8 +588,8 @@ internal static partial class ReplaySession
         if (rough)
             _lastRough = Stopwatch.GetTimestamp();
         _takeName = problem.Length == 0 ? request.Take?.Name : null;
-        _takeProblem = problem.Length > 0 ? "The take cannot play. " + PlainProblem(problem) + site
-            : plan.Truncated ? "The take is longer than the replay can plan, so it ends early." + site
+        _takeProblem = problem.Length > 0 ? UiText.Concat(UiText.Concat(UiText.MessageText("text.d9a7752c662f", "The take cannot play. "), PlainProblem(problem)), site)
+            : plan.Truncated ? UiText.Concat(UiText.MessageText("text.645fce8fddf7", "The take is longer than the replay can plan, so it ends early."), site)
             : site.Trim();
     }
 
@@ -625,21 +625,21 @@ internal static partial class ReplaySession
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return $" The old replay projects could not be read: {ex.Message}";
+            return UiText.Format("text.ee4df3865535", $" The old replay projects could not be read: {ex.Message}");
         }
 
         if (projects.Count == 0)
-            return notes.Count > 0 ? " " + notes[0] : "";
+            return notes.Count > 0 ? UiText.Concat(" ", notes[0]) : "";
         EditSession session = CineCamWindow.EditorSession;
         if (session.Document == null)
-            return " Old replay views were found. Open the editor to import them.";
+            return UiText.MessageText("text.bb92ffd5c11a", " Old replay views were found. Open the editor to import them.");
         _pendingImport = (id, session.Path, session.SaveCount);
 
         int added = 0, skipped = 0;
         string? first = null;
         foreach (ReplayLegacyProject project in projects)
         {
-            string name = $"Replay {id} {project.Name}";
+            string name = UiText.Format("", $"Replay {id} {project.Name}");
             if (session.Document.FindTake(name) != null)
                 continue;
             var cameras = new List<LegacyCamera>();
@@ -664,14 +664,14 @@ internal static partial class ReplaySession
         if (first != null)
             session.SelectTakeByName(first);
         string text = added == 0 ? "" : added == 1
-            ? $" The views of an old replay project became the take \"{first}\". Save the editor to keep it."
-            : $" The views of {added} old replay projects became takes, the first is \"{first}\". Save the editor to keep them.";
+            ? UiText.Format("text.25e57546a9be", $" The views of an old replay project became the take \"{first}\". Save the editor to keep it.")
+            : UiText.Format("text.25286508c04a", $" The views of {added} old replay projects became takes, the first is \"{first}\". Save the editor to keep them.");
         if (skipped > 0)
-            text += $" {skipped} view(s) were left out because their vehicle or part is not in the recording at their time.";
-        return text + (notes.Count > 0 ? " " + notes[0] : "");
+            text = UiText.Concat(text, UiText.Format("text.030e786765e1", $" {skipped} view(s) were left out because their vehicle or part is not in the recording at their time."));
+        return UiText.Concat(text, (notes.Count > 0 ? UiText.Concat(" ", notes[0]) : ""));
     }
 
-    private static string ImportMarker(string id) => Path.Combine(ProjectFolder, id + ".imported");
+    private static string ImportMarker(string id) => Path.Combine(ProjectFolder, UiText.Concat(id, ".imported"));
 
     // Writes the marker of an import once the editor file that took the imported takes is saved.
     // Another file in the editor drops the import, so it comes again on the next open.
@@ -699,7 +699,7 @@ internal static partial class ReplaySession
         try
         {
             Directory.CreateDirectory(ProjectFolder);
-            File.WriteAllText(ImportMarker(pending.Id), "The old replay projects of this recording were imported into " + pending.Path + Environment.NewLine);
+            File.WriteAllText(ImportMarker(pending.Id), UiText.Concat(UiText.Concat(UiText.MessageText("text.3b3f96a49d37", "The old replay projects of this recording were imported into "), pending.Path), Environment.NewLine));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

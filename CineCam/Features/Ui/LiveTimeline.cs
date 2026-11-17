@@ -52,7 +52,7 @@ internal static class LiveTimeline
     private static List<TimelineMarker> _replayMarkers = new();
 
     private static readonly TimelineLayoutCache ReplayLayout = new();
-    private static readonly string[] TrackNames = { "CAMERA", "SPEED", "ACTIONS", "EVENTS" };
+    private static readonly string[] TrackNames = { UiText.MessageText("text.582ff0d08aaf", "CAMERA"), UiText.MessageText("text.6129de1e7508", "SPEED"), UiText.MessageText("text.1ba13aa632ae", "ACTIONS"), UiText.MessageText("text.6746cfa6bdc1", "EVENTS") };
     private static readonly Take NoTake = new();
     private static readonly Dictionary<string, string> NoAliases = new();
 
@@ -273,7 +273,7 @@ internal static class LiveTimeline
                 ImGui.SameLine();
             }
 
-            if (DockStyle.Button("TIMELINE", tip: replay ? "Shows the timeline and the controls of the replay." : "Shows the timeline of the take."))
+            if (DockStyle.Button(UiText.MessageText("text.cbef8ef9a36a", "TIMELINE"), tip: replay ? UiText.MessageText("text.2784c06157da", "Shows the timeline and the controls of the replay.") : UiText.MessageText("text.a2cfafbc60f9", "Shows the timeline of the take.")))
                 _hidden = false;
         }
         finally { DockStyle.EndPanel(); }
@@ -352,44 +352,44 @@ internal static class LiveTimeline
 
     private static void DrawHeader(TimelineLayout layout, ActiveTake? live, ActiveTake? running)
     {
-        float textEnd = DockStyle.Titlebar("TIMELINE", out float barHeight);
+        float textEnd = DockStyle.Titlebar(UiText.MessageText("text.cbef8ef9a36a", "TIMELINE"), out float barHeight);
         float2 pos = ImGui.GetWindowPos();
         float right = pos.X + ImGui.GetWindowSize().X - ConsoleStyle.TitlebarHorizontalPaddingPx;
         float gap = ImGui.GetStyle().ItemSpacing.X;
         float buttonHeight = ConsoleWidgets.ButtonHeight;
         float buttonY = pos.Y + (barHeight - buttonHeight) * 0.5f;
-        float hideX = right - ConsoleWidgets.ButtonWidth("HIDE".AsSpan());
-        float fitX = hideX - gap - ConsoleWidgets.ButtonWidth("FIT".AsSpan());
+        float hideX = right - ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.0c944fca9b62", "HIDE")).AsSpan());
+        float fitX = hideX - gap - ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.0d1ed1936dd6", "FIT")).AsSpan());
 
         ImGui.SetCursorScreenPos(new float2(fitX, buttonY));
-        if (DockStyle.Button("FIT", tip: "Shows the whole take. The mouse wheel zooms, Shift and the wheel or a drag on the ruler scrolls."))
+        if (DockStyle.Button(UiText.MessageText("text.0d1ed1936dd6", "FIT"), tip: UiText.MessageText("text.874e073c6dbe", "Shows the whole take. The mouse wheel zooms, Shift and the wheel or a drag on the ruler scrolls.")))
             Fit(layout, false);
         ImGui.SetCursorScreenPos(new float2(hideX, buttonY));
-        if (DockStyle.Button("HIDE", tip: "Hides the timeline. The Timeline button at the bottom of the screen shows it again."))
+        if (DockStyle.Button(UiText.MessageText("text.0c944fca9b62", "HIDE"), tip: UiText.MessageText("text.d748c4814e74", "Hides the timeline. The Timeline button at the bottom of the screen shows it again.")))
             _hidden = true;
 
         var sources = new List<string>();
         if (layout.Events.Any(e => e.Source == EventTimeSource.Live))
-            sources.Add("THIS RUN");
+            sources.Add(UiText.MessageText("text.c7ad8653ec4f", "THIS RUN"));
         if (layout.Events.Any(e => e.Source == EventTimeSource.LastRun))
-            sources.Add("LAST RUN");
+            sources.Add(UiText.MessageText("text.08300175816f", "LAST RUN"));
         if (layout.HasEstimates)
-            sources.Add("ESTIMATES");
-        string events = sources.Count == 0 ? "NO EVENTS" : "EVENT TIMES: " + string.Join(", ", sources);
+            sources.Add(UiText.MessageText("text.e6e843c5a6ca", "ESTIMATES"));
+        string events = sources.Count == 0 ? UiText.MessageText("text.c7c6b24d9308", "NO EVENTS") : UiText.Concat(UiText.MessageText("text.4da8583b51af", "EVENT TIMES: "), UiText.Join(", ", sources));
         string? tip = layout.HasEstimates
-            ? "Hatched items wait for an event that no run has seen yet, so their time is a guess at an even spacing. Run the take once to measure the events."
+            ? UiText.MessageText("text.71c69a1dc704", "Hatched items wait for an event that no run has seen yet, so their time is a guess at an even spacing. Run the take once to measure the events.")
             : _runFolder.Length == 0 ? null
-            : _runMerged ? $"The times of the events come from the run in the take folder {_runFolder}, and the events after its early end from older runs."
-            : $"The times of the events come from the run in the take folder {_runFolder}.";
+            : _runMerged ? UiText.Format("text.140969388120", $"The times of the events come from the run in the take folder {_runFolder}, and the events after its early end from older runs.")
+            : UiText.Format("text.a5f2e61b72a1", $"The times of the events come from the run in the take folder {_runFolder}.");
 
         float x = textEnd + ConsoleStyle.TitlebarSignatureGapPx * 2f;
         float limit = fitX - gap;
         BarParts.Clear();
         if (live != null)
-            BarParts.Add(new BarPart(live.IsPaused ? "PAUSED " + Seconds(live.Seconds) : "RUNNING " + Seconds(live.Seconds),
+            BarParts.Add(new BarPart(live.IsPaused ? UiText.Concat(UiText.MessageText("text.fd40e3d2bd6b", "PAUSED "), Seconds(live.Seconds)) : UiText.Concat(UiText.MessageText("text.b55d580627b9", "RUNNING "), Seconds(live.Seconds)),
                 live.IsPaused ? ConsoleStyle.PendingU32 : ConsoleStyle.PositiveU32, false, 0, null, null));
         else if (running != null)
-            BarParts.Add(new BarPart("ANOTHER RUN IS ACTIVE", ConsoleStyle.TextMutedU32, true, 1, null, null));
+            BarParts.Add(new BarPart(UiText.MessageText("text.e13d53f52098", "ANOTHER RUN IS ACTIVE"), ConsoleStyle.TextMutedU32, true, 1, null, null));
         BarParts.Add(new BarPart(events, layout.HasEstimates ? ConsoleStyle.PendingU32 : ConsoleStyle.TextMutedU32, true, 2, tip, "##event-source"));
         DrawBarParts(x, limit, pos.Y, barHeight);
 
@@ -398,32 +398,32 @@ internal static class LiveTimeline
 
     private static void DrawReplayHeader(TimelineLayout layout)
     {
-        float textEnd = DockStyle.Titlebar("REPLAY", out float barHeight);
+        float textEnd = DockStyle.Titlebar(UiText.MessageText("text.92d23f5381ea", "REPLAY"), out float barHeight);
         float2 pos = ImGui.GetWindowPos();
         float right = pos.X + ImGui.GetWindowSize().X - ConsoleStyle.TitlebarHorizontalPaddingPx;
         float gap = ImGui.GetStyle().ItemSpacing.X;
         float buttonY = pos.Y + (barHeight - ConsoleWidgets.ButtonHeight) * 0.5f;
-        float hideX = right - ConsoleWidgets.ButtonWidth("HIDE".AsSpan());
-        float fitX = hideX - gap - ConsoleWidgets.ButtonWidth("FIT".AsSpan());
+        float hideX = right - ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.0c944fca9b62", "HIDE")).AsSpan());
+        float fitX = hideX - gap - ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.0d1ed1936dd6", "FIT")).AsSpan());
 
         ImGui.SetCursorScreenPos(new float2(fitX, buttonY));
-        if (DockStyle.Button("FIT", tip: "Shows the whole replay. The mouse wheel zooms, Shift and the wheel scrolls."))
+        if (DockStyle.Button(UiText.MessageText("text.0d1ed1936dd6", "FIT"), tip: UiText.MessageText("text.910b34f18285", "Shows the whole replay. The mouse wheel zooms, Shift and the wheel scrolls.")))
             Fit(layout, true);
         ImGui.SetCursorScreenPos(new float2(hideX, buttonY));
-        if (DockStyle.Button("HIDE", tip: "Hides the timeline. The Timeline button at the bottom of the screen shows it again."))
+        if (DockStyle.Button(UiText.MessageText("text.0c944fca9b62", "HIDE"), tip: UiText.MessageText("text.d748c4814e74", "Hides the timeline. The Timeline button at the bottom of the screen shows it again.")))
             _hidden = true;
 
         float limit = fitX - gap;
         float x = textEnd + ConsoleStyle.TitlebarSignatureGapPx * 2f;
         BarParts.Clear();
         if (ReplaySession.ReplayId != null)
-            BarParts.Add(new BarPart(StatusHeader.RecordingName(), ConsoleStyle.TextMutedU32, true, 3, "Recording: " + ReplaySession.ReplayId, "##recording-name"));
+            BarParts.Add(new BarPart(StatusHeader.RecordingName(), ConsoleStyle.TextMutedU32, true, 3, UiText.Concat(UiText.MessageText("text.b607b8afc220", "Recording: "), ReplaySession.ReplayId), "##recording-name"));
         if (!(ReplaySession.IsRendering && ReplaySession.RenderStatus is not null))
-            BarParts.Add(new BarPart(ReplaySession.IsPlaying ? "PLAYING" : "PAUSED",
+            BarParts.Add(new BarPart(ReplaySession.IsPlaying ? UiText.MessageText("text.86042b89c731", "PLAYING") : UiText.MessageText("text.5b5f8d4f6743", "PAUSED"),
                 ReplaySession.IsPlaying ? ConsoleStyle.PositiveU32 : ConsoleStyle.PendingU32, false, 0, null, null));
         if (ReplaySession.IsRendering && ReplaySession.RenderStatus is { } render)
-            BarParts.Add(new BarPart(FormattableString.Invariant($"RENDERING {Math.Floor(render.Percent):0}%"), ConsoleStyle.PendingU32, false, 0,
-                ReplaySession.RenderStatusText + " Escape or the start and stop key stops it.", "##render-progress"));
+            BarParts.Add(new BarPart(UiText.Format("text.deabe5901e90", $"RENDERING {Math.Floor(render.Percent):0}%"), ConsoleStyle.PendingU32, false, 0,
+                UiText.Concat(ReplaySession.RenderStatusText, UiText.MessageText("text.d5c1f9fb2d6c", " Escape or the start and stop key stops it.")), "##render-progress"));
         if (layout.Unreached.Count > 0)
             BarParts.Add(new BarPart(StatusText.NotReached(layout.Unreached.Count), ConsoleStyle.PendingU32, true, 1,
                 UnreachedTip(layout.Unreached), "##unreached"));
@@ -478,41 +478,41 @@ internal static class LiveTimeline
 
     private static string UnreachedTip(IReadOnlyList<TimelineUnreached> items)
     {
-        var lines = new List<string> { "The recording has no event for these items, so the replay never reaches them:" };
+        var lines = new List<string> { UiText.MessageText("text.f40c4526d15b", "The recording has no event for these items, so the replay never reaches them:") };
         foreach (TimelineUnreached item in items)
         {
             string what = item.Kind switch
             {
-                TimelineItemKind.Shot => "Shot",
-                TimelineItemKind.Key => "Speed key",
-                _ => "Action",
+                TimelineItemKind.Shot => UiText.MessageText("text.068ce7be64dc", "Shot"),
+                TimelineItemKind.Key => UiText.MessageText("text.8ed606f6b503", "Speed key"),
+                _ => UiText.MessageText("text.64cff1319d2f", "Action"),
             };
-            lines.Add($"{what} {item.Index + 1} waits for {EventDisplay.Name(item.EventKey)}");
+            lines.Add(UiText.Format("text.b2152d353583", $"{what} {item.Index + 1} waits for {EventDisplay.Name(item.EventKey)}"));
         }
 
-        lines.Add("An item after such a shot or speed key never starts either.");
-        return string.Join("\n", lines);
+        lines.Add(UiText.MessageText("text.9846bf06cc65", "An item after such a shot or speed key never starts either."));
+        return UiText.Join("\n", lines);
     }
 
     #endregion
 
     #region Transport
 
-    private const string PlayTip = "Plays or pauses the replay. The play and pause key of the Settings page does the same.";
-    private const string StartTip = "Goes back to the start of the replay.";
-    private const string SpeedTip = "Plays the take slower or faster than its video. The speed track of the take sets the speed of the flight on top. Ctrl and a click types a value.";
-    private const string ExitLabel = "EXIT REPLAY";
-    private const string OpenLabel = "OPEN CINECAM";
+    private static readonly string PlayTip = UiText.MessageText("text.c9fb6f7e90d6", "Plays or pauses the replay. The play and pause key of the Settings page does the same.");
+    private static readonly string StartTip = UiText.MessageText("text.4d3550556f75", "Goes back to the start of the replay.");
+    private static readonly string SpeedTip = UiText.MessageText("text.fa7d1e361a34", "Plays the take slower or faster than its video. The speed track of the take sets the speed of the flight on top. Ctrl and a click types a value.");
+    private static readonly string ExitLabel = UiText.MessageText("text.8bd891fd01cb", "EXIT REPLAY");
+    private static readonly string OpenLabel = UiText.MessageText("text.bb0d56a0e21f", "OPEN CINECAM");
 
     private static string ClockText() =>
-        FormattableString.Invariant($"{ReplaySession.Time:F1} / {ReplaySession.Duration:F1} s");
+        UiText.Format("", $"{ReplaySession.Time:F1} / {ReplaySession.Duration:F1} s");
 
-    private static string FlightText() => FormattableString.Invariant($"FLIGHT {ReplaySession.RecordingTime:F1} s");
+    private static string FlightText() => UiText.Format("text.97f87aa54f1a", $"FLIGHT {ReplaySession.RecordingTime:F1} s");
 
     private static void PlayButton()
     {
-        string play = ReplaySession.IsPlaying ? "PAUSE" : "PLAY";
-        if (DockStyle.Button(play, ReplaySession.Duration > 0, ReplaySession.Duration > 0 ? PlayTip : "The replay has no time to play.",
+        string play = ReplaySession.IsPlaying ? UiText.MessageText("text.ca6456daeccf", "PAUSE") : UiText.MessageText("text.f53a7ab988e2", "PLAY");
+        if (DockStyle.Button(play, ReplaySession.Duration > 0, ReplaySession.Duration > 0 ? PlayTip : UiText.MessageText("text.338b44df7257", "The replay has no time to play."),
                 DockStyle.Kind.Primary, id: "replay-play"))
             ReplaySession.SetPlaying(!ReplaySession.IsPlaying);
     }
@@ -522,15 +522,15 @@ internal static class LiveTimeline
     {
         float gap = ImGui.GetStyle().ItemSpacing.X;
         float scale = ImGuiHelper.InterfaceScale;
-        string clock = FormattableString.Invariant($"{ReplaySession.Duration:F1} / {ReplaySession.Duration:F1} s");
-        string flight = FormattableString.Invariant($"FLIGHT {ReplaySession.RecordingDuration:F1} s");
-        float width = ConsoleWidgets.ButtonWidth("PAUSE".AsSpan()) + ConsoleWidgets.ButtonWidth("START".AsSpan())
+        string clock = UiText.Format("", $"{ReplaySession.Duration:F1} / {ReplaySession.Duration:F1} s");
+        string flight = UiText.Format("text.97f87aa54f1a", $"FLIGHT {ReplaySession.RecordingDuration:F1} s");
+        float width = ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.ca6456daeccf", "PAUSE")).AsSpan()) + ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.39f17ec6ebcf", "START")).AsSpan())
             + DockStyle.TextWidth(clock, false) + DockStyle.TextWidth(flight, true)
-            + DockStyle.TextWidth("SPEED", false) + 80f * scale
-            + ConsoleWidgets.ButtonWidth("TAKE CAMERA".AsSpan()) + ConsoleWidgets.ButtonWidth("FREE CAMERA".AsSpan())
-            + ConsoleWidgets.ButtonWidth(ExitLabel.AsSpan()) + gap * 10f;
+            + DockStyle.TextWidth(UiText.MessageText("text.6129de1e7508", "SPEED"), false) + 80f * scale
+            + ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.238d9716de05", "TAKE CAMERA")).AsSpan()) + ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.c31bdfa05dac", "FREE CAMERA")).AsSpan())
+            + ConsoleWidgets.ButtonWidth(UiText.Visible(ExitLabel).AsSpan()) + gap * 10f;
         if (!CineCamWindow.IsOpen)
-            width += ConsoleWidgets.ButtonWidth(OpenLabel.AsSpan()) + gap;
+            width += ConsoleWidgets.ButtonWidth(UiText.Visible(OpenLabel).AsSpan()) + gap;
         return width;
     }
 
@@ -538,8 +538,8 @@ internal static class LiveTimeline
     {
         float scale = ImGuiHelper.InterfaceScale;
         PlayButton();
-        DockStyle.Flow(ConsoleWidgets.ButtonWidth("START".AsSpan()));
-        if (DockStyle.Button("START", tip: StartTip, id: "replay-start"))
+        DockStyle.Flow(ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.39f17ec6ebcf", "START")).AsSpan()));
+        if (DockStyle.Button(UiText.MessageText("text.39f17ec6ebcf", "START"), tip: StartTip, id: "replay-start"))
             ReplaySession.Seek(0);
 
         string clock = ClockText();
@@ -554,38 +554,38 @@ internal static class LiveTimeline
         DockStyle.PushFont(true);
         try { DockStyle.Text(flight, in ConsoleStyle.TextMuted); }
         finally { ConsoleStyle.PopFont(); }
-        DockStyle.Tip("The time of the recording that shows now. The speed track of the take sets how fast it runs.");
+        DockStyle.Tip(UiText.MessageText("text.8e524bb402d5", "The time of the recording that shows now. The speed track of the take sets how fast it runs."));
 
         float fieldWidth = 80f * scale;
-        DockStyle.Flow(DockStyle.TextWidth("SPEED", false) + fieldWidth);
+        DockStyle.Flow(DockStyle.TextWidth(UiText.MessageText("text.6129de1e7508", "SPEED"), false) + fieldWidth);
         ImGui.AlignTextToFramePadding();
-        DockStyle.Text("SPEED", in ConsoleStyle.TextLabel);
+        DockStyle.Text(UiText.MessageText("text.6129de1e7508", "SPEED"), in ConsoleStyle.TextLabel);
         ImGui.SameLine();
         float speed = (float)ReplaySession.Speed;
         ImGui.SetNextItemWidth(fieldWidth);
-        if (ImGui.DragFloat("##replay-speed".AsSpan(), ref speed, 0.01f, (float)ReplayTakePlayer.MinPreviewSpeed,
+        if (ImGui.DragFloat(UiText.Control("##replay-speed").AsSpan(), ref speed, 0.01f, (float)ReplayTakePlayer.MinPreviewSpeed,
                 (float)ReplayTakePlayer.MaxPreviewSpeed, "%.2fx".AsSpan(), ImGuiSliderFlags.AlwaysClamp))
             ReplaySession.SetSpeed(speed);
         DockStyle.Tip(SpeedTip);
 
         // The camera in use is a primary button, because the kit draws a positive button plain until the mouse is over it.
         bool takeCamera = ReplaySession.CameraMode == ReplayCameraMode.Take;
-        DockStyle.Flow(ConsoleWidgets.ButtonWidth("TAKE CAMERA".AsSpan()) + ConsoleWidgets.ButtonWidth("FREE CAMERA".AsSpan()) + ImGui.GetStyle().ItemSpacing.X);
-        if (DockStyle.Button("TAKE CAMERA", tip: "The camera shows the take, as the video will show it.",
+        DockStyle.Flow(ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.238d9716de05", "TAKE CAMERA")).AsSpan()) + ConsoleWidgets.ButtonWidth(UiText.Visible(UiText.MessageText("text.c31bdfa05dac", "FREE CAMERA")).AsSpan()) + ImGui.GetStyle().ItemSpacing.X);
+        if (DockStyle.Button(UiText.MessageText("text.238d9716de05", "TAKE CAMERA"), tip: UiText.MessageText("text.58478450523c", "The camera shows the take, as the video will show it."),
                 kind: takeCamera ? DockStyle.Kind.Primary : DockStyle.Kind.Plain, id: "replay-take-camera") && !takeCamera)
             ReplaySession.SetCamera(ReplayCameraMode.Take);
         ImGui.SameLine();
-        if (DockStyle.Button("FREE CAMERA", tip: "Look around with the game camera. Add key here makes a shot from its view at the replay time.",
+        if (DockStyle.Button(UiText.MessageText("text.c31bdfa05dac", "FREE CAMERA"), tip: UiText.MessageText("text.1fb2654f229a", "Look around with the game camera. Add key here makes a shot from its view at the replay time."),
                 kind: takeCamera ? DockStyle.Kind.Plain : DockStyle.Kind.Primary, id: "replay-free-camera") && takeCamera)
             ReplaySession.SetCamera(ReplayCameraMode.Free);
 
-        DockStyle.Flow(ConsoleWidgets.ButtonWidth(ExitLabel.AsSpan()));
-        if (DockStyle.Button(ExitLabel, tip: "Closes the replay and goes back to the live flight. The start and stop key does the same."))
+        DockStyle.Flow(ConsoleWidgets.ButtonWidth(UiText.Visible(ExitLabel).AsSpan()));
+        if (DockStyle.Button(ExitLabel, tip: UiText.MessageText("text.2bf85043b728", "Closes the replay and goes back to the live flight. The start and stop key does the same.")))
             ReplaySession.Close();
         if (!CineCamWindow.IsOpen)
         {
-            DockStyle.Flow(ConsoleWidgets.ButtonWidth(OpenLabel.AsSpan()));
-            if (DockStyle.Button(OpenLabel, tip: "Opens the CineCam window to edit the take. The replay goes on."))
+            DockStyle.Flow(ConsoleWidgets.ButtonWidth(UiText.Visible(OpenLabel).AsSpan()));
+            if (DockStyle.Button(OpenLabel, tip: UiText.MessageText("text.35f37edde79b", "Opens the CineCam window to edit the take. The replay goes on.")))
                 CineCamWindow.Instance.Open();
         }
 
@@ -601,7 +601,7 @@ internal static class LiveTimeline
             try
             {
                 shown = Widgets.FitWords(problem, width);
-                draw.AddText(new float2(at.X, at.Y + (height - ImGui.GetFontSize()) * 0.5f), DockStyle.Ink(ConsoleStyle.PendingU32), shown);
+                draw.AddText(new float2(at.X, at.Y + (height - ImGui.GetFontSize()) * 0.5f), DockStyle.Ink(ConsoleStyle.PendingU32), UiText.Render(shown));
             }
             finally { ConsoleStyle.PopFont(); }
             ImGui.InvisibleButton("##take-problem".AsSpan(), new float2(width, height));
@@ -652,7 +652,7 @@ internal static class LiveTimeline
                     draw.AddRectFilled(new float2(x0, top), new float2(x1, top + trackHeight), RowWash);
                 if (row > 0)
                     draw.AddLine(new float2(x0, top), new float2(x1, top), RuleColor, hairline);
-                draw.AddText(new float2(origin.X + ConsoleWidgets.RowLabelInsetPx, top + (trackHeight - ImGui.GetFontSize()) * 0.5f), MutedText, names[row]);
+                draw.AddText(new float2(origin.X + ConsoleWidgets.RowLabelInsetPx, top + (trackHeight - ImGui.GetFontSize()) * 0.5f), MutedText, UiText.Render(names[row]));
             }
         }
         finally { ConsoleStyle.PopFont(); }
@@ -752,7 +752,7 @@ internal static class LiveTimeline
             {
                 float x = canvas.X(t);
                 draw.AddLine(new float2(x, top + height * 0.6f), new float2(x, top + height), TickColor, hairline);
-                draw.AddText(new float2(x + 3f * scale, textTop), TickColor, Clock(t, step));
+                draw.AddText(new float2(x + 3f * scale, textTop), TickColor, UiText.Render(Clock(t, step)));
             }
         }
         finally { ConsoleStyle.PopFont(); }
@@ -776,7 +776,7 @@ internal static class LiveTimeline
                 if (!double.IsNaN(_lastSeek))
                     ReplaySession.Seek(_lastSeek);
                 _lastSeek = double.NaN;
-                Tip("Click or drag to move the replay. The mouse wheel zooms, Shift and the wheel scrolls.");
+                Tip(UiText.MessageText("text.2544d43502b8", "Click or drag to move the replay. The mouse wheel zooms, Shift and the wheel scrolls."));
             }
 
             return;
@@ -787,7 +787,7 @@ internal static class LiveTimeline
         if (ImGui.IsItemActive())
             _viewStart = Math.Max(0.0, _dragOrigin - canvas.Seconds(ImGui.GetMouseDragDelta(ImGuiMouseButton.Left, 0f).X));
         else
-            Tip("Drag to scroll. The mouse wheel zooms, Shift and the wheel scrolls.");
+            Tip(UiText.MessageText("text.fdcc28f082fb", "Drag to scroll. The mouse wheel zooms, Shift and the wheel scrolls."));
     }
 
     #endregion
@@ -842,13 +842,13 @@ internal static class LiveTimeline
                 }
 
                 float room = visibleEnd - Math.Max(xs, canvas.Left) - 8f * scale;
-                string label = $"{shot.Type} {Number(shot.Duration)} s" + (block.Loop ? " loop" : "");
-                if (ImGui.CalcTextSize(label).X > room)
-                    label = shot.Type.ToString();
-                if (ImGui.CalcTextSize(label).X <= room)
+                string label = UiText.Concat(UiText.Format("", $"{UiText.EnumValue(shot.Type)} {Number(shot.Duration)} s"), (block.Loop ? UiText.MessageText("text.30e9b1c604ab", " loop") : ""));
+                if (ImGui.CalcTextSize(UiText.Render(label)).X > room)
+                    label = UiText.EnumValue(shot.Type);
+                if (ImGui.CalcTextSize(UiText.Render(label)).X <= room)
                 {
                     draw.PushClipRect(new float2(vx0 + 3f * scale, y0), new float2(Math.Max(vx0 + 3f * scale, visibleEnd - 3f * scale), y1), true);
-                    draw.AddText(new float2(Math.Max(xs, canvas.Left) + 5f * scale, y0 + (y1 - y0 - ImGui.GetFontSize()) * 0.5f), ink, label);
+                    draw.AddText(new float2(Math.Max(xs, canvas.Left) + 5f * scale, y0 + (y1 - y0 - ImGui.GetFontSize()) * 0.5f), ink, UiText.Render(label));
                     draw.PopClipRect();
                 }
 
@@ -873,7 +873,7 @@ internal static class LiveTimeline
                                 session.SetShotDuration(i, _dragOrigin + canvas.Seconds(dx));
                         }
                         else
-                            Tip($"Shot {i + 1}: drag to change its length ({Number(shot.Duration)} s).");
+                            Tip(UiText.Format("text.f47376de26bd", $"Shot {i + 1}: drag to change its length ({Number(shot.Duration)} s)."));
                         ContextMenu(ItemKind.Shot, i, () => session.ShotIndex = i);
                     }
 
@@ -894,7 +894,7 @@ internal static class LiveTimeline
         finally { ImGui.PopID(); }
     }
 
-    private const string HintText = "Click a shot to edit it. Drag its right edge for the length. Right-click for more.";
+    private static readonly string HintText = UiText.MessageText("text.7d6ef1b39c48", "Click a shot to edit it. Drag its right edge for the length. Right-click for more.");
 
     private static void DrawHint(ImDrawListPtr draw, TimelineLayout layout, Canvas canvas, float top, float height, float scale)
     {
@@ -902,22 +902,22 @@ internal static class LiveTimeline
         foreach (TimelineShot block in layout.Shots)
             from = Math.Max(from, canvas.X(block.End));
         from += 8f * scale;
-        float width = ImGui.CalcTextSize(HintText).X;
+        float width = ImGui.CalcTextSize(UiText.Render(HintText)).X;
         if (from + width > canvas.Right - 4f * scale)
             return;
-        draw.AddText(new float2(from, top + (height - ImGui.GetFontSize()) * 0.5f), MutedText, HintText);
+        draw.AddText(new float2(from, top + (height - ImGui.GetFontSize()) * 0.5f), MutedText, UiText.Render(HintText));
     }
 
     private static string ShotTip(int i, Shot shot, TimelineShot block)
     {
-        string text = $"Shot {ShotEdit.Describe(i, shot)}\nFrom {Seconds(block.Start)} to {Seconds(block.End)}";
+        string text = UiText.Format("text.ff18ba44e81c", $"Shot {ShotEdit.Describe(i, shot)}\nFrom {Seconds(block.Start)} to {Seconds(block.End)}");
         if (block.BlendSeconds > 0.0)
-            text += $", blends in over {Number(block.BlendSeconds)} s";
+            text = UiText.Concat(text, UiText.Format("text.b7de3ebae008", $", blends in over {Number(block.BlendSeconds)} s"));
         if (block.Loop)
-            text += "\nPart of the pre-roll loop, which repeats until its event comes.";
+            text = UiText.Concat(text, UiText.MessageText("text.db1d8125a0a4", "\nPart of the pre-roll loop, which repeats until its event comes."));
         if (block.Estimated)
-            text += "\nThe start is estimated, because no run has seen its event yet.";
-        return text + "\nClick to select, drag the right edge to change the length, right click for more.";
+            text = UiText.Concat(text, UiText.MessageText("text.889fa826a8cd", "\nThe start is estimated, because no run has seen its event yet."));
+        return UiText.Concat(text, UiText.MessageText("text.14958c234a58", "\nClick to select, drag the right edge to change the length, right click for more."));
     }
 
     private static void DrawKeys(ImDrawListPtr draw, EditSession session, Take take, TimelineLayout layout, Canvas canvas,
@@ -946,12 +946,12 @@ internal static class LiveTimeline
                 Diamond(draw, x, cy, size, KeyColor, filled: !mark.Estimated);
                 if (selected)
                     Diamond(draw, x, cy, size + 2f * scale, Selection, filled: false);
-                string label = $"{Number(key.To)}x";
+                string label = UiText.Format("", $"{Number(key.To)}x");
                 if (x + size + 2f > labelEnd)
                 {
                     float labelY = xr > x ? cy - ImGui.GetFontSize() - 1f * scale : cy - ImGui.GetFontSize() * 0.5f;
-                    draw.AddText(new float2(x + size + 3f * scale, labelY), mark.Estimated ? EstimateColor : TextColor, label);
-                    labelEnd = x + size + 3f * scale + ImGui.CalcTextSize(label).X + 4f * scale;
+                    draw.AddText(new float2(x + size + 3f * scale, labelY), mark.Estimated ? EstimateColor : TextColor, UiText.Render(label));
+                    labelEnd = x + size + 3f * scale + ImGui.CalcTextSize(UiText.Render(label)).X + 4f * scale;
                 }
 
                 bool movable = key.At.Kind == TriggerKind.Time;
@@ -971,10 +971,8 @@ internal static class LiveTimeline
                     }
 
                     ContextMenu(ItemKind.Key, i, () => session.KeyIndex = i);
-                    Tip($"Speed key {ShotEdit.Describe(i, key)}\nStarts at {Seconds(mark.Time)}"
-                        + (mark.Estimated ? " (estimated, no run has seen its event yet)" : "")
-                        + (movable ? "\nClick to select, drag to move, right click for more."
-                            : "\nClick to select, right click for more. Only a key that starts at a time can be dragged."));
+                    Tip(UiText.Concat(UiText.Concat(UiText.Format("text.6a472058b92c", $"Speed key {ShotEdit.Describe(i, key)}\nStarts at {Seconds(mark.Time)}"), (mark.Estimated ? UiText.MessageText("text.2f0d896f79d6", " (estimated, no run has seen its event yet)") : "")), (movable ? UiText.MessageText("text.6ed8d7ee3147", "\nClick to select, drag to move, right click for more.")
+                            : UiText.MessageText("text.432215591215", "\nClick to select, right click for more. Only a key that starts at a time can be dragged."))));
                 }
                 finally { ImGui.PopID(); }
             }
@@ -1011,12 +1009,12 @@ internal static class LiveTimeline
                 if (selected)
                     draw.AddTriangle(new float2(a.X - 2f * scale, a.Y - 2f * scale), new float2(b.X + 2f * scale, b.Y - 2f * scale),
                         new float2(c.X, c.Y + 3f * scale), Selection, 1.5f * scale);
-                string label = action.Kind == ActionKind.Cue ? "Cue " + action.Name
-                    : action.Sequence is int sequence ? $"Stage {sequence}" : "Stage";
+                string label = action.Kind == ActionKind.Cue ? UiText.Concat(UiText.MessageText("text.0606245ccb0d", "Cue "), action.Name)
+                    : action.Sequence is int sequence ? UiText.Format("text.0e755db0c53a", $"Stage {sequence}") : UiText.MessageText("text.de838855e4a6", "Stage");
                 if (x + r + 2f > labelEnd)
                 {
-                    draw.AddText(new float2(x + r + 3f * scale, cy - ImGui.GetFontSize() * 0.5f), mark.Estimated ? EstimateColor : TextColor, label);
-                    labelEnd = x + r + 3f * scale + ImGui.CalcTextSize(label).X + 4f * scale;
+                    draw.AddText(new float2(x + r + 3f * scale, cy - ImGui.GetFontSize() * 0.5f), mark.Estimated ? EstimateColor : TextColor, UiText.Render(label));
+                    labelEnd = x + r + 3f * scale + ImGui.CalcTextSize(UiText.Render(label)).X + 4f * scale;
                 }
 
                 bool movable = action.At.Kind == TriggerKind.Time;
@@ -1036,10 +1034,8 @@ internal static class LiveTimeline
                     }
 
                     ContextMenu(ItemKind.Action, i, () => session.ActionIndex = i);
-                    Tip($"Action {ShotEdit.Describe(i, action)}\nFires at {Seconds(mark.Time)}"
-                        + (mark.Estimated ? " (estimated, no run has seen its event yet)" : "")
-                        + (movable ? "\nClick to select, drag to move, right click for more."
-                            : "\nClick to select, right click for more. Only an action that fires at a time can be dragged."));
+                    Tip(UiText.Concat(UiText.Concat(UiText.Format("text.d153a99acbfe", $"Action {ShotEdit.Describe(i, action)}\nFires at {Seconds(mark.Time)}"), (mark.Estimated ? UiText.MessageText("text.2f0d896f79d6", " (estimated, no run has seen its event yet)") : "")), (movable ? UiText.MessageText("text.6ed8d7ee3147", "\nClick to select, drag to move, right click for more.")
+                            : UiText.MessageText("text.5895eb0a52f8", "\nClick to select, right click for more. Only an action that fires at a time can be dragged."))));
                 }
                 finally { ImGui.PopID(); }
             }
@@ -1052,7 +1048,7 @@ internal static class LiveTimeline
         float labelEnd = float.NegativeInfinity;
         // The labels come last, each on a plate in the well color, so no guide or event line shows through the text.
         var labels = new List<(float X, float Gap, uint Color, string Text)>();
-        string jump = replay ? "\nClick to move the replay here." : "";
+        string jump = replay ? UiText.MessageText("text.08057fd8f708", "\nClick to move the replay here.") : "";
         ImGui.PushID("events".AsSpan());
         try
         {
@@ -1072,7 +1068,7 @@ internal static class LiveTimeline
                     ImGui.InvisibleButton("##mark".AsSpan(), new float2(6f * scale, height));
                     if (replay && ImGui.IsItemClicked(ImGuiMouseButton.Left))
                         ReplaySession.Seek(TimelineLayout.ScrubTime(mark.Time, ReplaySession.Duration));
-                    Tip($"{mark.Label} at {Seconds(mark.Time)} (from the recording){jump}");
+                    Tip(UiText.Format("text.e674d38a1092", $"{mark.Label} at {Seconds(mark.Time)} (from the recording){jump}"));
                 }
                 finally { ImGui.PopID(); }
             }
@@ -1093,7 +1089,7 @@ internal static class LiveTimeline
                     draw.AddLine(new float2(x, top + 2f * scale), new float2(x, top + height - 2f * scale), color, 2f * scale);
 
                 string name = EventDisplay.Name(e.Key);
-                labels.Add((x + 4f * scale, 4f * scale, color, e.Estimated ? name + " (estimated)" : name));
+                labels.Add((x + 4f * scale, 4f * scale, color, e.Estimated ? UiText.Concat(name, UiText.MessageText("text.89e8bf409a8d", " (estimated)")) : name));
 
                 ImGui.PushID(n);
                 try
@@ -1104,12 +1100,12 @@ internal static class LiveTimeline
                         ReplaySession.Seek(TimelineLayout.ScrubTime(e.Time, ReplaySession.Duration));
                     string source = e.Source switch
                     {
-                        EventTimeSource.Live => "seen in this run",
-                        EventTimeSource.LastRun => "from the last finished run",
-                        EventTimeSource.Recording => "from the recording",
-                        _ => "estimated, because no run has seen it yet",
+                        EventTimeSource.Live => UiText.MessageText("text.c3b41c5e8b77", "seen in this run"),
+                        EventTimeSource.LastRun => UiText.MessageText("text.27eade4abbed", "from the last finished run"),
+                        EventTimeSource.Recording => UiText.MessageText("text.33e003492041", "from the recording"),
+                        _ => UiText.MessageText("text.952f20783dd9", "estimated, because no run has seen it yet"),
                     };
-                    Tip($"{name} at {Seconds(e.Time)} ({source}){jump}");
+                    Tip(UiText.Format("text.a5449a156a77", $"{name} at {Seconds(e.Time)} ({source}){jump}"));
                 }
                 finally { ImGui.PopID(); }
             }
@@ -1121,7 +1117,7 @@ internal static class LiveTimeline
         float textTop = top + (height - ImGui.GetFontSize()) * 0.5f;
         foreach ((float lineRight, float gap, uint lcolor, string text) in labels)
         {
-            float w = ImGui.CalcTextSize(text).X;
+            float w = ImGui.CalcTextSize(UiText.Render(text)).X;
             float lx = lineRight;
             if (lx + w + 2f * scale > canvas.Right)
                 lx = Math.Max(canvas.Left, lineRight - gap - gap - w);
@@ -1129,7 +1125,7 @@ internal static class LiveTimeline
                 continue;
             labelEnd = lx + w + 6f * scale;
             draw.AddRectFilled(new float2(lx - 2f * scale, textTop), new float2(lx + w + 2f * scale, textTop + ImGui.GetFontSize()), TrackWell);
-            draw.AddText(new float2(lx, textTop), lcolor, text);
+            draw.AddText(new float2(lx, textTop), lcolor, UiText.Render(text));
         }
     }
 
@@ -1174,14 +1170,14 @@ internal static class LiveTimeline
             switch (_menuKind)
             {
                 case ItemKind.Shot when take != null && i >= 0 && i < take.Shots.Count:
-                    ImGui.TextDisabled($"SHOT {i + 1}".AsSpan());
-                    if (ImGui.MenuItem("Duplicate", default, false, free))
+                    ImGui.TextDisabled(UiText.Format("text.3a2fb06ffa3f", $"SHOT {i + 1}").AsSpan());
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.02cdaabfca80", "Duplicate")), default, false, free))
                     {
                         session.ShotIndex = i;
                         session.DuplicateShot();
                     }
 
-                    if (ImGui.MenuItem("Delete", default, false, free))
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.e2d0a54968ea", "Delete")), default, false, free))
                     {
                         session.ShotIndex = i;
                         session.RemoveShot();
@@ -1189,20 +1185,20 @@ internal static class LiveTimeline
 
                     ImGui.Separator();
                     TransitionKind kind = take.Shots[i].Transition.Kind;
-                    if (ImGui.MenuItem("Cut", default, kind == TransitionKind.Cut))
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.1f45f02561f4", "Cut")), default, kind == TransitionKind.Cut))
                         session.SetShotTransition(i, TransitionKind.Cut);
-                    if (ImGui.MenuItem("Blend", default, kind == TransitionKind.Blend))
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.ee6cfb23a65e", "Blend")), default, kind == TransitionKind.Blend))
                         session.SetShotTransition(i, TransitionKind.Blend);
                     break;
                 case ItemKind.Key when take != null && i >= 0 && i < take.Speed.Count:
-                    ImGui.TextDisabled($"SPEED KEY {i + 1}".AsSpan());
-                    if (ImGui.MenuItem("Duplicate", default, false, free))
+                    ImGui.TextDisabled(UiText.Format("text.db84e145bd6a", $"SPEED KEY {i + 1}").AsSpan());
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.02cdaabfca80", "Duplicate")), default, false, free))
                     {
                         session.KeyIndex = i;
                         session.DuplicateKey();
                     }
 
-                    if (ImGui.MenuItem("Delete", default, false, free))
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.e2d0a54968ea", "Delete")), default, false, free))
                     {
                         session.KeyIndex = i;
                         session.RemoveKey();
@@ -1210,14 +1206,14 @@ internal static class LiveTimeline
 
                     break;
                 case ItemKind.Action when take != null && i >= 0 && i < take.Actions.Count:
-                    ImGui.TextDisabled($"ACTION {i + 1}".AsSpan());
-                    if (ImGui.MenuItem("Duplicate", default, false, free))
+                    ImGui.TextDisabled(UiText.Format("text.b62095e24eed", $"ACTION {i + 1}").AsSpan());
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.02cdaabfca80", "Duplicate")), default, false, free))
                     {
                         session.ActionIndex = i;
                         session.DuplicateAction();
                     }
 
-                    if (ImGui.MenuItem("Delete", default, false, free))
+                    if (ImGui.MenuItem(UiText.Control(UiText.MessageText("text.e2d0a54968ea", "Delete")), default, false, free))
                     {
                         session.ActionIndex = i;
                         session.RemoveAction();
@@ -1268,16 +1264,16 @@ internal static class LiveTimeline
 
     private static string Number(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 
-    private static string Seconds(double value) => value.ToString("0.0", CultureInfo.InvariantCulture) + " s";
+    private static string Seconds(double value) => UiText.Concat(value.ToString("0.0", CultureInfo.InvariantCulture), " s");
 
     // A ruler label: seconds for a short take, minutes and seconds from one minute on.
     private static string Clock(double t, double step)
     {
         if (t < 60.0)
-            return t.ToString(step < 1.0 ? "0.0" : "0", CultureInfo.InvariantCulture) + " s";
+            return UiText.Concat(t.ToString(step < 1.0 ? "0.0" : "0", CultureInfo.InvariantCulture), " s");
         int minutes = (int)Math.Floor(t / 60.0);
         double rest = t - minutes * 60.0;
-        return minutes.ToString(CultureInfo.InvariantCulture) + ":" + rest.ToString(step < 1.0 ? "00.0" : "00", CultureInfo.InvariantCulture);
+        return UiText.Concat(UiText.Concat(minutes.ToString(CultureInfo.InvariantCulture), ":"), rest.ToString(step < 1.0 ? "00.0" : "00", CultureInfo.InvariantCulture));
     }
 
     #endregion

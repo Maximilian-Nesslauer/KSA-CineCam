@@ -46,7 +46,7 @@ public static class ShotCapture
             double radius = Math.Sqrt(rel.Y * rel.Y + rel.Z * rel.Z);
             if (radius < MinRadius)
             {
-                message = "The camera is on the axis of the orbit, so no radius and angle can be read from it. Move it away from the axis.";
+                message = UiText.MessageText("text.1912af93e7d2", "The camera is on the axis of the orbit, so no radius and angle can be read from it. Move it away from the axis.");
                 return false;
             }
 
@@ -57,14 +57,14 @@ public static class ShotCapture
             double angle = RadToDeg(Math.Atan2(rel.Y, rel.Z));
             double travelled = shot.DegPerSec * shot.Duration * progress;
             shot.StartDeg = Math.Round(Wrap360(angle - travelled), 2);
-            message = "Height, radius, start angle, look point and field of view were set from the camera. The turn speed stays, so the camera is at this angle at this moment of the shot.";
+            message = UiText.MessageText("text.e38630ad6e6f", "Height, radius, start angle, look point and field of view were set from the camera. The turn speed stays, so the camera is at this angle at this moment of the shot.");
         }
         else
         {
             double radius = Math.Sqrt(position.Y * position.Y + position.Z * position.Z);
             if (radius < MinRadius)
             {
-                message = "The camera is on the axis of the crane, so no radius and azimuth can be read from it. Move it away from the axis.";
+                message = UiText.MessageText("text.497ee065b1dc", "The camera is on the axis of the crane, so no radius and azimuth can be read from it. Move it away from the axis.");
                 return false;
             }
 
@@ -73,7 +73,7 @@ public static class ShotCapture
             shot.To = Math.Round(shot.To + shift, 2);
             shot.Radius = Math.Round(radius, 2);
             shot.Azimuth = Math.Round(Wrap360(RadToDeg(Math.Atan2(position.Y, position.Z))), 2);
-            message = "Height, radius, azimuth and field of view were set from the camera. A crane always looks at its axis, so the view direction is not stored.";
+            message = UiText.MessageText("text.f615973439bd", "Height, radius, azimuth and field of view were set from the camera. A crane always looks at its axis, so the view direction is not stored.");
         }
 
         shot.Fov = Math.Clamp(Math.Round(camera.Fov, 1), 1.0, 150.0);
@@ -108,7 +108,7 @@ public static class ShotCapture
         {
             if (!CanConvertToPath(shot.Type))
             {
-                message = $"A {shot.Type.ToString().ToLowerInvariant()} shot cannot become a path shot. Use a tripod or chase shot, or add a path shot.";
+                message = UiText.Format("text.6c1198ed4d4d", $"A {shot.Type.ToString().ToLowerInvariant()} shot cannot become a path shot. Use a tripod or chase shot, or add a path shot.");
                 return false;
             }
 
@@ -142,8 +142,8 @@ public static class ShotCapture
         }
 
         int number = shot.Points.IndexOf(point) + 1;
-        string start = converted ? "The shot is a path shot now, with its old pose as point 1. " : "";
-        message = $"{start}The camera is point {number} of {shot.Points.Count} at {t:0.###} of the path.";
+        string start = converted ? UiText.MessageText("text.5b994dee4c0b", "The shot is a path shot now, with its old pose as point 1. ") : "";
+        message = UiText.Format("text.a47b5cf86d51", $"{start}The camera is point {number} of {shot.Points.Count} at {t:0.###} of the path.");
         return true;
     }
 
@@ -179,7 +179,7 @@ public static class ShotCapture
         message = "";
         if (!CanCapture(shot.Type))
         {
-            message = $"A {shot.Type.ToString().ToLowerInvariant()} shot has no fixed camera position, so the camera pose cannot be written into it.";
+            message = UiText.Format("text.dd45cba6d9c2", $"A {shot.Type.ToString().ToLowerInvariant()} shot has no fixed camera position, so the camera pose cannot be written into it.");
             return false;
         }
 
@@ -211,7 +211,7 @@ public static class ShotCapture
             case ShotType.Part:
                 if (shot.Part.Length > 0 && partPosition == null)
                 {
-                    message = $"The vehicle has no part \"{shot.Part}\", so the offset cannot be written.";
+                    message = UiText.Format("text.5f48e4f679d1", $"The vehicle has no part \"{shot.Part}\", so the offset cannot be written.");
                     return false;
                 }
 
@@ -232,8 +232,8 @@ public static class ShotCapture
         shot.Fov = Math.Clamp(Math.Round(camera.Fov, 1), 1.0, 150.0);
         message = shot.Type switch
         {
-            ShotType.Track => "Position and field of view were set from the camera. A track shot looks at the vehicle by itself.",
-            _ => "Position, look point and field of view were set from the camera.",
+            ShotType.Track => UiText.MessageText("text.a919b5fa1346", "Position and field of view were set from the camera. A track shot looks at the vehicle by itself."),
+            _ => UiText.MessageText("text.8dd4cb26ab31", "Position, look point and field of view were set from the camera."),
         };
         return true;
     }
@@ -242,15 +242,15 @@ public static class ShotCapture
 
     public static string KeyHelp(KeyKind kind) => kind switch
     {
-        KeyKind.Fixed => "The camera stays at this place and looks in this direction.",
-        KeyKind.Track => "The camera stays at this place and turns to follow the vehicle.",
-        KeyKind.Chase => "The camera keeps this offset from the vehicle and follows it, with the horizon level.",
-        KeyKind.Orbit => "The camera turns around the vehicle, starting from this place.",
-        KeyKind.PartMount => "The camera is fixed to the vehicle at this place, like an onboard camera.",
-        _ => "Adds this place as a point of the selected path shot, or starts a new path shot here.",
+        KeyKind.Fixed => UiText.MessageText("text.121cf6d98edc", "The camera stays at this place and looks in this direction."),
+        KeyKind.Track => UiText.MessageText("text.c44bd627222b", "The camera stays at this place and turns to follow the vehicle."),
+        KeyKind.Chase => UiText.MessageText("text.72819dfde05b", "The camera keeps this offset from the vehicle and follows it, with the horizon level."),
+        KeyKind.Orbit => UiText.MessageText("text.6caee0fe8814", "The camera turns around the vehicle, starting from this place."),
+        KeyKind.PartMount => UiText.MessageText("text.5e2688ea0a36", "The camera is fixed to the vehicle at this place, like an onboard camera."),
+        _ => UiText.MessageText("text.2a5ce3db7eda", "Adds this place as a point of the selected path shot, or starts a new path shot here."),
     };
 
-    public static string KeyLabel(KeyKind kind) => kind == KeyKind.PartMount ? "Part mount" : kind == KeyKind.PathPoint ? "Path point" : kind.ToString();
+    public static string KeyLabel(KeyKind kind) => kind == KeyKind.PartMount ? UiText.MessageText("text.24568053844f", "Part mount") : kind == KeyKind.PathPoint ? UiText.MessageText("text.57e8a4879bcc", "Path point") : kind.ToString();
 
     /// <summary>Returns null for <see cref="KeyKind.PathPoint"/>, which <see cref="NewPath"/> and <see cref="AppendPathPoint"/> handle.</summary>
     /// <param name="vehicle">In the site frame, which the window calls the world point frame.</param>
@@ -289,7 +289,7 @@ public static class ShotCapture
                 ok = Apply(shot, camera, vehicle, vehicleHeight, null, out message);
                 break;
             default:
-                message = "A path point is added to a path shot.";
+                message = UiText.MessageText("text.1ca1ec725118", "A path point is added to a path shot.");
                 return null;
         }
 
@@ -320,7 +320,7 @@ public static class ShotCapture
     {
         if (shot.Type != ShotType.Path)
         {
-            message = "Select a path shot first.";
+            message = UiText.MessageText("text.c6ec92c0a99b", "Select a path shot first.");
             return false;
         }
 
@@ -336,7 +336,7 @@ public static class ShotCapture
             LookAt = Round(ToLocal(frame, LookPoint(camera, vehicle, vehicleHeight))),
             Fov = Math.Clamp(Math.Round(camera.Fov, 1), 1.0, 150.0),
         });
-        message = $"The camera is point {shot.Points.Count} of {shot.Points.Count}, at the end of the path.";
+        message = UiText.Format("text.22ffb64c4926", $"The camera is point {shot.Points.Count} of {shot.Points.Count}, at the end of the path.");
         return true;
     }
 

@@ -21,13 +21,13 @@ internal static class KeyPanel
     {
         string block = Block(session);
         bool free = block.Length == 0;
-        if (Widgets.Button("ADD KEY HERE", free, free
-                ? "Takes the place and the view of the free camera and adds a shot of a kind you pick, after the selected shot."
+        if (Widgets.Button(UiText.MessageText("text.a2d03af9b521", "ADD KEY HERE"), free, free
+                ? UiText.MessageText("text.ad915aa90c46", "Takes the place and the view of the free camera and adds a shot of a kind you pick, after the selected shot.")
                 : block))
             ImGui.OpenPopup(KeyPopup.AsSpan());
         Widgets.SameLine();
-        if (Widgets.Button("ADD PRESET", free, free
-                ? "Adds a shot from a template, sized for the vehicle, after the selected shot."
+        if (Widgets.Button(UiText.MessageText("text.702f3675ee8b", "ADD PRESET"), free, free
+                ? UiText.MessageText("text.b2a7707922c5", "Adds a shot from a template, sized for the vehicle, after the selected shot.")
                 : block))
             ImGui.OpenPopup(PresetPopup.AsSpan());
         Widgets.Reason(block);
@@ -36,10 +36,10 @@ internal static class KeyPanel
         {
             try
             {
-                Widgets.Label("Make a shot from the camera", Widgets.MutedColor);
+                Widgets.Label(UiText.MessageText("text.6c48067591d6", "Make a shot from the camera"), Widgets.MutedColor);
                 foreach (KeyKind kind in Kinds)
                 {
-                    if (ImGui.Selectable(ShotCapture.KeyLabel(kind).AsSpan()))
+                    if (ImGui.Selectable(UiText.Control(ShotCapture.KeyLabel(kind)).AsSpan()))
                         AddKey(session, kind);
                     Widgets.Tip(ShotCapture.KeyHelp(kind));
                 }
@@ -54,10 +54,10 @@ internal static class KeyPanel
         {
             try
             {
-                Widgets.Label("Add a shot from a template", Widgets.MutedColor);
+                Widgets.Label(UiText.MessageText("text.c0ea8f52af6e", "Add a shot from a template"), Widgets.MutedColor);
                 foreach (ShotPreset preset in ShotPresets.All)
                 {
-                    if (ImGui.Selectable(ShotPresets.Label(preset).AsSpan()))
+                    if (ImGui.Selectable(UiText.Control(ShotPresets.Label(preset)).AsSpan()))
                         AddPreset(session, preset);
                     Widgets.Tip(ShotPresets.Help(preset));
                 }

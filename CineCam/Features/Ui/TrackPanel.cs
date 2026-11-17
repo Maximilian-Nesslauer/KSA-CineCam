@@ -26,20 +26,20 @@ internal static class TrackPanel
 
     private static readonly ShotType[] ShotTypes = System.Enum.GetValues<ShotType>();
 
-    private static readonly string[] ShotHeaders = { "#", "Type", "Starts", "Length" };
-    private static readonly string[] KeyHeaders = { "#", "Speed", "Starts", "Ramp" };
-    private static readonly string[] ActionHeaders = { "#", "Action", "Fires", "Number" };
+    private static readonly string[] ShotHeaders = { "#", UiText.MessageText("text.baaddf70fb5d", "Type"), UiText.MessageText("text.96dbedeca7df", "Starts"), UiText.MessageText("text.adc95605a1b3", "Length") };
+    private static readonly string[] KeyHeaders = { "#", UiText.MessageText("text.c372fee9b456", "Speed"), UiText.MessageText("text.96dbedeca7df", "Starts"), UiText.MessageText("text.70a5ae4aa40d", "Ramp") };
+    private static readonly string[] ActionHeaders = { "#", UiText.MessageText("text.64cff1319d2f", "Action"), UiText.MessageText("text.1c0be594e801", "Fires"), UiText.MessageText("text.bd82cf16699b", "Number") };
 
     public static void DrawShots(EditSession session)
     {
         if (session.Take is not { } take)
         {
-            Widgets.Muted("No take is loaded.");
+            Widgets.Muted(UiText.MessageText("text.7e671bc08b20", "No take is loaded."));
             return;
         }
 
         KeyPanel.Draw(session);
-        Widgets.Section("Camera track");
+        Widgets.Section(UiText.MessageText("text.06ec293303ec", "Camera track"));
         DrawPreRoll(session, take);
         int active = TakeRunner.Current is { Preview: null } run ? run.LastFrame?.ShotIndex ?? -1 : -1;
         var rows = take.Shots.Select((s, i) => ViewText.ShotRow(i, s) with { Name = ShotLabels.Type(s.Type), Starts = Widgets.TriggerText(s.At, i) }).ToList();
@@ -49,7 +49,7 @@ internal static class TrackPanel
 
         if (session.SelectedShot != null)
         {
-            Widgets.Section("Preview and camera");
+            Widgets.Section(UiText.MessageText("text.25d2a0d42f79", "Preview and camera"));
             PreviewPanel.Draw(session);
         }
 
@@ -62,8 +62,8 @@ internal static class TrackPanel
     {
         bool changed = false;
         bool on = take.PreRoll != null;
-        if (Widgets.Check("Repeat the opening shots until an event", ref on,
-                "The opening shots are the shots before the first shot that starts on the event below. They play again and again, one after the other, until the event comes, for example while the vehicle waits on the pad. Then the shot that waits for the event starts through its own transition."))
+        if (Widgets.Check(UiText.MessageText("text.ba358ff0f4b8", "Repeat the opening shots until an event"), ref on,
+                UiText.MessageText("text.f9646d6e9dc4", "The opening shots are the shots before the first shot that starts on the event below. They play again and again, one after the other, until the event comes, for example while the vehicle waits on the pad. Then the shot that waits for the event starts through its own transition.")))
         {
             take.PreRoll = on ? new PreRoll { Until = take.Shots.FirstOrDefault(s => s.At.Kind == TriggerKind.Event)?.At.Event ?? "ignition" } : null;
             changed = true;
@@ -71,15 +71,15 @@ internal static class TrackPanel
 
         if (take.PreRoll is { } preRoll)
         {
-            if (Widgets.Text("Until the event", "preroll-" + session.TakeIndex, preRoll.Until, out string until, 512,
-                    "The event that ends the loop, for example ignition or liftoff. A shot of the take must start on it."))
+            if (Widgets.Text(UiText.MessageText("text.428021eb15c3", "Until the event"), UiText.Concat("preroll-", session.TakeIndex), preRoll.Until, out string until, 512,
+                    UiText.MessageText("text.e1aa36ac3bdc", "The event that ends the loop, for example ignition or liftoff. A shot of the take must start on it.")))
             {
                 preRoll.Until = until.Trim();
                 changed = true;
             }
 
             bool loop = preRoll.Loop;
-            if (Widgets.Check("Loop the opening shots", ref loop, "On plays the opening shots again and again until the event. Off plays them once, and the camera then holds the last pose until the event."))
+            if (Widgets.Check(UiText.MessageText("text.1d6d57391fa9", "Loop the opening shots"), ref loop, UiText.MessageText("text.ad82ec2fbbad", "On plays the opening shots again and again until the event. Off plays them once, and the camera then holds the last pose until the event.")))
             {
                 preRoll.Loop = loop;
                 changed = true;
@@ -94,17 +94,17 @@ internal static class TrackPanel
     {
         if (session.Take is not { } take)
         {
-            Widgets.Muted("No take is loaded.");
+            Widgets.Muted(UiText.MessageText("text.7e671bc08b20", "No take is loaded."));
             return;
         }
 
-        Widgets.Section("Speed track");
-        Widgets.Muted("Each key ramps the sim speed from its value at the start of the key to the target. The game locks the throttle and the engines above 30x.");
+        Widgets.Section(UiText.MessageText("text.3ce700cd0ade", "Speed track"));
+        Widgets.Muted(UiText.MessageText("text.8714b88dde35", "Each key ramps the sim speed from its value at the start of the key to the target. The game locks the throttle and the engines above 30x."));
         var rows = take.Speed.Select((k, i) => ViewText.KeyRow(i, k) with { Starts = Widgets.TriggerText(k.At, i) }).ToList();
         bool changed = DrawList("keys", KeyHeaders, rows, session.KeyIndex, -1, i => session.KeyIndex = i,
             () => session.SelectedKey is { } key && DrawKeyFields(session, key));
         DrawListButtons("key", session.KeyIndex, take.Speed.Count, session.AddKey, session.DuplicateKey, session.RemoveKey, session.MoveKey,
-            "Adds a speed key.");
+            UiText.MessageText("text.ea511a49ca9a", "Adds a speed key."));
         if (changed)
             session.Changed();
     }
@@ -113,17 +113,17 @@ internal static class TrackPanel
     {
         if (session.Take is not { } take)
         {
-            Widgets.Muted("No take is loaded.");
+            Widgets.Muted(UiText.MessageText("text.7e671bc08b20", "No take is loaded."));
             return;
         }
 
-        Widgets.Section("Action track");
-        Widgets.Muted("An action runs once per run when its trigger is reached. A stage action presses the staging key. A cue gives a name to other mods, for example to show an overlay at the lift-off.");
+        Widgets.Section(UiText.MessageText("text.f07f5fa98f04", "Action track"));
+        Widgets.Muted(UiText.MessageText("text.ebd812ca9877", "An action runs once per run when its trigger is reached. A stage action presses the staging key. A cue gives a name to other mods, for example to show an overlay at the lift-off."));
         var rows = take.Actions.Select((a, i) => ViewText.ActionRow(i, a) with { Starts = Widgets.TriggerText(a.At, i) }).ToList();
         bool changed = DrawList("actions", ActionHeaders, rows, session.ActionIndex, -1, i => session.ActionIndex = i,
             () => session.SelectedAction is { } action && DrawActionFields(session, action));
         DrawListButtons("action", session.ActionIndex, take.Actions.Count, session.AddAction, session.DuplicateAction, session.RemoveAction, session.MoveAction,
-            "Adds a stage action. It fires the next sequence of the vehicle once per run. Set the action to Cue for a cue.");
+            UiText.MessageText("text.59cd829a185f", "Adds a stage action. It fires the next sequence of the vehicle once per run. Set the action to Cue for a cue."));
         if (changed)
             session.Changed();
     }
@@ -142,14 +142,14 @@ internal static class TrackPanel
         Widgets.ListHeader(headers, columns);
 
         if (rows.Count == 0)
-            Widgets.Muted("Empty. Use Add below.");
+            Widgets.Muted(UiText.MessageText("text.802128bcdb12", "Empty. Use Add below."));
 
         bool changed = false;
         for (int i = 0; i < rows.Count; i++)
         {
             TrackRow row = rows[i];
-            string[] cells = { (i == active ? ">" : "") + row.Number, row.Name, row.Starts, row.Extra };
-            if (Widgets.ListRow(id + "-" + i, cells, columns, i == selected, i == active, mutedColumn: 3))
+            string[] cells = { UiText.Concat((i == active ? ">" : ""), row.Number), row.Name, row.Starts, row.Extra };
+            if (Widgets.ListRow(UiText.Concat(UiText.Concat(id, "-"), i), cells, columns, i == selected, i == active, mutedColumn: 3))
                 select(i == selected ? -1 : i);
 
             if (i != selected)
@@ -167,8 +167,8 @@ internal static class TrackPanel
     {
         string block = ViewText.FileEditBlock(TakeRunner.Current != null);
         bool free = block.Length == 0;
-        Widgets.Choice("Type of a new shot##newshot", ref _newShotType, ShotTypes, ShotLabels.Type, ShotLabels.TypeHelp);
-        if (Widgets.Button("ADD", free, free ? "Adds a shot of the chosen type with example numbers. Add key here takes the numbers from the camera." : block))
+        Widgets.Choice(UiText.MessageText("text.527e1f8001b4", "Type of a new shot##newshot"), ref _newShotType, ShotTypes, ShotLabels.Type, ShotLabels.TypeHelp);
+        if (Widgets.Button(UiText.MessageText("text.0ecba1370ba1", "ADD"), free, free ? UiText.MessageText("text.a387d0bac1b2", "Adds a shot of the chosen type with example numbers. Add key here takes the numbers from the camera.") : block))
             session.AddShot(_newShotType);
         Widgets.SameLine();
         ListButtons("shot", free, block, session.ShotIndex, take.Shots.Count, session.DuplicateShot, session.RemoveShot, session.MoveShot);
@@ -180,7 +180,7 @@ internal static class TrackPanel
     {
         string block = ViewText.FileEditBlock(TakeRunner.Current != null);
         bool free = block.Length == 0;
-        if (Widgets.Button("ADD##" + name, free, free ? addTip : block))
+        if (Widgets.Button(UiText.Concat(UiText.MessageText("text.f5470f14480f", "ADD##"), name), free, free ? addTip : block))
             add();
         Widgets.SameLine();
         ListButtons(name, free, block, selected, count, duplicate, remove, move);
@@ -192,17 +192,17 @@ internal static class TrackPanel
         Action remove, Action<int> move)
     {
         bool has = selected >= 0 && selected < count;
-        string noItem = free ? "Select an item first." : block;
-        if (Widgets.Button("DUPLICATE##" + name, free && has, noItem))
+        string noItem = free ? UiText.MessageText("text.cad5714e1cee", "Select an item first.") : block;
+        if (Widgets.Button(UiText.Concat(UiText.MessageText("text.456f8f94085b", "DUPLICATE##"), name), free && has, noItem))
             duplicate();
         Widgets.SameLine();
-        if (Widgets.Button("REMOVE##" + name, free && has, noItem, Widgets.Tone.Danger))
+        if (Widgets.Button(UiText.Concat(UiText.MessageText("text.17d92372c66a", "REMOVE##"), name), free && has, noItem, Widgets.Tone.Danger))
             remove();
         Widgets.SameLine();
-        if (Widgets.Button("UP##" + name, free && selected > 0, free ? "Moves the item one place up." : block))
+        if (Widgets.Button(UiText.Concat(UiText.MessageText("text.6c7f76f0b71b", "UP##"), name), free && selected > 0, free ? UiText.MessageText("text.5c626325a419", "Moves the item one place up.") : block))
             move(-1);
         Widgets.SameLine();
-        if (Widgets.Button("DOWN##" + name, free && has && selected < count - 1, free ? "Moves the item one place down." : block))
+        if (Widgets.Button(UiText.Concat(UiText.MessageText("text.0200509f1494", "DOWN##"), name), free && has && selected < count - 1, free ? UiText.MessageText("text.fcf7f2d59f9e", "Moves the item one place down.") : block))
             move(1);
     }
 
@@ -213,11 +213,11 @@ internal static class TrackPanel
     private static bool DrawShotFields(EditSession session, Shot shot)
     {
         bool changed = false;
-        string id = $"shot-{session.TakeIndex}-{session.ShotIndex}";
+        string id = UiText.Format("", $"shot-{session.TakeIndex}-{session.ShotIndex}");
         ImGui.PushID(id.AsSpan());
 
         ShotType type = shot.Type;
-        if (Widgets.Choice("Type", ref type, ShotTypes, ShotLabels.Type, ShotLabels.TypeHelp, ShotLabels.TypeHelp(shot.Type)))
+        if (Widgets.Choice(UiText.MessageText("text.baaddf70fb5d", "Type"), ref type, ShotTypes, ShotLabels.Type, ShotLabels.TypeHelp, ShotLabels.TypeHelp(shot.Type)))
         {
             ShotEdit.ChangeType(shot, type);
             changed = true;
@@ -228,51 +228,51 @@ internal static class TrackPanel
         {
             FrameChoice frame = ShotLabels.FrameOf(shot);
             ShotType current = shot.Type;
-            if (Widgets.Choice("Frame", ref frame, frames, f => ShotLabels.Frame(f, current), ShotLabels.FrameHelp, ShotLabels.FrameHelp(frame)))
+            if (Widgets.Choice(UiText.MessageText("text.d0b50e064a4f", "Frame"), ref frame, frames, f => ShotLabels.Frame(f, current), ShotLabels.FrameHelp, ShotLabels.FrameHelp(frame)))
                 changed |= ShotLabels.SetFrame(shot, frame);
         }
         else
         {
-            Widgets.Muted("Frame: " + ShotLabels.Frame(FrameChoice.World, shot.Type) + ". " + ShotLabels.FrameHelp(FrameChoice.World));
+            Widgets.Muted(UiText.Concat(UiText.Concat(UiText.Concat(UiText.MessageText("text.9837d1d394df", "Frame: "), ShotLabels.Frame(FrameChoice.World, shot.Type)), ". "), ShotLabels.FrameHelp(FrameChoice.World)));
         }
 
-        if (Widgets.Text("Name", id + "-name", shot.Name, out string shotName, 128,
-                "Optional. Other mods and the event log get this name when the shot starts. " + TakeAction.NameRule + "."))
+        if (Widgets.Text(UiText.MessageText("text.dcd1d5223f73", "Name"), UiText.Concat(id, "-name"), shot.Name, out string shotName, 128,
+                UiText.Concat(UiText.Concat(UiText.MessageText("text.ee76759b4204", "Optional. Other mods and the event log get this name when the shot starts. "), TakeAction.NameRule), ".")))
         {
             ShotEdit.SetName(shot, shotName);
             changed = true;
         }
 
         double duration = shot.Duration;
-        if (Widgets.Num("Duration (s)", ref duration, 0.1f, 0.01, 3600.0, "%.2f", "How long the shot lasts. The next shot may start sooner or later through its own trigger."))
+        if (Widgets.Num(UiText.MessageText("text.9484335f438d", "Duration (s)"), ref duration, 0.1f, 0.01, 3600.0, "%.2f", UiText.MessageText("text.9e2b9e29ce90", "How long the shot lasts. The next shot may start sooner or later through its own trigger.")))
         {
             shot.Duration = duration;
             changed = true;
         }
 
         Ease ease = shot.Ease;
-        if (Widgets.Enum("Ease", ref ease, null, "The shape of the motion over the duration of the shot."))
+        if (Widgets.Enum(UiText.MessageText("text.9da61502dbc0", "Ease"), ref ease, null, UiText.MessageText("text.9324823dc47a", "The shape of the motion over the duration of the shot.")))
         {
             shot.Ease = ease;
             changed = true;
         }
 
         double fov = shot.Fov;
-        if (Widgets.Num("Field of view (deg)", ref fov, 0.2f, 1.0, 150.0, "%.1f", "Vertical field of view. A smaller value zooms in."))
+        if (Widgets.Num(UiText.MessageText("text.29a85e89b90b", "Field of view (deg)"), ref fov, 0.2f, 1.0, 150.0, "%.1f", UiText.MessageText("text.9d2f6a34232d", "Vertical field of view. A smaller value zooms in.")))
         {
             shot.Fov = fov;
             changed = true;
         }
 
         double roll = shot.Roll;
-        if (Widgets.Num("Roll (deg)", ref roll, 0.5f, -180.0, 180.0, "%.1f", "Turns the camera about its view direction. 0 keeps the horizon level; a positive value turns the picture counterclockwise."))
+        if (Widgets.Num(UiText.MessageText("text.15423490aaf6", "Roll (deg)"), ref roll, 0.5f, -180.0, 180.0, "%.1f", UiText.MessageText("text.2a710e32c91a", "Turns the camera about its view direction. 0 keeps the horizon level; a positive value turns the picture counterclockwise.")))
         {
             shot.Roll = roll;
             changed = true;
         }
 
         ShotUp up = shot.EffectiveUp;
-        if (Widgets.Enum("Up", ref up, null, ViewText.FieldTip(ShotField.Up)))
+        if (Widgets.Enum(UiText.MessageText("text.55490a4bf3a8", "Up"), ref up, null, ViewText.FieldTip(ShotField.Up)))
         {
             shot.Up = up;
             changed = true;
@@ -281,8 +281,8 @@ internal static class TrackPanel
         changed |= DrawTypeFields(id, shot);
         changed |= DrawTransition(shot);
 
-        Widgets.Section("Starts");
-        changed |= DrawTrigger(id + "-at", shot.At, session.Document);
+        Widgets.Section(UiText.MessageText("text.96dbedeca7df", "Starts"));
+        changed |= DrawTrigger(UiText.Concat(id, "-at"), shot.At, session.Document);
 
         ImGui.PopID();
         return changed;
@@ -295,7 +295,7 @@ internal static class TrackPanel
 
         if (ShotFields.Uses(type, ShotField.Part))
         {
-            if (Widgets.Text("Part", id + "-part", shot.Part, out string part, 512, ViewText.FieldTip(ShotField.Part)))
+            if (Widgets.Text(UiText.MessageText("text.8570a2e1669f", "Part"), UiText.Concat(id, "-part"), shot.Part, out string part, 512, ViewText.FieldTip(ShotField.Part)))
             {
                 shot.Part = part.Trim();
                 changed = true;
@@ -304,29 +304,29 @@ internal static class TrackPanel
         }
 
         if (ShotFields.Uses(type, ShotField.Center))
-            changed |= Vec("Center (m)", shot.Center, v => shot.Center = v, ShotField.Center);
+            changed |= Vec(UiText.MessageText("text.a554a69e304c", "Center (m)"), shot.Center, v => shot.Center = v, ShotField.Center);
         if (ShotFields.Uses(type, ShotField.Radius))
-            changed |= Number("Radius (m)", shot.Radius, 0.2f, type == ShotType.Orbit ? 0.01 : 0.0, 1e7, v => shot.Radius = v, ShotField.Radius);
+            changed |= Number(UiText.MessageText("text.feceec2dcac4", "Radius (m)"), shot.Radius, 0.2f, type == ShotType.Orbit ? 0.01 : 0.0, 1e7, v => shot.Radius = v, ShotField.Radius);
         if (ShotFields.Uses(type, ShotField.Height))
-            changed |= Number("Height (m)", shot.Height, 0.2f, -1e7, 1e7, v => shot.Height = v, ShotField.Height);
+            changed |= Number(UiText.MessageText("text.ebb6b4e2b618", "Height (m)"), shot.Height, 0.2f, -1e7, 1e7, v => shot.Height = v, ShotField.Height);
         if (ShotFields.Uses(type, ShotField.StartDeg))
-            changed |= Number("Start angle (deg)", shot.StartDeg, 0.5f, -1e5, 1e5, v => shot.StartDeg = v, ShotField.StartDeg);
+            changed |= Number(UiText.MessageText("text.a4a5aefae50e", "Start angle (deg)"), shot.StartDeg, 0.5f, -1e5, 1e5, v => shot.StartDeg = v, ShotField.StartDeg);
         if (ShotFields.Uses(type, ShotField.DegPerSec))
-            changed |= Number("Turn (deg/s)", shot.DegPerSec, 0.1f, -1e5, 1e5, v => shot.DegPerSec = v, ShotField.DegPerSec);
+            changed |= Number(UiText.MessageText("text.b9aa1a484ffd", "Turn (deg/s)"), shot.DegPerSec, 0.1f, -1e5, 1e5, v => shot.DegPerSec = v, ShotField.DegPerSec);
         if (ShotFields.Uses(type, ShotField.From))
-            changed |= Number("From height (m)", shot.From, 0.2f, -1e7, 1e7, v => shot.From = v, ShotField.From);
+            changed |= Number(UiText.MessageText("text.4ad608773eee", "From height (m)"), shot.From, 0.2f, -1e7, 1e7, v => shot.From = v, ShotField.From);
         if (ShotFields.Uses(type, ShotField.To))
-            changed |= Number("To height (m)", shot.To, 0.2f, -1e7, 1e7, v => shot.To = v, ShotField.To);
+            changed |= Number(UiText.MessageText("text.f2fcab8ba4ad", "To height (m)"), shot.To, 0.2f, -1e7, 1e7, v => shot.To = v, ShotField.To);
         if (ShotFields.Uses(type, ShotField.Azimuth))
-            changed |= Number("Azimuth (deg)", shot.Azimuth, 0.5f, -1e5, 1e5, v => shot.Azimuth = v, ShotField.Azimuth);
+            changed |= Number(UiText.MessageText("text.be9eadff4363", "Azimuth (deg)"), shot.Azimuth, 0.5f, -1e5, 1e5, v => shot.Azimuth = v, ShotField.Azimuth);
         if (ShotFields.Uses(type, ShotField.Position))
-            changed |= Vec("Position (m)", shot.Position, v => shot.Position = v, ShotField.Position);
+            changed |= Vec(UiText.MessageText("text.5cdffaa87f28", "Position (m)"), shot.Position, v => shot.Position = v, ShotField.Position);
         if (ShotFields.Uses(type, ShotField.Offset))
-            changed |= Vec("Offset (m)", shot.Offset, v => shot.Offset = v, ShotField.Offset);
+            changed |= Vec(UiText.MessageText("text.923dd1571499", "Offset (m)"), shot.Offset, v => shot.Offset = v, ShotField.Offset);
         if (ShotFields.Uses(type, ShotField.LookAt))
-            changed |= Vec("Look at (m)", shot.LookAt, v => shot.LookAt = v, ShotField.LookAt);
+            changed |= Vec(UiText.MessageText("text.db14d3c64f3d", "Look at (m)"), shot.LookAt, v => shot.LookAt = v, ShotField.LookAt);
         if (ShotFields.Uses(type, ShotField.Smoothing))
-            changed |= Number("Smoothing (s)", shot.Smoothing, 0.02f, 0.0, 60.0, v => shot.Smoothing = v, ShotField.Smoothing);
+            changed |= Number(UiText.MessageText("text.b7b852da560b", "Smoothing (s)"), shot.Smoothing, 0.02f, 0.0, 60.0, v => shot.Smoothing = v, ShotField.Smoothing);
 
         if (ShotFields.Uses(type, ShotField.Points))
             changed |= DrawPoints(id, shot);
@@ -334,7 +334,7 @@ internal static class TrackPanel
         if (ShotFields.Uses(type, ShotField.Subject))
         {
             ShotSubject subject = shot.Subject;
-            if (Widgets.Enum("Follows", ref subject, null, ViewText.FieldTip(ShotField.Subject)))
+            if (Widgets.Enum(UiText.MessageText("text.7ccfd5f034ad", "Follows"), ref subject, null, ViewText.FieldTip(ShotField.Subject)))
             {
                 shot.Subject = subject;
                 if (subject == ShotSubject.Separated)
@@ -345,7 +345,7 @@ internal static class TrackPanel
             if (shot.Subject == ShotSubject.Separated && ShotFields.Uses(type, ShotField.Pick))
             {
                 SeparatedPick pick = shot.Pick;
-                if (Widgets.Enum("Pick", ref pick, null, ViewText.FieldTip(ShotField.Pick)))
+                if (Widgets.Enum(UiText.MessageText("text.831a9d52a9c3", "Pick"), ref pick, null, ViewText.FieldTip(ShotField.Pick)))
                 {
                     shot.Pick = pick;
                     changed = true;
@@ -356,14 +356,14 @@ internal static class TrackPanel
         if (ShotFields.Uses(type, ShotField.Aim))
         {
             ShotAim aim = shot.Aim;
-            if (Widgets.Enum("Aim", ref aim, null, ViewText.FieldTip(ShotField.Aim)))
+            if (Widgets.Enum(UiText.MessageText("text.28427fa78a23", "Aim"), ref aim, null, ViewText.FieldTip(ShotField.Aim)))
             {
                 shot.Aim = aim;
                 changed = true;
             }
 
             if (shot.Aim == ShotAim.Vehicle)
-                changed |= Vec("Aim offset (m)", shot.AimOffset, v => shot.AimOffset = v, ShotField.AimOffset);
+                changed |= Vec(UiText.MessageText("text.7636d4392ead", "Aim offset (m)"), shot.AimOffset, v => shot.AimOffset = v, ShotField.AimOffset);
         }
 
         changed |= DrawAvoidSun(shot);
@@ -374,7 +374,7 @@ internal static class TrackPanel
         if (ShotFields.Uses(type, ShotField.KeepSize))
         {
             bool keep = shot.KeepSize;
-            if (Widgets.Check("Keep size", ref keep, ViewText.FieldTip(ShotField.KeepSize)))
+            if (Widgets.Check(UiText.MessageText("text.8b01088e4274", "Keep size"), ref keep, ViewText.FieldTip(ShotField.KeepSize)))
             {
                 shot.KeepSize = keep;
                 changed = true;
@@ -390,7 +390,7 @@ internal static class TrackPanel
     {
         bool changed = false;
         bool on = shot.AvoidSun.HasValue;
-        if (Widgets.Check("Keep away from the sun", ref on, ViewText.FieldTip(ShotField.AvoidSun)))
+        if (Widgets.Check(UiText.MessageText("text.8614d43fb258", "Keep away from the sun"), ref on, ViewText.FieldTip(ShotField.AvoidSun)))
         {
             OffValues off = Off.GetOrCreateValue(shot);
             if (shot.AvoidSun is double last)
@@ -401,7 +401,7 @@ internal static class TrackPanel
 
         if (shot.AvoidSun is double angle)
         {
-            if (Widgets.Num("Smallest angle to the sun (deg)", ref angle, 0.5f, 1.0, 90.0, "%.1f", ViewText.FieldTip(ShotField.AvoidSun)))
+            if (Widgets.Num(UiText.MessageText("text.04006642c070", "Smallest angle to the sun (deg)"), ref angle, 0.5f, 1.0, 90.0, "%.1f", ViewText.FieldTip(ShotField.AvoidSun)))
             {
                 shot.AvoidSun = angle;
                 changed = true;
@@ -416,7 +416,7 @@ internal static class TrackPanel
     {
         bool changed = false;
         bool on = shot.Fit.HasValue;
-        if (Widgets.Check("Fit the vehicle", ref on, ViewText.FieldTip(ShotField.Fit)))
+        if (Widgets.Check(UiText.MessageText("text.e37e6125951d", "Fit the vehicle"), ref on, ViewText.FieldTip(ShotField.Fit)))
         {
             OffValues off = Off.GetOrCreateValue(shot);
             if (shot.Fit is double last)
@@ -427,14 +427,14 @@ internal static class TrackPanel
 
         if (shot.Fit is double fit)
         {
-            if (Widgets.Num("Share of the picture height", ref fit, 0.01f, 0.05, 1.5, "%.2f", ViewText.FieldTip(ShotField.Fit)))
+            if (Widgets.Num(UiText.MessageText("text.ddeaaa1f23be", "Share of the picture height"), ref fit, 0.01f, 0.05, 1.5, "%.2f", ViewText.FieldTip(ShotField.Fit)))
             {
                 shot.Fit = fit;
                 changed = true;
             }
 
             FitMeasure by = shot.FitBy;
-            if (Widgets.Choice("Fit by", ref by, FitMeasures, FitMeasureLabel, null, ViewText.FieldTip(ShotField.FitBy)))
+            if (Widgets.Choice(UiText.MessageText("text.5d356be5b0ca", "Fit by"), ref by, FitMeasures, FitMeasureLabel, null, ViewText.FieldTip(ShotField.FitBy)))
             {
                 shot.FitBy = by;
                 changed = true;
@@ -446,7 +446,7 @@ internal static class TrackPanel
 
     private static readonly FitMeasure[] FitMeasures = [FitMeasure.Size, FitMeasure.Height];
 
-    private static string FitMeasureLabel(FitMeasure by) => by == FitMeasure.Height ? "Height" : "Largest size";
+    private static string FitMeasureLabel(FitMeasure by) => by == FitMeasure.Height ? UiText.MessageText("text.bfe2eca40179", "Height") : UiText.MessageText("text.43ad684448f4", "Largest size");
 
     private static string _pointOwner = "";
     private static int _pointIndex;
@@ -462,39 +462,39 @@ internal static class TrackPanel
 
         List<PathPoint> points = shot.Points;
         _pointIndex = Math.Clamp(_pointIndex, 0, Math.Max(points.Count - 1, 0));
-        Widgets.Section("Path points");
+        Widgets.Section(UiText.MessageText("text.3b2663dbb165", "Path points"));
         Widgets.Tip(ViewText.FieldTip(ShotField.Points));
         float size = ImGui.GetFontSize();
         float[] columns = { size * 0.5f };
         for (int i = 0; i < points.Count; i++)
         {
-            string label = string.Create(CultureInfo.InvariantCulture, $"{i + 1}  at {points[i].T:0.###}");
-            if (Widgets.ListRow(id + "-point-" + i, [label], columns, i == _pointIndex))
+            string label = UiText.Format("text.2b367ff32798", $"{i + 1}  at {points[i].T:0.###}");
+            if (Widgets.ListRow(UiText.Concat(UiText.Concat(id, "-point-"), i), [label], columns, i == _pointIndex))
                 _pointIndex = i;
         }
 
-        if (Widgets.Button("ADD POINT##path", true, "Adds a point after the selected one, on the curve between it and the next one."))
+        if (Widgets.Button(UiText.MessageText("text.4a77e97f1271", "ADD POINT##path"), true, UiText.MessageText("text.debb8b572915", "Adds a point after the selected one, on the curve between it and the next one.")))
         {
             _pointIndex = ShotEdit.AddPoint(shot, _pointIndex);
             changed = true;
         }
 
         Widgets.SameLine();
-        if (Widgets.Button("REMOVE POINT##path", points.Count > 1, points.Count > 1 ? "Removes the selected point." : "A path keeps at least one point.", Widgets.Tone.Danger))
+        if (Widgets.Button(UiText.MessageText("text.19f05222b7f8", "REMOVE POINT##path"), points.Count > 1, points.Count > 1 ? UiText.MessageText("text.94fcc2864445", "Removes the selected point.") : UiText.MessageText("text.79d471ebb450", "A path keeps at least one point."), Widgets.Tone.Danger))
         {
             _pointIndex = ShotEdit.RemovePoint(shot, _pointIndex);
             changed = true;
         }
 
         Widgets.SameLine();
-        if (Widgets.Button("UP##path", _pointIndex > 0, "Moves the selected point one place earlier. The times stay with their places."))
+        if (Widgets.Button(UiText.MessageText("text.e507327fbe8c", "UP##path"), _pointIndex > 0, UiText.MessageText("text.c1ce66bd407d", "Moves the selected point one place earlier. The times stay with their places.")))
         {
             _pointIndex = ShotEdit.MovePoint(shot, _pointIndex, -1);
             changed = true;
         }
 
         Widgets.SameLine();
-        if (Widgets.Button("DOWN##path", _pointIndex < points.Count - 1, "Moves the selected point one place later. The times stay with their places."))
+        if (Widgets.Button(UiText.MessageText("text.a7aa170b6a6c", "DOWN##path"), _pointIndex < points.Count - 1, UiText.MessageText("text.8ce506b84e6d", "Moves the selected point one place later. The times stay with their places.")))
         {
             _pointIndex = ShotEdit.MovePoint(shot, _pointIndex, 1);
             changed = true;
@@ -504,21 +504,21 @@ internal static class TrackPanel
             return changed;
 
         PathPoint point = points[_pointIndex];
-        ImGui.PushID($"point{_pointIndex}".AsSpan());
+        ImGui.PushID(UiText.Format("", $"point{_pointIndex}").AsSpan());
         double low = _pointIndex > 0 ? points[_pointIndex - 1].T + 0.001 : 0.0;
         double high = _pointIndex < points.Count - 1 ? points[_pointIndex + 1].T - 0.001 : 1.0;
         double t = point.T;
-        if (Widgets.Num("T (0 to 1)", ref t, 0.005f, low, Math.Max(low, high), "%.3f", "The share of the path at which the camera is at this point."))
+        if (Widgets.Num(UiText.MessageText("text.984572bf7455", "T (0 to 1)"), ref t, 0.005f, low, Math.Max(low, high), "%.3f", UiText.MessageText("text.ba7204748307", "The share of the path at which the camera is at this point.")))
         {
             point.T = t;
             changed = true;
         }
 
-        changed |= Vec("Position (m)", point.Position, v => point.Position = v, ShotField.Position);
-        changed |= Vec("Look at (m)", point.LookAt, v => point.LookAt = v, ShotField.LookAt);
+        changed |= Vec(UiText.MessageText("text.5cdffaa87f28", "Position (m)"), point.Position, v => point.Position = v, ShotField.Position);
+        changed |= Vec(UiText.MessageText("text.db14d3c64f3d", "Look at (m)"), point.LookAt, v => point.LookAt = v, ShotField.LookAt);
 
         bool ownFov = point.Fov.HasValue;
-        if (Widgets.Check("Own field of view", ref ownFov, "Off: the point uses the field of view of the shot."))
+        if (Widgets.Check(UiText.MessageText("text.76f77c16cbde", "Own field of view"), ref ownFov, UiText.MessageText("text.f6f076ab7898", "Off: the point uses the field of view of the shot.")))
         {
             point.Fov = ownFov ? shot.Fov : null;
             changed = true;
@@ -527,7 +527,7 @@ internal static class TrackPanel
         if (point.Fov.HasValue)
         {
             double fov = point.Fov.Value;
-            if (Widgets.Num("Point field of view (deg)", ref fov, 0.2f, 1.0, 150.0, "%.1f"))
+            if (Widgets.Num(UiText.MessageText("text.67e2144c602b", "Point field of view (deg)"), ref fov, 0.2f, 1.0, 150.0, "%.1f"))
             {
                 point.Fov = fov;
                 changed = true;
@@ -535,7 +535,7 @@ internal static class TrackPanel
         }
 
         bool ownRoll = point.Roll.HasValue;
-        if (Widgets.Check("Own roll", ref ownRoll, "Off: the point has no roll of its own. The roll of the shot is added in every case."))
+        if (Widgets.Check(UiText.MessageText("text.dcd206876527", "Own roll"), ref ownRoll, UiText.MessageText("text.cfbc511b41df", "Off: the point has no roll of its own. The roll of the shot is added in every case.")))
         {
             point.Roll = ownRoll ? 0.0 : null;
             changed = true;
@@ -544,7 +544,7 @@ internal static class TrackPanel
         if (point.Roll.HasValue)
         {
             double roll = point.Roll.Value;
-            if (Widgets.Num("Point roll (deg)", ref roll, 0.5f, -180.0, 180.0, "%.1f"))
+            if (Widgets.Num(UiText.MessageText("text.2dec2237826c", "Point roll (deg)"), ref roll, 0.5f, -180.0, 180.0, "%.1f"))
             {
                 point.Roll = roll;
                 changed = true;
@@ -575,7 +575,7 @@ internal static class TrackPanel
     {
         bool changed = false;
         TransitionKind kind = shot.Transition.Kind;
-        if (Widgets.Enum("Transition", ref kind, null, "Cut: the camera jumps to the new shot. Blend: it moves over from the last pose."))
+        if (Widgets.Enum(UiText.MessageText("text.2fe70464aadf", "Transition"), ref kind, null, UiText.MessageText("text.e0f278827c24", "Cut: the camera jumps to the new shot. Blend: it moves over from the last pose.")))
         {
             shot.Transition.Kind = kind;
             shot.Transition.Seconds = kind == TransitionKind.Blend
@@ -587,7 +587,7 @@ internal static class TrackPanel
         if (shot.Transition.Kind == TransitionKind.Blend)
         {
             double seconds = shot.Transition.Seconds;
-            if (Widgets.Num("Blend (s)", ref seconds, 0.05f, 0.01, 3600.0, "%.2f", "Seconds that the camera needs to move over to the new shot."))
+            if (Widgets.Num(UiText.MessageText("text.97aaf8c8fc26", "Blend (s)"), ref seconds, 0.05f, 0.01, 3600.0, "%.2f", UiText.MessageText("text.029aa9b5529d", "Seconds that the camera needs to move over to the new shot.")))
             {
                 shot.Transition.Seconds = seconds;
                 changed = true;
@@ -600,11 +600,11 @@ internal static class TrackPanel
     private static bool DrawKeyFields(EditSession session, SpeedKey key)
     {
         bool changed = false;
-        string id = $"key-{session.TakeIndex}-{session.KeyIndex}";
+        string id = UiText.Format("", $"key-{session.TakeIndex}-{session.KeyIndex}");
         ImGui.PushID(id.AsSpan());
 
         double to = key.To;
-        if (Widgets.Num("Target speed (x)", ref to, 0.01f, 0.0, 1000.0, "%.2f", "The sim speed that the key ramps to. 1 is real time."))
+        if (Widgets.Num(UiText.MessageText("text.2a533ca4eb72", "Target speed (x)"), ref to, 0.01f, 0.0, 1000.0, "%.2f", UiText.MessageText("text.92b970359bd3", "The sim speed that the key ramps to. 1 is real time.")))
         {
             key.To = to;
             changed = true;
@@ -612,21 +612,21 @@ internal static class TrackPanel
 
 
         double ramp = key.Ramp;
-        if (Widgets.Num("Ramp (s)", ref ramp, 0.05f, 0.0, 3600.0, "%.2f", "Seconds to go from the speed at the start of the key to the target. 0 jumps."))
+        if (Widgets.Num(UiText.MessageText("text.2b2eccf35988", "Ramp (s)"), ref ramp, 0.05f, 0.0, 3600.0, "%.2f", UiText.MessageText("text.cf0abddb1a5f", "Seconds to go from the speed at the start of the key to the target. 0 jumps.")))
         {
             key.Ramp = ramp;
             changed = true;
         }
 
         Ease ease = key.Ease;
-        if (Widgets.Enum("Ease", ref ease, null, "The shape of the speed change over the ramp."))
+        if (Widgets.Enum(UiText.MessageText("text.9da61502dbc0", "Ease"), ref ease, null, UiText.MessageText("text.8d5c00aff650", "The shape of the speed change over the ramp.")))
         {
             key.Ease = ease;
             changed = true;
         }
 
-        Widgets.Section("Starts");
-        changed |= DrawTrigger(id + "-at", key.At, session.Document);
+        Widgets.Section(UiText.MessageText("text.96dbedeca7df", "Starts"));
+        changed |= DrawTrigger(UiText.Concat(id, "-at"), key.At, session.Document);
         ImGui.PopID();
         return changed;
     }
@@ -634,11 +634,11 @@ internal static class TrackPanel
     private static bool DrawActionFields(EditSession session, TakeAction action)
     {
         bool changed = false;
-        string id = $"action-{session.TakeIndex}-{session.ActionIndex}";
+        string id = UiText.Format("", $"action-{session.TakeIndex}-{session.ActionIndex}");
         ImGui.PushID(id.AsSpan());
 
         ActionKind kind = action.Kind;
-        if (Widgets.Enum("Action", ref kind, null, "Stage presses the staging key. Cue gives a name to other mods, for example to show an overlay."))
+        if (Widgets.Enum(UiText.MessageText("text.64cff1319d2f", "Action"), ref kind, null, UiText.MessageText("text.2c0422973f46", "Stage presses the staging key. Cue gives a name to other mods, for example to show an overlay.")))
         {
             ShotEdit.ChangeKind(action, kind);
             changed = true;
@@ -646,30 +646,30 @@ internal static class TrackPanel
 
         if (action.Kind == ActionKind.Cue)
         {
-            if (Widgets.Text("Cue name", id + "-cue", action.Name, out string cueName, 128,
-                    "Other mods get this name when the cue fires, for example overlay-in. " + TakeAction.NameRule + "."))
+            if (Widgets.Text(UiText.MessageText("text.992d7098c040", "Cue name"), UiText.Concat(id, "-cue"), action.Name, out string cueName, 128,
+                    UiText.Concat(UiText.Concat(UiText.MessageText("text.832f0e13c4a0", "Other mods get this name when the cue fires, for example overlay-in. "), TakeAction.NameRule), ".")))
             {
                 action.Name = cueName.Trim();
                 changed = true;
             }
 
-            Widgets.Tip("A cue changes nothing in the flight. It fires in a live take, a dry run, a replay and a render, and it has a row in the event log.");
+            Widgets.Tip(UiText.MessageText("text.45e75bcd69c8", "A cue changes nothing in the flight. It fires in a live take, a dry run, a replay and a render, and it has a row in the event log."));
         }
 
         if (action.Kind == ActionKind.Stage)
         {
             bool anyNumber = !action.Sequence.HasValue;
-            if (Widgets.Check("Any sequence", ref anyNumber))
+            if (Widgets.Check(UiText.MessageText("text.1b82365013f6", "Any sequence"), ref anyNumber))
             {
                 action.Sequence = anyNumber ? null : 3;
                 changed = true;
             }
 
-            Widgets.Tip("The staging key fires the next sequence in order and cannot pick a number. With a number, the action fires only when that sequence is the next one, and it is skipped (and logged) otherwise.");
+            Widgets.Tip(UiText.MessageText("text.5570f27ac963", "The staging key fires the next sequence in order and cannot pick a number. With a number, the action fires only when that sequence is the next one, and it is skipped (and logged) otherwise."));
             if (action.Sequence.HasValue)
             {
                 double number = action.Sequence.Value;
-                if (Widgets.Num("Sequence number", ref number, 0.1f, 1.0, 1e6, "%.0f"))
+                if (Widgets.Num(UiText.MessageText("text.6dab2d3b3573", "Sequence number"), ref number, 0.1f, 1.0, 1e6, "%.0f"))
                 {
                     action.Sequence = (int)Math.Round(number);
                     changed = true;
@@ -677,8 +677,8 @@ internal static class TrackPanel
             }
         }
 
-        Widgets.Section("Fires");
-        changed |= DrawTrigger(id + "-at", action.At, session.Document);
+        Widgets.Section(UiText.MessageText("text.1c0be594e801", "Fires"));
+        changed |= DrawTrigger(UiText.Concat(id, "-at"), action.At, session.Document);
         ImGui.PopID();
         return changed;
     }
@@ -687,7 +687,7 @@ internal static class TrackPanel
     {
         bool changed = false;
         TriggerKind kind = trigger.Kind;
-        if (Widgets.Enum("Trigger", ref kind, null, "After: starts when the item before ends. Time: a take time. Event: an event of the vehicle."))
+        if (Widgets.Enum(UiText.MessageText("text.8b9c643731c9", "Trigger"), ref kind, null, UiText.MessageText("text.dee1460125ab", "After: starts when the item before ends. Time: a take time. Event: an event of the vehicle.")))
         {
             ShotEdit.ChangeTriggerKind(trigger, kind);
             changed = true;
@@ -697,7 +697,7 @@ internal static class TrackPanel
         {
             case TriggerKind.Time:
                 double time = trigger.Time;
-                if (Widgets.Num("Take time (s)", ref time, 0.1f, 0.0, 1e7, "%.2f", "Seconds since the take started. A pause does not count."))
+                if (Widgets.Num(UiText.MessageText("text.dd7b3505020a", "Take time (s)"), ref time, 0.1f, 0.0, 1e7, "%.2f", UiText.MessageText("text.d070cc3eedc1", "Seconds since the take started. A pause does not count.")))
                 {
                     trigger.Time = time;
                     changed = true;
@@ -706,9 +706,9 @@ internal static class TrackPanel
                 break;
             case TriggerKind.Event:
                 if (trigger.Event.Length > 0)
-                    Widgets.Muted("Event: " + Widgets.EventName(trigger.Event));
-                if (Widgets.Text("Event name", id + "-event", trigger.Event, out string name, 512,
-                        "The name of the event as the file stores it. Pick one below, or type for example altitude:5000."))
+                    Widgets.Muted(UiText.Concat(UiText.MessageText("text.06d915c5cd08", "Event: "), Widgets.EventName(trigger.Event)));
+                if (Widgets.Text(UiText.MessageText("text.25bc9efedfb7", "Event name"), UiText.Concat(id, "-event"), trigger.Event, out string name, 512,
+                        UiText.MessageText("text.bdd33cd37d4d", "The name of the event as the file stores it. Pick one below, or type for example altitude:5000.")))
                 {
                     trigger.Event = name.Trim();
                     changed = true;
@@ -716,13 +716,13 @@ internal static class TrackPanel
 
                 changed |= DrawEventPicker(trigger, file);
                 double delay = trigger.Delay;
-                if (Widgets.Num("Delay (s)", ref delay, 0.05f, -3600.0, 3600.0, "%.2f", "Seconds after the event. A delay below 0 works only for altitude, speed, ground, slow, q and maxq events."))
+                if (Widgets.Num(UiText.MessageText("text.546ee4023a58", "Delay (s)"), ref delay, 0.05f, -3600.0, 3600.0, "%.2f", UiText.MessageText("text.a3876a10e4e7", "Seconds after the event. A delay below 0 works only for altitude, speed, ground, slow, q and maxq events.")))
                 {
                     trigger.Delay = delay;
                     changed = true;
                 }
 
-                Widgets.Tip("A delay below 0 works only for altitude, speed, ground, slow, q and maxq events.");
+                Widgets.Tip(UiText.MessageText("text.9caa54594948", "A delay below 0 works only for altitude, speed, ground, slow, q and maxq events."));
                 break;
         }
 
@@ -732,7 +732,7 @@ internal static class TrackPanel
     private static bool DrawEventPicker(Trigger trigger, ShotFile? file)
     {
         bool changed = false;
-        if (Widgets.BeginComboRow("Pick event", ""))
+        if (Widgets.BeginComboRow(UiText.MessageText("text.3337f6d81c2a", "Pick event"), ""))
         {
             try
             {
@@ -743,7 +743,7 @@ internal static class TrackPanel
                 {
                     string name = names[i];
                     ImGui.PushID(i);
-                    bool picked = ImGui.Selectable(Widgets.EventName(name).AsSpan(), name == trigger.Event);
+                    bool picked = ImGui.Selectable(UiText.Control(Widgets.EventName(name)).AsSpan(), name == trigger.Event);
                     Widgets.Tip(name);
                     ImGui.PopID();
                     if (!picked)
@@ -758,7 +758,7 @@ internal static class TrackPanel
             }
         }
 
-        Widgets.Tip("Type ignition:N, burnout:N, sequence:N, altitude:METERS, speed:METERS_PER_SECOND, ground:METERS, slow:METERS_PER_SECOND or q:PASCALS in the field above for the others, and :N after a counted event for its Nth time. ignition:2 is the second time the engines come on, for example the upper stage in a hot staging. ground:100 comes when the lowest corner of the part bounding box comes down to 100 m over the terrain or the sea, and slow:50 when the speed over the surface falls to 50 m/s. Both need the vehicle in the air with the value above the target first, so they do not come on the pad or after a landing. q:20000 comes when the dynamic pressure rises to 20 kPa, and maxq at the peak of the dynamic pressure (a live take finds the peak a few seconds after it, so start the shot with a negative delay).");
+        Widgets.Tip(UiText.MessageText("text.160a1e4a6bf6", "Type ignition:N, burnout:N, sequence:N, altitude:METERS, speed:METERS_PER_SECOND, ground:METERS, slow:METERS_PER_SECOND or q:PASCALS in the field above for the others, and :N after a counted event for its Nth time. ignition:2 is the second time the engines come on, for example the upper stage in a hot staging. ground:100 comes when the lowest corner of the part bounding box comes down to 100 m over the terrain or the sea, and slow:50 when the speed over the surface falls to 50 m/s. Both need the vehicle in the air with the value above the target first, so they do not come on the pad or after a landing. q:20000 comes when the dynamic pressure rises to 20 kPa, and maxq at the peak of the dynamic pressure (a live take finds the peak a few seconds after it, so start the shot with a negative delay)."));
         return changed;
     }
 

@@ -139,13 +139,13 @@ internal static partial class TakeRunner
         }
 
         bool giveUp = offline.RecordLost(MaxFailuresInRow);
-        string reason = OfflineHooks.Result == PostRenderResult.NoPicture ? "the game made no picture of the frame" : "no finished file came in time";
-        string text = $"Picture {number} was not saved ({reason}). The next frame makes it again.";
+        string reason = OfflineHooks.Result == PostRenderResult.NoPicture ? UiText.MessageText("text.3f9b6f71990b", "the game made no picture of the frame") : UiText.MessageText("text.7e42b227c7d2", "no finished file came in time");
+        string text = UiText.Format("text.1ad47675704f", $"Picture {number} was not saved ({reason}). The next frame makes it again.");
         DefaultCategory.Log.Warning($"[CineCam] {text}");
         WriteRow(take, "warning", "frameGrab", text);
         if (giveUp)
         {
-            End($"the picture grab failed {offline.FailuresInRow} times in a row, see the log");
+            End(UiText.Format("text.b17731701094", $"the picture grab failed {offline.FailuresInRow} times in a row, see the log"));
             return false;
         }
 
@@ -183,8 +183,7 @@ internal static partial class TakeRunner
         if (fraction >= 0.99)
             return;
         offline.WarnedSlowSim = true;
-        string text = string.Create(CultureInfo.InvariantCulture,
-            $"The game reached only {fraction:P0} of the commanded sim speed, because the vehicle solver is slow. The video may run slower than the speed track says.");
+        string text = UiText.Format("text.cea757c36ee0", $"The game reached only {fraction:P0} of the commanded sim speed, because the vehicle solver is slow. The video may run slower than the speed track says.");
         DefaultCategory.Log.Warning($"[CineCam] {text}");
         WriteRow(take, "warning", "simStep", text);
     }

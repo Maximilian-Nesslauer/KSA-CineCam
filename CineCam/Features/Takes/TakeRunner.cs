@@ -118,7 +118,7 @@ internal static partial class TakeRunner
         }
         catch (Exception ex)
         {
-            Fail("a request", ex);
+            Fail(UiText.MessageText("text.af0bf2a562da", "a request"), ex);
         }
     }
 
@@ -165,7 +165,7 @@ internal static partial class TakeRunner
         }
         catch (Exception ex)
         {
-            Fail("the guard", ex);
+            Fail(UiText.MessageText("text.6890c388dc69", "the guard"), ex);
         }
     }
 
@@ -230,9 +230,9 @@ internal static partial class TakeRunner
         {
             _stopRequested = false;
             if (Flow.IsActive)
-                CancelReset("stopped by the player");
+                CancelReset(UiText.MessageText("text.09d5f0796eec", "stopped by the player"));
             if (_take != null)
-                End("stopped by the player");
+                End(UiText.MessageText("text.09d5f0796eec", "stopped by the player"));
         }
 
         if (_editRequest != EditRequest.None)
@@ -472,7 +472,7 @@ internal static partial class TakeRunner
         string siteText = string.Create(CultureInfo.InvariantCulture,
             $"{site.Id} on {site.Body.Id}, vehicle at up {vehicleInSite.X:F2} east {vehicleInSite.Y:F2} north {vehicleInSite.Z:F2} m");
         DefaultCategory.Log.Info($"[CineCam] {(dryRun ? "Dry run of take" : "Take")} \"{take.Name}\" started. Site: {siteNote}. {siteText}. Log folder: {(folder.Length == 0 ? "none" : folder)}");
-        WriteRow(active, "take", "start", $"take={take.Name}; dryRun={dryRun}; site={siteText}; rule={siteNote}; file={path}{(fromEditor ? " (unsaved copy)" : "")}; hideUi={file.HideUi}; syncFlash={file.SyncFlash}{(dryRun ? "" : $"; run={run}")}{ResetNoteFor(take)}");
+        WriteRow(active, "take", UiText.MessageText("text.cced28c6dc3f", "start"), $"take={take.Name}; dryRun={dryRun}; site={siteText}; rule={siteNote}; file={path}{(fromEditor ? " (unsaved copy)" : "")}; hideUi={file.HideUi}; syncFlash={file.SyncFlash}{(dryRun ? "" : $"; run={run}")}{ResetNoteFor(take)}");
         if (offline != null)
             WriteRow(active, "take", "offline", string.Create(CultureInfo.InvariantCulture, $"fps={offline.Fps}; frames={offline.FramesFolder}; grab={OfflineHooks.GrabName(offline.Grab)}; exactApsides={take.ExactApsides}"));
         if (take.PauseAt is double pauseAt)
@@ -668,7 +668,7 @@ internal static partial class TakeRunner
         ShutdownReset();
         try
         {
-            End("the mod unloaded");
+            End(UiText.MessageText("text.980de862a114", "the mod unloaded"));
             // At an unload in a menu pause no later frame gives the old speed back, so the menu
             // gets it instead.
             if (_pendingSpeed is double speed && MenuPause.Active)
@@ -724,7 +724,7 @@ internal static partial class TakeRunner
         LogHelper.ErrorOnce("fail:" + where, $"[CineCam] Error in {where}: {ex}");
         try
         {
-            End($"error in {where}: {ex.Message}");
+            End(UiText.Format("text.e8173d3ce3c5", $"error in {where}: {ex.Message}"));
         }
         catch (Exception inner)
         {
@@ -811,7 +811,7 @@ internal static partial class TakeRunner
         {
             if (!take.Vehicle.TryFollow(current))
             {
-                End("the controlled vehicle changed");
+                End(UiText.MessageText("text.193b5f8ff630", "the controlled vehicle changed"));
                 return null;
             }
 
@@ -828,7 +828,7 @@ internal static partial class TakeRunner
 
         if (Program.Editor != null)
         {
-            End("the vehicle editor opened");
+            End(UiText.MessageText("text.9222210e1e74", "the vehicle editor opened"));
             return null;
         }
 
@@ -876,7 +876,7 @@ internal static partial class TakeRunner
             FireCues(take, t);
         }
 
-        End("the vehicle is gone");
+        End(UiText.MessageText("text.70737feb0431", "the vehicle is gone"));
     }
 
     private static void TickPreview(ActiveTake take, PreviewState preview, WorldSample world, double t)
@@ -906,7 +906,7 @@ internal static partial class TakeRunner
         Basis3 smoothed = take.Director.SmoothVehicle(TakeDirector.SubjectOf(shot, world).Frame, shot.Type is ShotType.Chase or ShotType.Part ? shot.Smoothing : 0.0, dt);
         CameraPose pose = take.Director.ShotPoseInSite(shot, 0, Easing.Apply(shot.Ease, preview.Raw), world, smoothed, warnings);
         bool partMissing = shot.Type == ShotType.Part && shot.Part.Length > 0 && world.PartLookup?.Invoke(shot.Part) == null;
-        preview.Warning = partMissing ? $"The vehicle has no part \"{shot.Part}\", so the shot uses the base of the vehicle." : null;
+        preview.Warning = partMissing ? UiText.Format("text.d9d4259837a7", $"The vehicle has no part \"{shot.Part}\", so the shot uses the base of the vehicle.") : null;
         take.Camera.Apply(take.Site, pose);
     }
 

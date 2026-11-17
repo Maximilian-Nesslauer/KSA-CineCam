@@ -12,6 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Using Include="CineCam.Localization" />
+    <None Include="..\tools\LocalizationCheck\shots.json" Link="LocalizationShots.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\CineCam\Localization\*.cs" Link="Localization\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\CineCam\Localization\*.json" LogicalName="CineCam.Localization.%(Filename)%(Extension)" />
     <Compile Include="..\CineCam\Director\**\*.cs" Link="Director\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\CineCam\Editing\**\*.cs" Link="Editing\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\CineCam\Api\**\*.cs" Link="Api\%(RecursiveDir)%(Filename)%(Extension)" />

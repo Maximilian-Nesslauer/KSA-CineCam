@@ -70,6 +70,8 @@
   -->
 
   <ItemGroup>
+    <Using Include="CineCam.Localization" />
+    <EmbeddedResource Include="Localization\*.json" />
     <None Update="mod.toml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

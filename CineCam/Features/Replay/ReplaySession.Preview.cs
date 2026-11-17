@@ -50,9 +50,9 @@ internal static partial class ReplaySession
     {
         ReplayScene scene = NeedScene();
         if (!OfflineHooks.Available)
-            throw new Refusal("preview_unavailable", "This game build does not support replay preview capture.");
+            throw new Refusal("preview_unavailable", UiText.MessageText("text.eabc60e29da3", "This game build does not support replay preview capture."));
         if (Program.Instance?.IsScreenshotCaptureActive != false)
-            throw new Refusal("capture_busy", "Wait for the current game screenshot to finish.");
+            throw new Refusal("capture_busy", UiText.MessageText("text.bffd32c59546", "Wait for the current game screenshot to finish."));
 
         CleanPreviews();
         string folder = Path.Combine(PreviewRoot, Guid.NewGuid().ToString("N"));
@@ -63,7 +63,7 @@ internal static partial class ReplaySession
         try
         {
             if (!OfflineHooks.RequestPicture(CaptureGrab.Swapchain))
-                throw new Refusal("capture_busy", "Wait for the current game screenshot to finish.");
+                throw new Refusal("capture_busy", UiText.MessageText("text.bffd32c59546", "Wait for the current game screenshot to finish."));
             _preview = new PendingPreview(collector, Stopwatch.GetTimestamp(), visible, completion);
         }
         catch
@@ -80,9 +80,9 @@ internal static partial class ReplaySession
         try
         {
             if (pending.Collector.TryCollect(1, out string? path) == CollectResult.Done)
-                FinishPreview(true, "ok", "Preview saved.", path);
+                FinishPreview(true, UiText.MessageText("text.2689367b205c", "ok"), UiText.MessageText("text.8855c826bcff", "Preview saved."), path);
             else if (Stopwatch.GetElapsedTime(pending.Started) > TimeSpan.FromSeconds(6))
-                FinishPreview(false, "preview_timeout", "KSA did not save the preview frame in time.");
+                FinishPreview(false, "preview_timeout", UiText.MessageText("text.474cb78829cb", "KSA did not save the preview frame in time."));
         }
         catch (Exception ex)
         {
