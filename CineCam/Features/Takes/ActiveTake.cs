@@ -18,7 +18,8 @@ internal sealed class ActiveTake
         Folder = folder;
         StartFrame = startFrame;
         HoldPose = CameraRig.CurrentPose(site);
-        Clock = new TakeClock(TakeRunner.ClockSeconds);
+        ClockStartSeconds = TakeRunner.ClockSeconds;
+        Clock = new TakeClock(ClockStartSeconds);
     }
 
     public Take Take { get; }
@@ -41,6 +42,14 @@ internal sealed class ActiveTake
 
     /// <summary>The real-time clock of the take. It stops while the take is paused for an edit.</summary>
     public TakeClock Clock { get; }
+
+    /// <summary>The real time in <see cref="TakeRunner.ClockSeconds"/> at which the take clock started.</summary>
+    public double ClockStartSeconds { get; }
+
+    /// <summary>The WAV file that records the game sound of the take, or null.</summary>
+    public string? SoundFile { get; set; }
+
+    public bool SoundStartLogged { get; set; }
 
     /// <summary>Set for a take that saves one picture per frame, where the take time follows the picture count.</summary>
     public OfflineCapture? Offline { get; init; }

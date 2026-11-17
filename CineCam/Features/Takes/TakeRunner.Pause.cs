@@ -76,6 +76,7 @@ internal static partial class TakeRunner
             Universe.SetSimulationSpeed(0.0, alert: false);
 
             take.Clock.Pause(ClockSeconds);
+            SetSoundPaused(take, true);
             if (take.HidUi)
             {
                 Program.DrawUI = true;
@@ -103,6 +104,7 @@ internal static partial class TakeRunner
         try
         {
             double length = take.Clock.Resume(ClockSeconds);
+            SetSoundPaused(take, false);
             take.Camera.EndFree();
             take.LastTickFrame = _frame;
             if (take.HidUi)

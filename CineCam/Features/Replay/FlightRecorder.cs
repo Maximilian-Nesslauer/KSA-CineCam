@@ -464,7 +464,8 @@ internal sealed class FlightRecorder
                 ToV3(double3.Unpack(state.FxExhaustLocationVehicleAsmb)),
                 ToV3(double3.Unpack(state.FxExhaustDirectionVehicleAsmb)),
                 ToV3(double3.Unpack(state.FxRestExhaustLocationVehicleAsmb)),
-                ToV3(double3.Unpack(state.FxRestExhaustDirectionVehicleAsmb)));
+                ToV3(double3.Unpack(state.FxRestExhaustDirectionVehicleAsmb)),
+                float.IsFinite(state.AverageThrustFraction) ? Math.Clamp(state.AverageThrustFraction, 0f, 1f) : null);
             burning = true;
         }
 

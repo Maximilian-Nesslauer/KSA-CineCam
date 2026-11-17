@@ -5,6 +5,7 @@ using Brutal.Numerics;
 using CineCam.Core;
 using CineCam.Director;
 using CineCam.Features.Replay;
+using CineCam.Features.Sound;
 using CineCam.Features.TimeOfDay;
 using CineCam.Patches;
 using KSA;
@@ -121,6 +122,16 @@ internal static partial class TakeRunner
             pending.Rendered = true;
         if (take == null)
             return;
+        try
+        {
+            TickSound(take);
+        }
+        catch (Exception ex)
+        {
+            Fail("the sound recording", ex);
+            return;
+        }
+
         if (take.IsPaused)
         {
             // The free camera does not call the camera hook, so the pause keeps the take alive itself.
@@ -463,6 +474,8 @@ internal static partial class TakeRunner
                 DefaultCategory.Log.Warning($"[CineCam] The flight does not record with the take: {why}");
         }
 
+        StartSound(active);
+
         // With the sim stopped no event can come, so the take would wait for ever. A menu pause
         // sets the speed to 0 again in the same frame.
         if (!dryRun && Universe.GetSimulationSpeed() == 0.0 && !Universe.IsAutoWarpActive)
@@ -528,6 +541,15 @@ internal static partial class TakeRunner
             return;
         _take = null;
         ReplaySession.EndTakeRecording();
+
+        try
+        {
+            EndSound(take);
+        }
+        catch (Exception ex)
+        {
+            DefaultCategory.Log.Error($"[CineCam] The game sound recording could not be closed: {ex.Message}");
+        }
 
         try
         {
@@ -641,6 +663,15 @@ internal static partial class TakeRunner
         }
 
         _pendingSpeed = null;
+        SoundOverride = false;
+        try
+        {
+            GameSoundRecorder.Stop();
+        }
+        catch (Exception ex)
+        {
+            DefaultCategory.Log.Error($"[CineCam] The game sound recording could not be closed: {ex.Message}");
+        }
     }
 
     // A menu pause holds the speed at 0 and gives back the speed of the take when it closes, so
@@ -682,6 +713,14 @@ internal static partial class TakeRunner
         {
             LogHelper.ErrorOnce("fail-end", $"[CineCam] The take could not end cleanly: {inner}");
             _take = null;
+            try
+            {
+                GameSoundRecorder.Stop();
+            }
+            catch (Exception sound)
+            {
+                LogHelper.ErrorOnce("fail-sound", $"[CineCam] The game sound recording could not be closed: {sound.Message}");
+            }
         }
     }
 

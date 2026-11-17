@@ -98,9 +98,11 @@ public readonly record struct ReplayRotation(double X, double Y, double Z, doubl
     }
 }
 
+/// <summary><see cref="Throttle"/> is the mean thrust fraction of the step, the input of the engine sound. A recording of an older version has none.</summary>
 public readonly record struct ReplayNozzle(float DutyCycle, float ExhaustVelocity, float ExhaustPressure, float Temperature,
     float Gamma, float SpecificGasConstant, float ChamberPressure, float ChamberTemperature, float ExitPressure,
-    float ExitTemperature, V3 Position, V3 Axis, V3 RestPosition, V3 RestAxis);
+    float ExitTemperature, V3 Position, V3 Axis, V3 RestPosition, V3 RestAxis,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] float? Throttle = null);
 
 public sealed record ReplayMarker(double Time, string Label);
 

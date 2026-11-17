@@ -26,6 +26,7 @@ internal sealed class ReplayScene : IDisposable
     private readonly StellarBody? _sun;
     private readonly ReplayLiveState _liveState = new();
     private readonly ReplayCamera _camera;
+    private ReplaySound? _sound;
     private double _lastFrameTime;
     private bool _partStateFailed;
 
@@ -109,12 +110,19 @@ internal sealed class ReplayScene : IDisposable
         _liveState.Enter();
         _camera.Follow(World.FollowedAt(Time).Id);
         Update(0);
+        if (ReplaySound.PitchHook)
+            _sound = new ReplaySound(this);
     }
+
+    /// <summary>The engine sounds of the replay, or null when the pitch patch is missing.</summary>
+    public ReplaySound? Sound => _sound;
 
     public void Dispose()
     {
         try
         {
+            _sound?.Dispose();
+            _sound = null;
             _liveState.Dispose();
         }
         finally
@@ -435,6 +443,30 @@ internal sealed class ReplayScene : IDisposable
                     step, position, axis, restPosition, restAxis, sample.AmbientPressure, air, sample.AirDensity);
                 if (lit && nozzle.FxState.ExhaustLight)
                     _lights.Add(new ExhaustLight(instance, positionEgo, axisEgo, model.Segment.Samples, index));
+            }
+        }
+    }
+
+    /// <summary>A burning recorded nozzle with a sound, at its exhaust position relative to the camera in the ECL axes.</summary>
+    public readonly record struct EngineSource(ReplaySegment Segment, int Nozzle, SoundEvent Sound, double3 PositionEgo, float Throttle);
+
+    /// <summary>Fills the list with the burning nozzles of the visible vehicles at the replay time, at the plume position that <see cref="DrawPlumes"/> uses.</summary>
+    public void CollectEngineSources(List<EngineSource> into)
+    {
+        into.Clear();
+        foreach ((Model model, ReplaySample sample) in _visible)
+        {
+            (double3 origin, doubleQuat orientation) = ReplayCamera.WorldPose(_body, sample);
+            origin -= Camera.PositionEcl;
+            int count = Math.Min(model.Nozzles.Length, sample.Nozzles.Length);
+            for (int i = 0; i < count; i++)
+            {
+                ReplayNozzle frame = sample.Nozzles[i];
+                if (!ReplaySoundMath.IsBurning(frame) || model.Nozzles[i].SoundEvent is not { } sound)
+                    continue;
+                double3 position = origin + ReplayCamera.Vector(frame.Position).Transform(orientation);
+                into.Add(new EngineSource(model.Segment, i, sound, position,
+                    ReplaySoundMath.Throttle(model.Segment.Samples, Time, i)));
             }
         }
     }

@@ -122,7 +122,8 @@ public static class ReplayFile
                         Require(actor.Segments[i + 1] != null && sample.Time < actor.Segments[i + 1].Start, "sample crosses segment boundary");
                     previousTime = sample.Time;
                     foreach (ReplayNozzle nozzle in sample.Nozzles)
-                        Require(float.IsFinite(nozzle.DutyCycle) && float.IsFinite(nozzle.ExhaustVelocity) && float.IsFinite(nozzle.ExhaustPressure) && float.IsFinite(nozzle.Temperature) && float.IsFinite(nozzle.Gamma) && float.IsFinite(nozzle.SpecificGasConstant) && float.IsFinite(nozzle.ChamberPressure) && float.IsFinite(nozzle.ChamberTemperature) && float.IsFinite(nozzle.ExitPressure) && float.IsFinite(nozzle.ExitTemperature) && SupportedVector(nozzle.Position) && SupportedVector(nozzle.Axis) && SupportedVector(nozzle.RestPosition) && SupportedVector(nozzle.RestAxis), "nozzle");
+                        Require(float.IsFinite(nozzle.DutyCycle) && float.IsFinite(nozzle.ExhaustVelocity) && float.IsFinite(nozzle.ExhaustPressure) && float.IsFinite(nozzle.Temperature) && float.IsFinite(nozzle.Gamma) && float.IsFinite(nozzle.SpecificGasConstant) && float.IsFinite(nozzle.ChamberPressure) && float.IsFinite(nozzle.ChamberTemperature) && float.IsFinite(nozzle.ExitPressure) && float.IsFinite(nozzle.ExitTemperature) && SupportedVector(nozzle.Position) && SupportedVector(nozzle.Axis) && SupportedVector(nozzle.RestPosition) && SupportedVector(nozzle.RestAxis)
+                            && (nozzle.Throttle is not float throttle || (float.IsFinite(throttle) && throttle >= 0f && throttle <= 2f)), "nozzle");
                     samples.Add(sample with { Rotation = ReplayTimeline.Normalize(sample.Rotation) });
                 }
                 List<ReplayChannel>? channels = segment.Channels;
