@@ -83,6 +83,13 @@ public static class ReplaySampling
     public static bool CanAddNeighbor(int actors, int pendingSplits, int neighbors) =>
         neighbors < NeighborLimit && actors + pendingSplits + 1 <= ActorLimit - SplitReserve;
 
+    // A kitten on EVA near the followed vehicle is recorded while the slot for a change of the followed vehicle
+    // and StageReserve slots stay free, up to KittenLimit kittens in one recording. Each EVA is a new kitten.
+    public const int KittenLimit = 6;
+
+    public static bool CanAddKitten(int actors, int pendingSplits, int kittens) =>
+        kittens < KittenLimit && actors + pendingSplits + 1 <= ActorLimit - FollowReserve - StageReserve;
+
     // A frame longer than one cell gives one sample, so a time warp records at most one sample per frame.
     // The small offset keeps a frame time equal to the interval from losing a cell to rounding.
     public static bool IsDue(double time, double lastTime) =>

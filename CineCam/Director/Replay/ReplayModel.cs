@@ -35,6 +35,13 @@ public sealed record ReplayActor(int Id, string Name, List<ReplaySegment> Segmen
     /// <summary>Recording time when the vehicle left the recording, or null when it stayed to the end.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? End { get; init; }
+
+    /// <summary>
+    /// The character of a kitten on EVA, or null for a vehicle. The recorder also marks a kitten as a
+    /// <see cref="Neighbor"/>, so the director never takes it as a separated vehicle.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Kitten { get; init; }
 }
 
 public sealed record ReplaySegment(double Start, string Definition, List<ReplaySample> Samples)
@@ -62,7 +69,37 @@ public sealed record ReplaySegment(double Start, string Definition, List<ReplayS
 // The state is stored only for the vehicle that the recorder followed at the time of the sample.
 public sealed record ReplaySample(double Time, V3 Position, ReplayRotation Rotation, ReplayNozzle[] Nozzles,
     float AmbientPressure = 0, float AirDensity = 0, V3 AirVelocity = default,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReplayState? State = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReplayState? State = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReplayKitten? Kitten = null);
+
+/// <summary>
+/// What the animation of a kitten on EVA reads. <see cref="Mode"/> is the locomotion mode of the game as a number,
+/// <see cref="Speed"/> the ground speed, <see cref="Gravity"/> the gravity, <see cref="Ladder"/> the place on a ladder
+/// rail and <see cref="Upright"/> the upright alignment. <see cref="Motion"/> holds the acceleration and the angular
+/// acceleration in the body frame during an MMU flight, and is null in the other modes.
+/// </summary>
+public sealed record ReplayKitten(int Mode, int Flags, float Speed, float Gravity, float Ladder, float Upright)
+{
+    public const int MotionLength = 6;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public float[]? Motion { get; init; }
+
+    public bool Has(int flag) => (Flags & flag) != 0;
+
+    internal bool IsValid() =>
+        Mode is >= 0 and <= 255 && Flags is >= 0 and <= 255 && Small(Speed) && Small(Gravity) && Small(Ladder) && Small(Upright)
+        && (Motion == null || (Motion.Length == MotionLength && Array.TrueForAll(Motion, Small)));
+
+    private static bool Small(float value) => float.IsFinite(value) && Math.Abs(value) <= 1e6f;
+}
+
+public static class ReplayKittenFlags
+{
+    public const int Sprint = 1;
+    public const int Move = 2;
+    public const int Rcs = 4;
+}
 
 /// <summary>
 /// What the event detector needs and the pose cannot give. <see cref="Altitude"/> is barometric,

@@ -5,8 +5,8 @@ using System.Text.Json;
 namespace CineCam.Director.Replay;
 
 /// <summary>
-/// The part channels, the neighbor flag and end time of an actor, the follow changes and the height over the
-/// ground in the state of a sample are optional fields of version 2. A file of version 1 has no events, states or centers of mass, so its markers
+/// The part channels, the neighbor flag, end time and kitten character of an actor, the follow changes, the height
+/// over the ground in the state of a sample and the kitten state of a sample are optional fields of version 2. A file of version 1 has no events, states or centers of mass, so its markers
 /// become events and the rest is derived from the poses.
 /// </summary>
 public static class ReplayFile
@@ -101,6 +101,7 @@ public static class ReplayFile
         foreach (ReplayActor actor in flight.Actors)
         {
             Require(actor != null && ids.Add(actor.Id) && Text(actor.Name) && actor.Segments != null && actor.Segments.Count > 0 && actor.Segments.Count <= 10000, "actor");
+            Require(actor!.Kitten is not string kitten || (!string.IsNullOrWhiteSpace(kitten) && kitten.Length <= 256), "actor kitten");
             var segments = new List<ReplaySegment>();
             double previousStart = -1;
             for (int i = 0; i < actor!.Segments.Count; i++)
@@ -118,6 +119,7 @@ public static class ReplayFile
                     Require(sample != null && double.IsFinite(sample.Time) && sample.Time >= segment.Start && sample.Time > previousTime && SupportedVector(sample.Position) && sample.Nozzles != null && sample.Nozzles.Length <= 4096 && float.IsFinite(sample.AmbientPressure) && float.IsFinite(sample.AirDensity) && SupportedVector(sample.AirVelocity), "sample");
                     Require(sample!.State is not ReplayState state || (float.IsFinite(state.Altitude) && float.IsFinite(state.Speed) && float.IsFinite(state.Radial)
                         && (state.Ground is not float ground || float.IsFinite(ground)) && state.Sequence >= 0 && state.Sequence <= 1000000 && state.Docked >= 0 && state.Docked <= 100000), "sample state");
+                    Require(sample.Kitten is not ReplayKitten kittenState || kittenState.IsValid(), "sample kitten");
                     if (i + 1 < actor.Segments.Count)
                         Require(actor.Segments[i + 1] != null && sample.Time < actor.Segments[i + 1].Start, "sample crosses segment boundary");
                     previousTime = sample.Time;
