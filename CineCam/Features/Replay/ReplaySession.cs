@@ -165,6 +165,20 @@ internal static partial class ReplaySession
 
     public static void ObserveSplit(Vehicle source, Vehicle child) => _recorder?.Split(source, child);
 
+    /// <summary>An explosion volume that the game made. The volumes that a replay makes are not recorded.</summary>
+    public static void ObserveExplosion(ExplosionVolumeTemplate template, Celestial parent, Brutal.Numerics.double3 positionCcf,
+        Brutal.Numerics.double3 velocityCcf, float intensity, float ambientPressurePa, int seed)
+    {
+        if (Scene == null)
+            _recorder?.AddExplosion(template, parent, positionCcf, velocityCcf, intensity, ambientPressurePa, seed);
+    }
+
+    public static void ObserveDestruction(in ExplosionContext context)
+    {
+        if (Scene == null)
+            _recorder?.AddDestruction(in context);
+    }
+
     /// <summary>Gives a mark to the recording that runs. Returns false when no recording runs.</summary>
     public static bool RequestMark()
     {
@@ -288,6 +302,7 @@ internal static partial class ReplaySession
         _recordingForTake = false;
         if (recorder == null)
             return;
+        recorder.Close();
         ReplayFlight flight = recorder.Flight;
         if (flight.Actors.Count == 0 || flight.Actors[0].Segments.Count == 0)
         {

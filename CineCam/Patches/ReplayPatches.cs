@@ -68,9 +68,31 @@ internal static class ReplayPatches
             // the view, so the replay draws its kittens here in place of the live crew. Without this patch the
             // replay shows no kittens and the live crew stays visible.
             PatchOptional(typeof(Vehicle), nameof(Vehicle.UpdateSeatedCrewRenderData), nameof(BeforeSeatedCrew), draw);
+            Type[]? trails = Shape(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
+                "CommandBuffer", nameof(IViewport), nameof(Celestial), "Int32");
             PatchOptional(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
-                nameof(BeforeTrails), Shape(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
-                    "CommandBuffer", nameof(IViewport), nameof(Celestial), "Int32"));
+                nameof(BeforeTrails), trails);
+            // The explosion volumes render with the plume trails. These patches show the volumes of the replay
+            // on the recording time and leave out the live trails. Without one of them the replay shows neither.
+            ReplayExplosions.PatchesReady = trails != null
+                && PatchOptional(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
+                    nameof(AfterTrails), trails, postfix: true)
+                && PatchOptional(typeof(PlumeTrailSegmentsManager), nameof(PlumeTrailSegmentsManager.CopySegmentsTo), nameof(BeforeTrailCopy),
+                    Single(typeof(PlumeTrailSegmentsManager), nameof(PlumeTrailSegmentsManager.CopySegmentsTo)))
+                && PatchOptional(typeof(PlumeTrailSegmentsManager), nameof(PlumeTrailSegmentsManager.CopyShadowSegmentsTo), nameof(BeforeTrailCopy),
+                    Single(typeof(PlumeTrailSegmentsManager), nameof(PlumeTrailSegmentsManager.CopyShadowSegmentsTo)))
+                && PatchOptional(typeof(ExplosionVolumeSettings), nameof(ExplosionVolumeSettings.CreateTimingProfile), nameof(BeforeExplosionClock), none);
+            // The recorder takes the explosion volumes that the game makes and the destructions that ask for them.
+            PatchOptional(typeof(ExplosionVolumeManager), nameof(ExplosionVolumeManager.Spawn), nameof(BeforeExplosionSpawn),
+                Single(typeof(ExplosionVolumeManager), nameof(ExplosionVolumeManager.Spawn)));
+            PatchOptional(typeof(ExplosionVolumeManager), nameof(ExplosionVolumeManager.Spawn), nameof(AfterExplosionSpawn),
+                Single(typeof(ExplosionVolumeManager), nameof(ExplosionVolumeManager.Spawn)), postfix: true);
+            PatchOptional(typeof(ExplosionSystem), nameof(ExplosionSystem.SpawnForDestruction), nameof(AfterDestruction),
+                [typeof(ExplosionContext).MakeByRefType()], postfix: true);
+            // The recorded parachute canopies go into the mesh buckets after Program empties them, where it draws
+            // the live canopies. Without this patch the replay shows the parachute lines without canopies.
+            PatchOptional(typeof(SuperMeshRenderSystem), nameof(SuperMeshRenderSystem.ClearBuckets), nameof(AfterClearBuckets),
+                [typeof(IViewport)], postfix: true);
             // The light of the recorded plumes needs the plume data that EndPlumeGrouping computes.
             // Without this patch the recorded plumes give no light.
             PatchOptional(typeof(VolumetricExhaustRenderer), nameof(VolumetricExhaustRenderer.EndPlumeGrouping), nameof(AfterPlumes),
@@ -147,6 +169,13 @@ internal static class ReplayPatches
         }
     }
 
+    // The parameter types of the only method of this name, or null when there are more or none.
+    private static Type[]? Single(Type owner, string target)
+    {
+        MethodInfo[] matches = AccessTools.GetDeclaredMethods(owner).Where(method => method.Name == target).ToArray();
+        return matches.Length == 1 ? matches[0].GetParameters().Select(parameter => parameter.ParameterType).ToArray() : null;
+    }
+
     // The parameter types of a method whose parameters use a game type that the mod does not
     // reference, found by the type names. Null when no single method has these names.
     private static Type[]? Shape(Type owner, string target, params string[] parameterTypes)
@@ -172,6 +201,8 @@ internal static class ReplayPatches
         _harmony = null;
         ReplaySound.PitchHook = false;
         _worldChangeDepth = 0;
+        _hideTrails = false;
+        ReplayExplosions.PatchesReady = false;
         _pausedAlert = null;
         _pausedAlertLooked = false;
     }
@@ -411,10 +442,95 @@ internal static class ReplayPatches
 
     // A null parent makes VolumetricTrailRenderer.PrepareAndRenderShadowCascades prepare no
     // trail frame, so RenderWithUpscaling draws no plume trail and no explosion volume.
+    private static bool _hideTrails;
+
+    // VolumetricTrailRenderer.PrepareFrame copies the live plume trails and their shadow segments only inside
+    // PrepareAndRenderShadowCascades, so the copy patches leave them out while the replay view prepares. The
+    // explosion volumes of the replay then render alone. Without the replay explosions a null parent makes the
+    // method prepare no trail frame, so RenderWithUpscaling draws no plume trail and no explosion volume.
     private static void BeforeTrails(IViewport __1, ref Celestial? __2)
     {
-        if (ReplaySession.IsPlayingBack && ReferenceEquals(__1, Program.MainViewport))
+        _hideTrails = false;
+        if (!ReplaySession.IsPlayingBack || !ReferenceEquals(__1, Program.MainViewport))
+            return;
+        if (ReplaySession.Scene?.Explosions != null)
+            _hideTrails = true;
+        else
             __2 = null;
+    }
+
+    private static void AfterTrails() => _hideTrails = false;
+
+    private static bool BeforeTrailCopy(ref int __result)
+    {
+        if (!_hideTrails)
+            return true;
+        __result = 0;
+        return false;
+    }
+
+    // ExplosionVolumeSettings.CreateTimingProfile gives every time read of the explosion volumes, from
+    // Universe.GetElapsedSeconds and the last sim step, which stand still in a replay.
+    private static bool BeforeExplosionClock(ref ExplosionTimingProfile __result)
+    {
+        if (ReplaySession.Scene?.Explosions is not { } explosions)
+            return true;
+        __result = new ExplosionTimingProfile(explosions.Now, explosions.Step);
+        return false;
+    }
+
+    // ExplosionVolumeStore.Add appends a new volume while the store has room, so a longer store after the call
+    // holds the new volume last. A merge into a burning volume leaves the length as it was.
+    private static void BeforeExplosionSpawn(ExplosionVolumeManager __instance, out int __state)
+    {
+        __state = ReplaySession.IsRecording && !ReplaySession.IsPlayingBack ? ReplayExplosions.StoreOf(__instance)?.Count ?? -1 : -1;
+    }
+
+    private static void AfterExplosionSpawn(ExplosionVolumeManager __instance, int __state, ExplosionVolumeTemplate __0, Celestial __1,
+        double3 __2, double3 __3, float __4, float __5)
+    {
+        if (__state < 0)
+            return;
+        try
+        {
+            int seed = 0;
+            if (ReplayExplosions.StoreOf(__instance) is { } store && store.Count > __state && ReferenceEquals(store[store.Count - 1].Template, __0))
+                seed = (int)store[store.Count - 1].NoiseSeed;
+            ReplaySession.ObserveExplosion(__0, __1, __2, __3, __4, __5, seed);
+        }
+        catch (Exception ex)
+        {
+            DefaultCategory.Log.Warning($"[CineCam] The recording missed an explosion: {ex.Message}");
+        }
+    }
+
+    // ExplosionSystem.SpawnForDestruction drops a call from another thread, and so does the recorder.
+    private static void AfterDestruction(ref ExplosionContext __0)
+    {
+        if (!ReplaySession.IsRecording || !Program.IsMainThread())
+            return;
+        try
+        {
+            ReplaySession.ObserveDestruction(in __0);
+        }
+        catch (Exception ex)
+        {
+            DefaultCategory.Log.Warning($"[CineCam] The recording missed a destruction: {ex.Message}");
+        }
+    }
+
+    private static void AfterClearBuckets(IViewport __0)
+    {
+        if (ReplaySession.Scene is not { } scene || !ReferenceEquals(__0, Program.MainViewport))
+            return;
+        try
+        {
+            scene.DrawCanopies(__0);
+        }
+        catch (Exception ex)
+        {
+            ReplaySession.Abort(ex);
+        }
     }
 
     // The same early return that the particle methods take when the particle setting is off.

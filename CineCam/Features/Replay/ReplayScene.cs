@@ -17,11 +17,15 @@ internal sealed class ReplayScene : IDisposable
         double3 Center, double Radius, IVASeat[] Seats)
     {
         public ReplayPartState? PartState { get; set; }
+        public ReplayPartState? ChuteState { get; set; }
+        public ReplayCanopies? Canopies { get; set; }
     }
     private readonly Dictionary<ReplaySegment, Model> _models = new(ReferenceEqualityComparer.Instance);
     private readonly List<(Model Model, ReplaySample Sample)> _visible = [];
     private readonly HashSet<VolumetricExhaustInstance> _seenPlumes = new(ReferenceEqualityComparer.Instance);
     private readonly List<ExhaustLight> _lights = [];
+    private readonly List<(ReplayCanopies Canopies, double4x4 Transform)> _canopyDraws = [];
+    private readonly ReplayExplosions? _explosions;
     private readonly Celestial _body;
     private readonly StellarBody? _sun;
     private readonly ReplayLiveState _liveState = new();
@@ -93,6 +97,7 @@ internal sealed class ReplayScene : IDisposable
                 {
                     Fit.Segments++;
                     Fit.ConnectorsDropped += dropped;
+                    ReplayCanopies.Release(parts);
                     (double3 min, double3 max) = parts.ComputeBoundingBoxAsmb();
                     RocketNozzle[] nozzles = ReplayParts.OrderedNozzles(parts);
                     // The recorded engines map to the nozzles by their order, so a segment whose
@@ -105,8 +110,14 @@ internal sealed class ReplayScene : IDisposable
                     }
                     var shape = ReplayShape.FromBounds(FlightRecorder.ToV3(min), FlightRecorder.ToV3(max), segment.CenterOfMass,
                         id => FindPart(parts, id));
+                    ReplayPartState? chutes = ChuteStateOf(segment, parts);
                     _models.Add(segment, new Model(actor, segment, parts, nozzles, shape, (min + max) * 0.5,
-                        Math.Max(2, (max - min).Length() * 0.5), SeatedCrew(parts)) { PartState = PartStateOf(segment, parts) });
+                        Math.Max(2, (max - min).Length() * 0.5), SeatedCrew(parts))
+                    {
+                        PartState = PartStateOf(segment, parts),
+                        ChuteState = chutes,
+                        Canopies = chutes != null ? new ReplayCanopies(chutes.Chutes) : null,
+                    });
                 }
                 catch
                 {
@@ -119,6 +130,7 @@ internal sealed class ReplayScene : IDisposable
                 direction => QuickScene.SurfaceRadiusCcf(body, QuickScene.ToDouble3(direction)));
             Player = new ReplayTakePlayer(World);
             Site = SiteFor(null, null, out _);
+            _explosions = ReplayExplosions.TryCreate(flight, system);
         }
         catch
         {
@@ -127,9 +139,13 @@ internal sealed class ReplayScene : IDisposable
         }
     }
 
+    /// <summary>The explosions of the replay, or null when the replay shows none.</summary>
+    public ReplayExplosions? Explosions => _explosions;
+
     public void Enter()
     {
         _liveState.Enter();
+        _explosions?.Enter();
         _camera.Follow(World.FollowedAt(Time).Id);
         _cloudStep.Jump(Time);
         Update(0);
@@ -146,6 +162,7 @@ internal sealed class ReplayScene : IDisposable
         {
             _sound?.Dispose();
             _sound = null;
+            _explosions?.Dispose();
             _liveState.Dispose();
         }
         finally
@@ -280,6 +297,7 @@ internal sealed class ReplayScene : IDisposable
                 _visible.Add((_models[pose.Segment], pose.Sample));
         }
         RetainCrew();
+        _explosions?.Update(Time);
 
         if (CameraMode == ReplayCameraMode.Take)
             ApplyTake();
@@ -379,14 +397,65 @@ internal sealed class ReplayScene : IDisposable
         return null;
     }
 
+    // The recorded parachutes of a segment, or null when the segment has none, they do not fit the decoded tree, or
+    // the game members of the canopy shape are missing. Then the parachutes show no canopy.
+    private static ReplayPartState? ChuteStateOf(ReplaySegment segment, PartTree parts)
+    {
+        if (segment.Chutes is not { Count: > 0 } || !ReplayCanopies.Available)
+            return null;
+        ReplayPartState state = ReplayPartState.OfChutes(parts);
+        if (state.Matches(segment.Chutes, segment.ChuteKey))
+            return state;
+        DefaultCategory.Log.Warning($"[CineCam] The replay shows the parachutes of a segment at {segment.Start:0.###} s without their canopies, because the parachutes differ from the recording.");
+        return null;
+    }
+
     public void DrawModels(IViewport viewport, int frameIndex)
     {
+        _canopyDraws.Clear();
         foreach ((Model model, ReplaySample sample) in _visible)
         {
             if (model.PartState != null)
                 ApplyPartState(model, sample.Time);
+            if (model.Canopies != null)
+                ApplyChutes(model, sample.Time);
             double4x4 transform = ModelMatrix(sample);
             model.Parts.UpdateRenderData(in transform, false, viewport, frameIndex);
+            if (model.Canopies != null)
+                _canopyDraws.Add((model.Canopies, transform));
+        }
+    }
+
+    /// <summary>
+    /// Draws the parachute canopies of the models that <see cref="DrawModels"/> drew in this frame. The canopies go
+    /// into the mesh buckets, which SuperMeshRenderSystem.ClearBuckets empties after the part models are drawn, so
+    /// this runs after that call, where Program draws the live canopies.
+    /// </summary>
+    public void DrawCanopies(IViewport viewport)
+    {
+        if (_canopyDraws.Count == 0)
+            return;
+        var view = Program.Instance.SuperMeshRenderSystem.ViewForViewport(viewport);
+        double deltaTime = Program.GetPlayerDeltaTime();
+        foreach ((ReplayCanopies canopies, double4x4 transform) in _canopyDraws)
+            canopies.Draw(view, deltaTime, in transform);
+    }
+
+    // The canopy shape follows the recorded parachute state. A model whose parachutes fail shows them without
+    // canopies, and the replay goes on.
+    private void ApplyChutes(Model model, double time)
+    {
+        try
+        {
+            model.ChuteState!.Apply(model.Segment.Chutes!, time);
+            model.Canopies!.Shape();
+        }
+        catch (Exception ex)
+        {
+            model.Canopies!.Clear();
+            model.Canopies = null;
+            model.ChuteState = null;
+            DefaultCategory.Log.Warning($"[CineCam] The replay shows the parachutes of a segment at {model.Segment.Start:0.###} s without their canopies after an error: {ex.Message}");
         }
     }
 
@@ -613,6 +682,7 @@ internal sealed class ReplayScene : IDisposable
 
     private void ResetPlumes()
     {
+        _explosions?.Jump();
         _seenPlumes.Clear();
         foreach (Model model in _models.Values)
         {

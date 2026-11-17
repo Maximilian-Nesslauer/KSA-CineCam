@@ -36,6 +36,7 @@ internal sealed class FlightRecorder
     private bool _partStateMissed;
     private bool _followChanged;
     private int _pendingMarks;
+    private readonly ReplayEffectLog _effects = new();
 
     private sealed record Track(Vehicle Vehicle, ReplayActor Actor)
     {
@@ -48,10 +49,13 @@ internal sealed class FlightRecorder
         public KeyHash[] Crew { get; set; } = [];
         public ReplayPartState? PartState { get; set; }
         public ReplayChannelWriter? Channels { get; set; }
+        public ReplayPartState? ChuteState { get; set; }
+        public ReplayChannelWriter? ChuteChannels { get; set; }
     }
 
     private sealed record CaptureFrame(Track Track, RocketNozzle[] Nozzles, ReplaySegment? Segment, ReplaySample Sample,
-        ReplayPartState? PartState, ReplayChannelWriter? Channels, long ChannelBytes);
+        ReplayPartState? PartState, ReplayChannelWriter? Channels, ReplayPartState? ChuteState, ReplayChannelWriter? ChuteChannels,
+        long ChannelBytes);
 
     private const int PrimaryId = 0;
 
@@ -61,7 +65,7 @@ internal sealed class FlightRecorder
         _body = body;
         _primary = new VehicleReader(vehicle);
         Flight = new ReplayFlight(VersionInfo.Current.VersionString, system.Id, body.Id,
-            Universe.GetElapsedSeconds(), [], []) { Follows = [] };
+            Universe.GetElapsedSeconds(), [], []) { Follows = [], Explosions = [], Destructions = [] };
         AddTrack(new Track(vehicle, new ReplayActor(PrimaryId, vehicle.Id, [])));
         Capture();
     }
@@ -197,9 +201,12 @@ internal sealed class FlightRecorder
                 track.Crew = CrewOf(track.Vehicle);
                 track.PartState = frame.PartState;
                 track.Channels = frame.Channels;
+                track.ChuteState = frame.ChuteState;
+                track.ChuteChannels = frame.ChuteChannels;
                 track.Actor.Segments.Add(frame.Segment);
             }
             frame.Channels?.Commit();
+            frame.ChuteChannels?.Commit();
             track.Actor.Segments[^1].Samples.Add(frame.Sample);
         }
         _bytes += tickBytes;
@@ -235,19 +242,23 @@ internal sealed class FlightRecorder
         }
 
         _lastTime = time;
+        _bytes += _effects.Flush(Flight, time);
         return null;
 
         CaptureFrame ReadFrame(Track track, bool newSegment)
         {
             PartTree parts = track.Vehicle.Parts;
             RocketNozzle[] nozzles = newSegment ? ReplayParts.OrderedNozzles(parts) : track.Nozzles;
-            (ReplayPartState? partState, ReplayChannelWriter? channels, long channelBytes) = ReadPartState(track, newSegment, time);
+            (ReplayPartState? partState, ReplayChannelWriter? channels, long channelBytes) = ReadPartState(track, newSegment, time, false);
+            (ReplayPartState? chuteState, ReplayChannelWriter? chutes, long chuteBytes) = ReadPartState(track, newSegment, time, true);
             ReplaySegment? segment = newSegment
                 ? new ReplaySegment(time, ReplayParts.Encode(parts), [])
                 {
                     CenterOfMass = ToV3(track.Vehicle.CenterOfMassAsmb),
                     Channels = channels?.Channels,
                     PartKey = channels != null ? partState?.Key : null,
+                    Chutes = chutes?.Channels,
+                    ChuteKey = chutes != null ? chuteState?.Key : null,
                 }
                 : null;
             ReplaySample sample = Sample(track.Vehicle, nozzles, time, bodyPosition, eclToBodyFixed);
@@ -255,7 +266,7 @@ internal sealed class FlightRecorder
                 sample = sample with { State = state };
             else if (track.Vehicle is KittenEva kitten)
                 sample = sample with { Kitten = KittenStateOf(kitten) };
-            return new CaptureFrame(track, nozzles, segment, sample, partState, channels, channelBytes);
+            return new CaptureFrame(track, nozzles, segment, sample, partState, channels, chuteState, chutes, channelBytes + chuteBytes);
         }
     }
 
@@ -276,17 +287,48 @@ internal sealed class FlightRecorder
             AddEvent(detected);
     }
 
-    // The part state is a part of the picture, not of the flight, so a failure to read it leaves the
-    // segment without channels and the recording goes on.
-    private (ReplayPartState? State, ReplayChannelWriter? Channels, long Bytes) ReadPartState(Track track, bool newSegment, double time)
+    /// <summary>Adds the explosions and destructions up to the last sample, before the flight is saved.</summary>
+    public void Close() => _bytes += _effects.Flush(Flight, Math.Max(0, _lastTime));
+
+    /// <summary>
+    /// Takes an explosion volume that ExplosionVolumeManager.Spawn made now. The flight gets it at the next
+    /// sample, because a replay shows nothing after its last sample.
+    /// </summary>
+    public void AddExplosion(ExplosionVolumeTemplate template, Celestial parent, double3 positionCcf, double3 velocityCcf,
+        float intensity, float ambientPressurePa, int seed)
     {
-        ReplayPartState? partState = newSegment ? null : track.PartState;
-        ReplayChannelWriter? channels = newSegment ? null : track.Channels;
+        if (!ReferenceEquals(parent, _body) || string.IsNullOrWhiteSpace(template.Id) || template.Id.Length > 256)
+            return;
+        _effects.Add(new ReplayExplosion(Universe.GetElapsedSeconds() - Flight.StartTime, template.Id, parent.Id,
+            ToV3(positionCcf), ToV3(velocityCcf), Math.Max(0f, Finite(intensity)), Math.Max(0f, Finite(ambientPressurePa)), Math.Max(0, seed)));
+    }
+
+    /// <summary>
+    /// Takes a destruction that ExplosionSystem.SpawnForDestruction received now, see <see cref="AddExplosion"/>.
+    /// A destruction of a vehicle that the recording does not have is left out.
+    /// </summary>
+    public void AddDestruction(in ExplosionContext context)
+    {
+        Vehicle? vehicle = context.Vehicle;
+        int? actor = vehicle != null && _actors.TryGetValue(vehicle, out Track? track) ? track.Actor.Id : null;
+        if (vehicle != null && actor == null)
+            return;
+        string? part = context.Part?.Id is { Length: > 0 and <= 256 } id ? id : null;
+        _effects.Add(new ReplayDestruction(Universe.GetElapsedSeconds() - Flight.StartTime, context.Cause.ToString(),
+            Finite(context.IntensityJ), Finite(context.PropellantMassKg), Finite(context.AmbientPressurePa), actor, part), vehicle?.Id);
+    }
+
+    // The part state is a part of the picture, not of the flight, so a failure to read it leaves the
+    // segment without channels and the recording goes on. The parachutes are a group of their own.
+    private (ReplayPartState? State, ReplayChannelWriter? Channels, long Bytes) ReadPartState(Track track, bool newSegment, double time, bool chutes)
+    {
+        ReplayPartState? partState = newSegment ? null : chutes ? track.ChuteState : track.PartState;
+        ReplayChannelWriter? channels = newSegment ? null : chutes ? track.ChuteChannels : track.Channels;
         try
         {
             if (newSegment)
             {
-                partState = ReplayPartState.Of(track.Vehicle.Parts);
+                partState = chutes ? ReplayPartState.OfChutes(track.Vehicle.Parts) : ReplayPartState.Of(track.Vehicle.Parts);
                 if (partState.Kinds.Count > ReplayFile.ChannelLimit)
                 {
                     // ReplayFile drops the channels of such a segment, so the recorder does not read them.
@@ -314,7 +356,12 @@ internal sealed class FlightRecorder
                 DefaultCategory.Log.Warning($"[CineCam] The replay records no part state of {track.Vehicle.Id}: {ex.Message}");
             _partStateFailed = true;
             // The keys that a segment already has stay, and the rest of the segment holds the last values.
-            if (!newSegment)
+            if (!newSegment && chutes)
+            {
+                track.ChuteState = null;
+                track.ChuteChannels = null;
+            }
+            else if (!newSegment)
             {
                 track.PartState = null;
                 track.Channels = null;
@@ -613,6 +660,9 @@ internal sealed class FlightRecorder
         // The file reader rejects a value that is not finite, so such a value is stored as 0.
         static float Finite(double value) => (float)value is float f && float.IsFinite(f) ? f : 0f;
     }
+
+    // The file reader rejects a value that is not finite, so such a value is stored as 0.
+    private static float Finite(float value) => float.IsFinite(value) ? value : 0f;
 
     internal static V3 ToV3(double3 value) => new(value.X, value.Y, value.Z);
     internal static ReplayRotation ToRotation(doubleQuat value) => new(value.X, value.Y, value.Z, value.W);
