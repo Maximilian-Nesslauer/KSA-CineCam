@@ -7,6 +7,7 @@ The file values are `Auto`, `English` and `German`.
 Auto uses the current .NET UI culture, with German for `de` cultures and English for all other cultures.
 
 The language changes the CineCam window, its tabs and controls, the timeline, the recording strip, help, status, warnings and problem text.
+The stock game checkboxes still draw their states as ON and OFF.
 Take names, shot names, vehicle and part names, cue names, event identifiers and paths keep their original text.
 Console commands, console output, logs, JSON, CSV and local control files stay English.
 An operating system or game exception can include technical detail in its original language.
