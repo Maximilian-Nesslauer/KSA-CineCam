@@ -63,7 +63,7 @@ python cinecam.py close
 
 ## Integration API
 
-Other mods subscribe to `CineCam.Api.CineCamEvents` through reflection, see [Integration for other mods](integration.md). The tests of the API, the cue action and the replay feed are in `CineCam.Tests/IntegrationTests.cs`.
+Other mods subscribe to `CineCam.Api.CineCamEvents` through reflection, see [Integration for other mods](integration.md). The tests of the API, the cue action and the replay feed are in `CineCam.Tests/IntegrationTests.cs`. Run `python -I scripts/test_integration_example.py --scratch <test-folder>` to compile the actual example with the API and check its state over pauses, seeks, repeated cues, a render and a close. This test needs .NET 10 but no game assemblies.
 
 ## Maintenance on each game update
 

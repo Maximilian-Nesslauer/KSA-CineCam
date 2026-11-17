@@ -125,8 +125,9 @@ internal static class CineCamLink
     {
         // A replay run can start after a cue, so the state of the overlay comes from the cues that fired.
         string[] passed = _api?.GetProperty("PassedCues")?.GetValue(null) as string[] ?? [];
-        MyOverlay.SetVisible(passed.Contains("overlay-in", StringComparer.OrdinalIgnoreCase)
-            && !passed.Contains("overlay-out", StringComparer.OrdinalIgnoreCase));
+        int lastIn = Array.FindLastIndex(passed, cue => cue.Equals("overlay-in", StringComparison.OrdinalIgnoreCase));
+        int lastOut = Array.FindLastIndex(passed, cue => cue.Equals("overlay-out", StringComparison.OrdinalIgnoreCase));
+        MyOverlay.SetVisible(lastIn > lastOut);
     }
 
     // A replay ends its run at each pause and seek, so the overlay keeps its state until the replay closes.
