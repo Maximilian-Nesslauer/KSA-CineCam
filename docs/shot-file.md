@@ -34,7 +34,7 @@ Top level fields:
 | `keepOut` | Boxes the camera must stay out of, see the keep-out boxes. A take can set its own `keepOut`, and then the take wins |
 | `takes` | The list of takes. A file with one take can keep `camera` and `speed` at the top level |
 
-A take has `name`, `default` (the take that starts without a name), `site`, `anchor`, `checkpoint`, `autoStart`, `autoStartDelay`, `preRoll`, `sound`, `picture`, `exactApsides`, `camera` (a list of shots, at least one), `speed` (a list of speed keys) and `actions` (a list of actions). A file with one take and no `takes` list has these fields at the top level.
+A take has `name`, `default` (the take that starts without a name), `site`, `anchor`, `checkpoint`, `autoStart`, `autoStartDelay`, `pauseAt`, `preRoll`, `sound`, `picture`, `exactApsides`, `camera` (a list of shots, at least one), `speed` (a list of speed keys) and `actions` (a list of actions). A file with one take and no `takes` list has these fields at the top level.
 
 `anchor` is a point on a body that is the origin of the site frame when no Landmark is named: `{ "body": "Earth", "latitude": 28.6, "longitude": -80.6, "altitude": 0 }`. Latitude and longitude are in degrees (north and east are positive, longitude 0 is the 0 meridian of the body), and `altitude` is in meters above the terrain (default 0). When a take names a `site` too, the Landmark wins and the anchor has no effect.
 
@@ -62,10 +62,10 @@ Fields of one shot type:
 | `orbit` | `center` (default `[0,0,0]`), `radius`, `height`, `startDeg`, `degPerSec`, `lookAt`. The camera circles the +X axis through `center` |
 | `crane` | `from`, `to` (heights along +X), `radius`, `azimuth`. The camera rises and looks at the axis |
 | `tripod` | `position`, `lookAt`. A fixed camera |
-| `track` | `position`, `keepSize`, `fit`. A fixed camera in the site frame that looks at the middle of the vehicle. With `keepSize` the field of view follows the distance, so the vehicle keeps its size on the screen |
-| `chase` | `frame`, `offset`, `lookAt`, `smoothing`, `fit`. Fixed to the vehicle. `frame` is `vehicle` (default), `local` or `flight`. `smoothing` is the turn smoothing in seconds (0 to 60, default 0.5). It smooths the turn of the vehicle frame, so a local shot ignores it |
-| `part` | `part`, `frame`, `offset`, `lookAt`, `smoothing`, `fit`. Like chase, with the origin at a part. `part` is the id or the display name of a part. An empty or unknown part uses the base of the vehicle |
-| `path` | `points`, `fit`, and `frame` for a vehicle-target path. A camera move through keyframes |
+| `track` | `position`, `keepSize`, `fit`, `fitBy`. A fixed camera in the site frame that looks at the middle of the vehicle. With `keepSize` the field of view follows the distance, so the vehicle keeps its size on the screen |
+| `chase` | `frame`, `offset`, `lookAt`, `smoothing`, `fit`, `fitBy`. Fixed to the vehicle. `frame` is `vehicle` (default), `local` or `flight`. `smoothing` is the turn smoothing in seconds (0 to 60, default 0.5). It smooths the turn of the vehicle frame, so a local shot ignores it |
+| `part` | `part`, `frame`, `offset`, `lookAt`, `smoothing`, `fit`, `fitBy`. Like chase, with the origin at a part. `part` is the id or the display name of a part. An empty or unknown part uses the base of the vehicle |
+| `path` | `points`, `fit`, `fitBy`, and `frame` for a vehicle-target path. A camera move through keyframes |
 
 A chase, part, path or track shot can also have `aim`, `aimOffset` and `pick`.
 
@@ -82,7 +82,7 @@ A path shot has a list of `points`. Each point is `{ "t": 0.5, "position": [x, y
 
 In a blend, the weight follows a smootherstep curve, so the camera starts and stops gently. The point that the camera looks at is mixed with the same weight, so a subject that both shots look at stays in the picture. When the two shots are tied to different frames (for example a site tripod and a vehicle chase), the camera position follows a curve that swings around the subject instead of the straight line. A blend between two shots of the same frame stays a straight line. A cut is not changed.
 
-`fit` is a number, the share of the picture height that the whole vehicle should fill, for example `0.7`, or `"off"` (the default). The field of view is set in every frame from the distance to the middle of the vehicle and from the size of the vehicle, so the vehicle keeps its share while it flies away. The field of view stays between 5 and 90 degrees. `fit` replaces the `fov` of the shot and of its path points, and `keepSize`. A part shot frames the whole vehicle, not the part.
+`fit` is a number, the share of the picture height that the whole vehicle should fill, for example `0.7`, or `"off"` (the default). The field of view is set in every frame from the distance to the middle of the vehicle and from the size of the vehicle, so the vehicle keeps its share while it flies away. The field of view stays between 5 and 90 degrees. `fit` replaces the `fov` of the shot and of its path points, and `keepSize`. A part shot frames the whole vehicle, not the part. `"fitBy": "size"` (the default) fits the diagonal of the length and the width of the vehicle, so the field of view does not change when the vehicle turns. `"fitBy": "height"` fits only the length along the nose axis of the vehicle (+X), the height of a rocket on the pad, so a slim rocket fills its share of the picture height and a wide one can stand out at the sides. In the window this is the field **Fit by** below **Share of the picture height**.
 
 ```json
 { "type": "chase", "frame": "flight", "offset": [15, 8, 120], "lookAt": [10, 0, 0], "fit": 0.7, "duration": 12, "transition": 2 }
@@ -97,6 +97,12 @@ In a blend, the weight follows a smootherstep curve, so the camera starts and st
 ```json
 { "type": "chase", "target": "separated", "pick": "newest", "frame": "local", "offset": [0, 30, -20], "aim": "vehicle", "fit": 0.5, "avoidSun": 30, "duration": 8, "transition": 1 }
 ```
+
+## Rehearsal pause
+
+`"pauseAt": 12` is a field of a take: a take or a dry run plays once up to this take time in seconds (above 0 and at most 86400) and then pauses for an edit, as the edit key does. Resume plays on, and the run does not pause there again. Use it to rehearse the start of a take: with **Start the take after a reset** on, each reset plays the start and stops at the same moment. An offline capture, a shot preview and a replay do not pause, and the event log of a run has a row `info, pauseAt` that says the time. In the window this is the switch **Pause the run at a take time** with the field **Pause at (s)** on the **Take setup** tab. Turn it off for the final take.
+
+The pause time does not fit into `preRoll`, which loops or plays the opening shots until a flight event and then goes on without a stop: the pause stops the sim and gives the camera free, which only the edit pause of a live run can do.
 
 ## Pre-roll and triggers
 

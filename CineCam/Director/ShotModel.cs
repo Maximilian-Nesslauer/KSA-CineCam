@@ -23,6 +23,9 @@ public enum ShotUp { Vehicle, Horizon }
 
 public enum ShotAim { Look, Vehicle }
 
+/// <summary><see cref="Size"/> fits the diagonal of length and width, <see cref="Height"/> the length along the nose axis only.</summary>
+public enum FitMeasure { Size, Height }
+
 /// <summary><see cref="Separated"/> is the controlled vehicle until a decoupler splits a vehicle off during the take.</summary>
 public enum ShotSubject { Controlled, Separated }
 
@@ -143,6 +146,8 @@ public sealed class Shot
     /// <summary>The share of the picture height that the whole vehicle fills, or null for off.</summary>
     public double? Fit { get; set; }
 
+    public FitMeasure FitBy { get; set; } = FitMeasure.Size;
+
     // Chase and part.
     public V3 Offset { get; set; }
 
@@ -258,6 +263,14 @@ public sealed class Take
 
     /// <summary>Seconds between the end of a reset and the automatic take start.</summary>
     public double AutoStartDelay { get; set; } = DefaultAutoStartDelay;
+
+    public const double MaxPauseAt = 86400.0;
+
+    /// <summary>
+    /// The take time in seconds at which a run pauses for an edit, once per run, to rehearse the start of a
+    /// take, or null for no pause. An offline capture and a replay do not pause.
+    /// </summary>
+    public double? PauseAt { get; set; }
 
     /// <summary>Null to use the boxes of the file. An empty list turns them off for the take.</summary>
     public List<KeepOutBox>? KeepOut { get; set; }

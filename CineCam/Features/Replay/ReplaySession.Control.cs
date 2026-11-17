@@ -127,6 +127,12 @@ internal static partial class ReplaySession
                     NeedScene();
                 Program.DrawUI = show;
                 return Program.DrawUI ? "Interface shown." : "Interface hidden.";
+            case ReplayOperation.Reload:
+                return ReloadShotFile(command.Discard == true);
+            case ReplayOperation.SelectTake:
+                return SelectTake(Text(command.Name, "take name"));
+            case ReplayOperation.Quit:
+                return Quit();
             case ReplayOperation.Unknown:
                 throw new Refusal("unknown_operation", "Choose a supported CineCam operation.");
         }
@@ -176,6 +182,51 @@ internal static partial class ReplaySession
             default:
                 throw new Refusal("unknown_operation", "Choose a supported CineCam operation.");
         }
+    }
+
+    // The same rule as the Reload button of the window: the file is read only while no take runs.
+    private static string ReloadShotFile(bool discard)
+    {
+        EditSession session = CineCamWindow.EditorSession;
+        string block = ViewText.FileEditBlock(TakeRunner.Current != null);
+        if (block.Length > 0)
+            throw new Refusal("busy", block);
+        if (session.Dirty && !discard)
+            throw new Refusal("unsaved_changes", "The editor has unsaved changes. Save them in the window, or reload with --discard to drop them.");
+        if (!File.Exists(session.Path))
+            throw new Refusal("file_not_found", $"There is no shot file at {session.Path}.");
+        if (!session.Reload())
+            throw new Refusal("invalid_data", session.Message);
+        ShotFileStore.PathOverride = session.Path;
+        return $"{session.Message} Selected take: {session.Take?.Name}.";
+    }
+
+    private static string SelectTake(string name)
+    {
+        EditSession session = CineCamWindow.EditorSession;
+        if (session.Document is not { } document)
+            throw new Refusal("no_file", "The editor has no shot file.");
+        if (!session.SelectTakeByName(name))
+            throw new Refusal("unknown_take", $"The shot file has no take \"{name}\". Takes: {string.Join(", ", document.Takes.Select(t => t.Name))}.");
+        return $"Take \"{session.Take!.Name}\" selected.";
+    }
+
+    // The same path as the Quit button of the game menu (EscMenu, ExitPopup): Program.Instance.RequestExit(0)
+    // ends the frame loop of App.Run after this frame, so the response of this request is written first.
+    // An open replay closes before, so the interface and the camera are as the player left them.
+    private static string Quit()
+    {
+        var state = new QuitState(_render != null, _strayCapture != null, IsRecording, HasUnsavedFlight,
+            TakeRunner.IsRunning, TakeRunner.Reset.IsActive);
+        if (ControlRules.QuitBlock(state) is { } block)
+            throw new Refusal(block.Code, block.Message);
+        if (Program.Instance is not { } program)
+            throw new Refusal("unavailable", "The game cannot end now.");
+        if (Scene != null)
+            CloseCore();
+        program.RequestExit(0);
+        DefaultCategory.Log.Info("[CineCam] Local control asked the game to end.");
+        return "The game ends.";
     }
 
     // A replay takes the camera, the sim speed and the vehicles, so it opens only when no take runs.
@@ -284,7 +335,9 @@ internal static partial class ReplaySession
         ListFiles().Select(path => Path.GetFileNameWithoutExtension(path)!).ToArray(),
         Events().Take(StatusListLimit).ToArray(), Markers().Take(StatusListLimit).ToArray(),
         Flight?.Actors.Select(actor => new ReplayActorStatus(actor.Id, actor.Name, CanFollow(actor.Id))).ToArray() ?? [],
-        CanHideInterface, OfflineHooks.Available, RenderStatus, Events().Count, Markers().Count);
+        CanHideInterface, OfflineHooks.Available, RenderStatus, Events().Count, Markers().Count,
+        CineCamWindow.EditorSession.Document?.Takes.Select(t => t.Name).ToArray() ?? [], CineCamWindow.EditorSession.Take?.Name,
+        CineCamWindow.EditorSession.Path, CineCamWindow.EditorSession.Dirty);
 
     private static void Complete(Action<ReplayResult>? completion, bool ok, string code, string message, string? previewPath = null)
     {

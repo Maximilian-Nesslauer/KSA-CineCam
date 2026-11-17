@@ -271,6 +271,16 @@ internal static class TakePanel
                 session.SetAutoStartDelay(delay);
         }
 
+        bool pauseAt = take.PauseAt.HasValue;
+        if (Widgets.Check("Pause the run at a take time", ref pauseAt))
+            session.SetPauseAt(pauseAt ? take.PauseAt ?? PauseAtDefault : null);
+        Widgets.Tip("For a rehearsal of the start: a take or a dry run plays once up to this time and then pauses for an edit, as Pause and edit does. Resume plays on, and Reset to checkpoint tries again. An offline capture and a replay do not pause. Turn it off for the final take.");
+        if (take.PauseAt is double at)
+        {
+            if (Widgets.Num("Pause at (s)##pauseat", ref at, 0.1f, RehearsalEdit.MinPauseAt, Take.MaxPauseAt))
+                session.SetPauseAt(at);
+        }
+
         double? left = flow.SecondsToStart(TakeRunner.ClockSeconds);
         if (left.HasValue)
             Widgets.Colored(string.Create(CultureInfo.InvariantCulture, $"The take starts in {left.Value:F1} s."), Widgets.GoodColor);
@@ -280,6 +290,8 @@ internal static class TakePanel
             Widgets.Colored(flow.Outcome, flow.Phase == ResetPhase.Failed ? Widgets.ErrorColor : Widgets.MutedColor);
         Widgets.Muted("A load clears the state of other mods. Arm them again before the flight.");
     }
+
+    private const double PauseAtDefault = 10.0;
 
     private static string _startBlock = "";
 

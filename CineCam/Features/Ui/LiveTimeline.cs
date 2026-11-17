@@ -23,6 +23,9 @@ internal static class LiveTimeline
     // The search for an event log reads at most this many of the newest take folders.
     private const int MaxRunsToRead = 20;
 
+    // A run that a reset or a stop ended early leaves the later events to the older runs, up to this many runs.
+    private const int MaxRunsToMerge = 4;
+
     private enum ItemKind { None, Shot, ShotEdge, Key, Action }
 
     private static bool _hidden;
@@ -37,6 +40,7 @@ internal static class LiveTimeline
     private static ActiveTake? _runSeen;
     private static Dictionary<string, double>? _runEvents;
     private static string _runFolder = "";
+    private static bool _runMerged;
 
     private static ItemKind _dragKind;
     private static int _dragIndex = -1;
@@ -205,6 +209,7 @@ internal static class LiveTimeline
         _runSeen = null;
         _runEvents = null;
         _runFolder = "";
+        _runMerged = false;
         _wasReplay = false;
         _lastSeek = double.NaN;
         _replayPlan = null;
@@ -301,12 +306,14 @@ internal static class LiveTimeline
         _runSeen = running;
         _runEvents = null;
         _runFolder = "";
+        _runMerged = false;
         try
         {
             string root = CineCamPaths.TakesFolder;
             if (!Directory.Exists(root))
                 return;
             IEnumerable<string> names = Directory.GetDirectories(root).Select(d => Path.GetFileName(d));
+            var runs = new List<TimelineLayout.RunLog>();
             foreach (string folder in TimelineLayout.RunFoldersNewestFirst(names, takeName).Take(MaxRunsToRead))
             {
                 string path = Path.Combine(root, folder, "events.csv");
@@ -314,18 +321,26 @@ internal static class LiveTimeline
                     continue;
                 using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 using var reader = new StreamReader(stream);
-                Dictionary<string, double> times = TimelineLayout.ReadEventTimes(reader, out bool finished);
-                if (!finished)
+                TimelineLayout.RunLog run = TimelineLayout.ReadRun(reader);
+                if (!run.Finished)
                     continue;
-                _runEvents = times;
-                _runFolder = folder;
-                return;
+                if (runs.Count == 0)
+                    _runFolder = folder;
+                runs.Add(run);
+                if (runs.Count >= MaxRunsToMerge)
+                    break;
             }
+
+            if (runs.Count == 0)
+                return;
+            _runEvents = TimelineLayout.MergeRuns(runs);
+            _runMerged = _runEvents.Keys.Any(name => !runs[0].Times.ContainsKey(name));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _runEvents = null;
             _runFolder = "";
+            _runMerged = false;
         }
     }
 
@@ -380,7 +395,9 @@ internal static class LiveTimeline
         string events = sources.Count == 0 ? "NO EVENTS" : "EVENT TIMES: " + string.Join(", ", sources);
         string? tip = layout.HasEstimates
             ? "Hatched items wait for an event that no run has seen yet, so their time is a guess at an even spacing. Run the take once to measure the events."
-            : _runFolder.Length > 0 ? $"The times of the events come from the run in the take folder {_runFolder}." : null;
+            : _runFolder.Length == 0 ? null
+            : _runMerged ? $"The times of the events come from the run in the take folder {_runFolder}, and the events after its early end from older runs."
+            : $"The times of the events come from the run in the take folder {_runFolder}.";
 
         float x = textEnd + ConsoleStyle.TitlebarSignatureGapPx * 2f;
         float limit = fitX - gap;

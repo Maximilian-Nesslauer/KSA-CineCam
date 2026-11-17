@@ -455,7 +455,7 @@ internal static partial class ReplaySession
         {
             _appliedVersion = session.Version;
             _takeName = null;
-            _takeProblem = $"The take has errors, so the replay plays it as it was before: {ex.Message}";
+            _takeProblem = "The take has errors, so the replay plays it as it was before. " + PlainProblem(ex.Message);
             return;
         }
 
@@ -502,7 +502,7 @@ internal static partial class ReplaySession
             && request.Take != null && string.Equals(last.Name, request.Take.Name, StringComparison.OrdinalIgnoreCase))
         {
             _takeName = null;
-            _takeProblem = $"The take cannot play, so the replay plays it as it was before: {problem}." + site;
+            _takeProblem = "The take cannot play, so the replay plays it as it was before. " + PlainProblem(problem) + site;
             return;
         }
 
@@ -510,9 +510,17 @@ internal static partial class ReplaySession
         if (rough)
             _lastRough = Stopwatch.GetTimestamp();
         _takeName = problem.Length == 0 ? request.Take?.Name : null;
-        _takeProblem = problem.Length > 0 ? $"The take cannot play: {problem}." + site
+        _takeProblem = problem.Length > 0 ? "The take cannot play. " + PlainProblem(problem) + site
             : plan.Truncated ? "The take is longer than the replay can plan, so it ends early." + site
             : site.Trim();
+    }
+
+    // The editor copy keeps the order of the takes, so the take indices of a reader message match the editor.
+    private static string PlainProblem(string raw)
+    {
+        EditSession session = CineCamWindow.EditorSession;
+        IReadOnlyList<string> names = session.Document?.Takes.Select(t => t.Name).ToArray() ?? [];
+        return ProblemText.Plain(raw, names, session.TakeIndex);
     }
 
     private static void CancelResolve()

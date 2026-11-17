@@ -48,7 +48,7 @@ A take is a shot list: the cameras of a flight, with the game speed and the stag
 
 Above the take, one status line says the take, its state (**Ready**, **Running 12.0 s**, **Paused at 12.0 s** and so on) and the next thing to do. Its tooltip has the game speed, the vehicle and the checkpoint. Below it are the **Take** list and one row with **Start take**, **Dry run**, **Stop**, **Pause and edit**, **Save** and **Revert**; in a narrow window the run buttons use the short labels **Start** and **Pause**. A problem of the take shows as one line in plain words, for example "Shot 4: the length must be above 0 s and at most 3600 s." Click it to select that shot, speed key or action; its tooltip has the exact text of the file reader. The footer of the window shows the two most important states, and its tooltip lists all of them.
 
-The Editor page has the tabs **Shots**, **Speed**, **Actions**, **Pause edit** and **Take setup**. A click on a row in **Shots** opens the fields of the shot below it, and a second click closes them. Most shots need no more than Add key here. Use the fields for fine work: the length, the field of view, the roll, a blend to the next shot, **Fit the vehicle** (keeps the vehicle at a share of the picture height) and **Keep away from the sun**. **Preview shot** plays the selected shot on your vehicle without a change of the sim speed.
+The Editor page has the tabs **Shots**, **Speed**, **Actions**, **Pause edit** and **Take setup**. A click on a row in **Shots** opens the fields of the shot below it, and a second click closes them. Most shots need no more than Add key here. Use the fields for fine work: the length, the field of view, the roll, a blend to the next shot, **Fit the vehicle** (keeps the vehicle at a share of the picture height, by its largest size or, with **Fit by** set to **Height**, by its height alone) and **Keep away from the sun**. **Preview shot** plays the selected shot on your vehicle without a change of the sim speed.
 
 ### Frames
 
@@ -81,7 +81,7 @@ The timeline sits at the bottom of the screen while the window shows the **Edito
 - **Mouse wheel** zooms. **Shift and the wheel**, or a drag on the ruler, scrolls. In a replay a drag on the ruler moves the replay instead.
 - **Fit** shows the whole take. **Hide** hides the dock, and the **Timeline** button at the bottom shows it again.
 
-A blend shows as a ramp at the start of a shot, and the play head shows the take time while a take runs. The times of the events come from the run that is going on, or from the last finished run of the take. An event that no run has seen yet has an estimated time. The mod spaces such items evenly and draws them hatched or dashed, so run the take once to measure the events. In a replay every event time comes from the recording, so nothing is estimated.
+A blend shows as a ramp at the start of a shot, and the play head shows the take time while a take runs. The times of the events come from the run that is going on, or from the last finished run of the take. When a reset or a stop ended that run early, the events after its end keep their times from the older runs. An event that no run has seen yet has an estimated time. The mod spaces such items evenly and draws them hatched or dashed, so run the take once to measure the events. In a replay every event time comes from the recording, so nothing is estimated.
 
 ### Start on an event
 
@@ -147,6 +147,7 @@ A checkpoint is a game save that lets you fly the same take again and again from
 1. Stand at the start of the flight and press **Save checkpoint**. The mod saves the game as `CineCam <take name>` and stores the name in the take. A second save replaces the first.
 2. Fly the take. For another run, press **Reset to checkpoint**, or the reset key (off by default). The reset ends a running take, loads the save and makes the take ready.
 3. With **Start the take after a reset** on, the take starts by itself after a **Delay** (2 s by default). Without it, press **Start take**.
+4. To rehearse the start of a take, turn on **Pause the run at a take time** and set **Pause at (s)**. The take or the dry run plays once up to that time and then pauses for an edit, as **Pause and edit** does. Resume plays on; a reset plays the start again. An offline capture and a replay do not pause. Turn it off for the final take.
 
 Other mods lose their state when the game loads a save. Arm them again after a reset. A good loop: fly the take, pause where a shot needs a change, edit, resume, and reset for the next run.
 

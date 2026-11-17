@@ -3,15 +3,40 @@ namespace CineCam.Director.Replay;
 public enum ReplayOperation
 {
     Unknown, Status, List, StartRecording, StopRecording, RetrySave, Open, Close, Seek, SetPlaying, SetSpeed,
-    SetCamera, Follow, SetFov, AddKey, SetInterface, Preview, Render, RenderStop
+    SetCamera, Follow, SetFov, AddKey, SetInterface, Preview, Render, RenderStop, Reload, SelectTake, Quit
 }
 
 /// <summary>
 /// Times are take seconds. <see cref="Name"/> is the camera ("take" or "free") for SetCamera, the kind of
-/// shot for AddKey, and the range ("whole" or "current") for Render.
+/// shot for AddKey, the range ("whole" or "current") for Render and the take for SelectTake.
+/// <see cref="Discard"/> lets Reload drop the unsaved changes of the editor.
 /// </summary>
 public sealed record ReplayCommand(ReplayOperation Operation, string? Id = null, int? ActorId = null,
-    double? Time = null, double? Speed = null, bool? Enabled = null, string? Name = null, double? Fov = null);
+    double? Time = null, double? Speed = null, bool? Enabled = null, string? Name = null, double? Fov = null,
+    bool? Discard = null);
+
+/// <summary>What the game writes when a quit request comes, in the order of the checks.</summary>
+public readonly record struct QuitState(bool Rendering, bool PictureWrite, bool Recording, bool UnsavedFlight,
+    bool TakeRuns, bool ResetRuns);
+
+public static class ControlRules
+{
+    /// <summary>
+    /// The code and the message of the refusal of a quit, or null when the game can end now. A quit ends
+    /// nothing that writes files, so a render, an offline take, a recording, a flight that is not saved yet,
+    /// a take with its event log and a reset that loads a save all refuse it.
+    /// </summary>
+    public static (string Code, string Message)? QuitBlock(QuitState state) => state switch
+    {
+        { Rendering: true } => ("rendering", "A render writes pictures. Stop it first with render-stop."),
+        { PictureWrite: true } => ("capture_busy", "The last pictures of a render are still written. Try again in a moment."),
+        { Recording: true } => ("recording", "A flight recording runs. Stop it first with stop, so the flight is saved."),
+        { UnsavedFlight: true } => ("unsaved_flight", "A recorded flight is not saved yet. Save it with retry-save first."),
+        { TakeRuns: true } => ("busy", "A take runs. Stop it first, so its event log and its pictures are complete."),
+        { ResetRuns: true } => ("busy", "A reset loads the checkpoint. Wait until it is done."),
+        _ => null,
+    };
+}
 
 public sealed record ReplayResult(bool Ok, string Code, string Message, ReplayStatus? State = null,
     string? PreviewPath = null);
@@ -27,7 +52,8 @@ public sealed record ReplayStatus(string Mode, bool Available, string? ReplayId,
     bool InterfaceVisible, int? ActorId, double FieldOfView, string? StartBlockReason, string? OpenBlockReason, string Message,
     IReadOnlyList<string> Recordings, IReadOnlyList<ReplayEventStatus> Events, IReadOnlyList<ReplayMarkerStatus> Markers,
     IReadOnlyList<ReplayActorStatus> Actors, bool CanHideInterface, bool CanPreview, ReplayRenderStatus? Render = null,
-    int EventCount = 0, int MarkerCount = 0);
+    int EventCount = 0, int MarkerCount = 0, IReadOnlyList<string>? Takes = null, string? SelectedTake = null,
+    string? ShotFile = null, bool UnsavedChanges = false);
 
 /// <summary>The take time is null when the take ends before the event.</summary>
 public sealed record ReplayEventStatus(string Name, string Label, double RecordingTime, double? TakeTime);

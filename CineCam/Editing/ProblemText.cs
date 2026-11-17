@@ -35,6 +35,7 @@ public static class ProblemText
         ["to"] = "target",
         ["fov"] = "field of view",
         ["fit"] = "fit",
+        ["fitBy"] = "fit measure",
         ["avoidSun"] = "sun angle",
         ["aimOffset"] = "aim offset",
         ["lookAt"] = "look point",
@@ -46,6 +47,7 @@ public static class ProblemText
         ["until"] = "end event",
         ["loop"] = "loop",
         ["autoStartDelay"] = "start delay",
+        ["pauseAt"] = "pause time",
         ["hideUiAt"] = "hide event",
         ["syncFlash"] = "white frame",
         ["fps"] = "frames per second",
@@ -61,7 +63,7 @@ public static class ProblemText
 
     private static readonly HashSet<string> SecondFields = new(StringComparer.Ordinal)
     {
-        "duration", "time", "delay", "seconds", "ramp", "autoStartDelay", "smoothing",
+        "duration", "time", "delay", "seconds", "ramp", "autoStartDelay", "smoothing", "pauseAt",
     };
 
     private static readonly Dictionary<string, string> FieldUnits = new(StringComparer.Ordinal)
@@ -143,6 +145,10 @@ public static class ProblemText
         string body = Body(field, key, message);
         return new ProblemLine(Sentence(prefix, body), raw ?? "", isError, take, item, itemIndex);
     }
+
+    /// <summary>The plain sentence of a reader or planner message, for a place that shows one line and no list.</summary>
+    public static string Plain(string raw, IReadOnlyList<string> takeNames, int selectedTake) =>
+        Describe(raw, true, takeNames, selectedTake).Sentence;
 
     public static List<ProblemLine> DescribeAll(ValidationResult result, IReadOnlyList<string> takeNames, int selectedTake)
     {

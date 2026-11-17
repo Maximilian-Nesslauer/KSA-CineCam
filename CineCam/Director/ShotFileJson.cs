@@ -289,6 +289,7 @@ public static class ShotFileJson
             if (obj.TryGet("picture", out JsonElement picture))
                 take.Picture = ReadPicture(new Obj(picture, obj.Child("picture")));
             take.ExactApsides = obj.OptBool("exactApsides") ?? false;
+            take.PauseAt = obj.OptNum("pauseAt", 0.0, Take.MaxPauseAt, minExclusive: true);
 
             if (!obj.TryGet("camera", out JsonElement camera) || camera.ValueKind != JsonValueKind.Array)
                 throw new ShotFileException(obj.Child("camera"), "expected a list of shots");
@@ -415,6 +416,8 @@ public static class ShotFileJson
 
             if (Shot.SupportsAim(shot.Type))
                 ReadAim(obj, shot);
+            if (PoseMath.SupportsFit(shot.Type))
+                ReadFitBy(obj, shot);
 
             obj.CollectExtras(shot.Extras);
             return shot;
@@ -438,6 +441,16 @@ public static class ShotFileJson
                 if (shot.Subject != ShotSubject.Separated)
                     _warnings.Add($"{obj.Child("pick")}: the pick has no effect unless \"target\" is \"separated\"");
             }
+        }
+
+        private void ReadFitBy(Obj obj, Shot shot)
+        {
+            FitMeasure? by = obj.OptEnum<FitMeasure>("fitBy");
+            if (!by.HasValue)
+                return;
+            shot.FitBy = by.Value;
+            if (shot.Fit == null)
+                _warnings.Add($"{obj.Child("fitBy")}: the fit measure has no effect unless \"fit\" is on");
         }
 
         // A number is the smallest angle between the view and the sun in degrees. "off" and false turn it off.
@@ -909,6 +922,8 @@ public static class ShotFileJson
 
         if (take.ExactApsides)
             json.Key("exactApsides").Bool(true);
+        if (take.PauseAt is double pauseAt)
+            json.Key("pauseAt").Num(pauseAt);
     }
 
     private static void WriteTrack(JsonOut json, Take take)
@@ -1060,6 +1075,8 @@ public static class ShotFileJson
     {
         if (shot.Fit.HasValue)
             json.Key("fit").Num(shot.Fit.Value);
+        if (shot.Fit.HasValue && shot.FitBy != FitMeasure.Size)
+            json.Key("fitBy").Str(Lower(shot.FitBy.ToString()));
     }
 
     private static void WriteTrigger(JsonOut json, Trigger trigger)

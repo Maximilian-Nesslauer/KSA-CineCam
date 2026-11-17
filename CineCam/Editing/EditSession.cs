@@ -230,6 +230,17 @@ public sealed class EditSession
         return true;
     }
 
+    /// <summary>Reads the file at <see cref="Path"/> again and keeps the selected take when the file still has it.</summary>
+    public bool Reload()
+    {
+        string? selected = Take?.Name;
+        if (!Load(Path))
+            return false;
+        if (selected != null)
+            SelectTakeByName(selected);
+        return true;
+    }
+
     public bool SelectTakeByName(string name)
     {
         if (Document?.FindTake(name) is not { } take)
@@ -317,6 +328,18 @@ public sealed class EditSession
         if (take.AutoStartDelay == clamped)
             return;
         take.AutoStartDelay = clamped;
+        Changed();
+    }
+
+    /// <summary>Null turns the pause off. A time is kept inside the range of the file reader.</summary>
+    public void SetPauseAt(double? seconds)
+    {
+        if (Take is not { } take)
+            return;
+        double? value = seconds is double s ? Math.Clamp(s, RehearsalEdit.MinPauseAt, Take.MaxPauseAt) : null;
+        if (take.PauseAt == value)
+            return;
+        take.PauseAt = value;
         Changed();
     }
 

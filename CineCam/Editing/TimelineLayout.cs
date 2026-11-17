@@ -299,8 +299,50 @@ public sealed class TimelineLayout
     /// </summary>
     public static Dictionary<string, double> ReadEventTimes(TextReader reader, out bool finished)
     {
+        RunLog run = ReadRun(reader);
+        finished = run.Finished;
+        return run.Times;
+    }
+
+    /// <summary>
+    /// The event times of one run, and the take time of its end row. <see cref="EndSeconds"/> is null when
+    /// the log has no end row or no readable time in it.
+    /// </summary>
+    public sealed record RunLog(Dictionary<string, double> Times, bool Finished, double? EndSeconds);
+
+    /// <summary>
+    /// The event times of the finished runs, newest first. The newest run gives every time it has. An older
+    /// run adds only the events after the end of all newer runs, because a newer run that a reset or a stop
+    /// ended early could not see them. An event that an older run saw before that end and the newer run did
+    /// not see is left out, because the flight changed.
+    /// </summary>
+    public static Dictionary<string, double> MergeRuns(IEnumerable<RunLog> newestFirst)
+    {
         var result = new Dictionary<string, double>(StringComparer.Ordinal);
-        finished = false;
+        double covered = double.NegativeInfinity;
+        foreach (RunLog run in newestFirst)
+        {
+            if (!run.Finished)
+                continue;
+            foreach ((string name, double seconds) in run.Times)
+            {
+                if (seconds > covered)
+                    result.TryAdd(name, seconds);
+            }
+
+            if (run.EndSeconds is not double end)
+                break;
+            covered = Math.Max(covered, end);
+        }
+
+        return result;
+    }
+
+    public static RunLog ReadRun(TextReader reader)
+    {
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        bool finished = false;
+        double? endSeconds = null;
         bool header = true;
         foreach (List<string> row in CsvRows(reader))
         {
@@ -314,16 +356,21 @@ public sealed class TimelineLayout
                 continue;
             string kind = row[5];
             string name = row[6];
+            bool timed = double.TryParse(row[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)
+                && double.IsFinite(seconds);
             if (kind == "take" && name == "end")
+            {
                 finished = true;
+                endSeconds = timed ? seconds : null;
+            }
+
             if (kind != "event" || name.Length == 0 || result.ContainsKey(name))
                 continue;
-            if (double.TryParse(row[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)
-                && !double.IsNaN(seconds) && !double.IsInfinity(seconds))
+            if (timed)
                 result[name] = seconds;
         }
 
-        return result;
+        return new RunLog(result, finished, endSeconds);
     }
 
     // A quoted field may hold commas, doubled quotes and line breaks.

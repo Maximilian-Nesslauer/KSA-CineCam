@@ -5,6 +5,16 @@ namespace CineCam.Editing;
 /// <summary>Edits to a take while it is paused. Nothing here touches the game.</summary>
 public static class RehearsalEdit
 {
+    /// <summary>The smallest pause time that the window sets, in take seconds.</summary>
+    public const double MinPauseAt = 0.1;
+
+    /// <summary>
+    /// True when a run reaches the pause time of its take. It pauses once, so a resume plays on. A preview
+    /// and an offline capture cannot pause, because the take time of a capture follows the pictures.
+    /// </summary>
+    public static bool PauseAtDue(double? pauseAt, double takeSeconds, bool alreadyPaused, bool canPause) =>
+        pauseAt is double at && canPause && !alreadyPaused && takeSeconds >= at;
+
     /// <summary>
     /// The sim speed that a pause gives back when it ends. A sim that was stopped at the pause, for example
     /// behind an open menu, has no usable speed, so the last speed of the take counts.

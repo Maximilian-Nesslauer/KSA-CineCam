@@ -84,6 +84,9 @@ internal sealed class ActiveTake
 
     public DirectorFrame? LastFrame { get; set; }
 
+    /// <summary>Set when the run reached the pause time of the take, so it pauses there only once.</summary>
+    public bool PauseAtReached { get; set; }
+
     /// <summary>True while the take waits for an edit, with the sim stopped and the camera free.</summary>
     public bool IsPaused => Clock.IsPaused;
 
