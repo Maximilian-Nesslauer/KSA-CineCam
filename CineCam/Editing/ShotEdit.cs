@@ -113,6 +113,33 @@ public static class ShotEdit
         Sequence = 3,
     };
 
+    /// <summary>
+    /// A cue gets a name and loses the sequence, a stage action loses the name. A "name" that an older file
+    /// left in the unknown fields goes too, so the file does not get the field twice.
+    /// </summary>
+    public static void ChangeKind(TakeAction action, ActionKind kind)
+    {
+        action.Kind = kind;
+        if (kind == ActionKind.Cue)
+        {
+            action.Sequence = null;
+            action.Extras.Remove("name");
+            if (action.Name.Length == 0)
+                action.Name = "cue";
+        }
+        else
+        {
+            action.Name = "";
+        }
+    }
+
+    /// <summary>Sets the shot name. An old label that the reader kept in the unknown fields goes, because the new name replaces it.</summary>
+    public static void SetName(Shot shot, string name)
+    {
+        shot.Name = name.Trim();
+        shot.Extras.Remove("name");
+    }
+
     public static SpeedKey NewSpeedKey() => new() { To = 1.0, Ramp = 1.0, Ease = Ease.InOut };
 
     /// <summary>
@@ -151,6 +178,7 @@ public static class ShotEdit
         var copy = new Shot
         {
             Type = source.Type,
+            Name = source.Name,
             Duration = source.Duration,
             Ease = source.Ease,
             Fov = source.Fov,
@@ -199,7 +227,7 @@ public static class ShotEdit
 
     public static TakeAction Clone(TakeAction source)
     {
-        var copy = new TakeAction { At = CloneTrigger(source.At), Kind = source.Kind, Sequence = source.Sequence };
+        var copy = new TakeAction { At = CloneTrigger(source.At), Kind = source.Kind, Sequence = source.Sequence, Name = source.Name };
         foreach (var pair in source.Extras)
             copy.Extras[pair.Key] = pair.Value;
         return copy;
@@ -354,7 +382,8 @@ public static class ShotEdit
 
     public static string Describe(int index, TakeAction action)
     {
-        string number = action.Sequence.HasValue ? $" sequence {action.Sequence.Value}" : "";
+        string number = action.Kind == ActionKind.Cue ? $" {action.Name}"
+            : action.Sequence.HasValue ? $" sequence {action.Sequence.Value}" : "";
         return $"{index + 1}  {action.Kind.ToString().ToLowerInvariant()}{number}  {Describe(action.At)}";
     }
 

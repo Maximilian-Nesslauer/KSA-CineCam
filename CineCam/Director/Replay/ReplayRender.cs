@@ -168,6 +168,29 @@ public static class ReplayRenderLog
     }
 
     /// <summary>
+    /// The rows of the events and the cues of the plan in the range of the job, in the order of time with the
+    /// events first. A row at the end of the take goes on the last picture.
+    /// </summary>
+    public static List<ReplayRenderRow> TimedRows(ReplayTakePlan plan, ReplayRenderJob job,
+        IReadOnlyDictionary<string, string>? details = null)
+    {
+        var rows = new List<ReplayRenderRow>();
+        foreach (FeedItem item in ReplayFeed.Due(plan, job.Start - 1e-9, job.End + 1e-9, includeFrom: true))
+        {
+            double video = Math.Max(item.TakeSeconds - job.Start, 0.0);
+            int picture = Math.Min(ReplayRenderJob.PictureAt(video, job.Fps), job.Total);
+            string detail = item.Kind == FeedKind.Cue
+                ? string.Create(CultureInfo.InvariantCulture, $"actions[{item.Index}]; takeSeconds={item.TakeSeconds:F3}")
+                : string.Create(CultureInfo.InvariantCulture, $"takeSeconds={item.TakeSeconds:F3}");
+            if (item.Kind != FeedKind.Cue && details != null && details.TryGetValue(item.Name, out string? recorded))
+                detail += "; " + recorded;
+            rows.Add(new ReplayRenderRow(video, item.TakeSeconds, picture, item.Kind == FeedKind.Cue ? "cue" : "event", item.Name, detail));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
     /// The first picture also names the shot that runs already, because the render can start inside it.
     /// <paramref name="cut"/> is true when a shot starts, so the caller can let the game settle.
     /// </summary>
@@ -202,8 +225,9 @@ public static class ReplayRenderLog
     private static ReplayRenderRow ShotRow(Take take, int index, double video, double time, int picture, string note)
     {
         Shot shot = take.Shots[index];
+        string name = shot.Name.Length > 0 ? "; name=" + shot.Name : "";
         return new ReplayRenderRow(video, time, picture, "shot", $"camera[{index}]",
-            string.Create(CultureInfo.InvariantCulture, $"type={shot.Type}; duration={shot.Duration}; fov={shot.Fov}{note}"));
+            string.Create(CultureInfo.InvariantCulture, $"type={shot.Type}; duration={shot.Duration}; fov={shot.Fov}{name}{note}"));
     }
 
     /// <summary>

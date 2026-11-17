@@ -88,6 +88,9 @@ public sealed class PathPoint
 public sealed class Shot
 {
     public ShotType Type { get; set; }
+
+    /// <summary>A label for other mods and the event log, empty for none. See <see cref="TakeAction.IsValidName"/>.</summary>
+    public string Name { get; set; } = "";
     public double Duration { get; set; }
     public Ease Ease { get; set; } = Ease.None;
 
@@ -189,7 +192,7 @@ public sealed class SpeedKey
     public Dictionary<string, JsonElement> Extras { get; } = new();
 }
 
-public enum ActionKind { Stage }
+public enum ActionKind { Stage, Cue }
 
 /// <summary>
 /// An action runs once per run. It always has a trigger of its own, because "after the one before"
@@ -207,7 +210,21 @@ public sealed class TakeAction
     /// </summary>
     public int? Sequence { get; set; }
 
+    /// <summary>The name that a cue gives to other mods, valid by <see cref="IsValidName"/>. A stage action has none.</summary>
+    public string Name { get; set; } = "";
+
     public Dictionary<string, JsonElement> Extras { get; } = new();
+
+    public const int MaxNameLength = 64;
+
+    public const string NameRule = "1 to 64 letters, digits and the signs - _ . :";
+
+    /// <summary>
+    /// The rule of a cue name and a shot name. It keeps the name safe in the event log, in a marker name of a
+    /// video editor and in the code of another mod.
+    /// </summary>
+    public static bool IsValidName(string? name) =>
+        name is { Length: > 0 and <= MaxNameLength } && name.All(c => c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '-' or '_' or '.' or ':');
 }
 
 /// <summary>A box in the site frame that the camera is pushed out of. <see cref="Min"/> is at most <see cref="Max"/> on every axis.</summary>

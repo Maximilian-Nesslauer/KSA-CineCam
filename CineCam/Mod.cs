@@ -42,6 +42,7 @@ public sealed class Mod
                 "Some features may not work correctly.");
 
         CineCamSettings.Load();
+        ApiFeed.Start();
 
         _harmony = new Harmony("com.maxi.cinecam");
         CineCamPatches.Apply(_harmony);
@@ -104,6 +105,7 @@ public sealed class Mod
         CineCamCommands.Unregister();
         // After the take and the replay ended, so nothing wants the sound or the picture settings any more.
         LookGuard.Shutdown();
+        ApiFeed.Shutdown();
 
         _harmony?.UnpatchAll(_harmony.Id);
         _harmony = null;

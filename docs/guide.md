@@ -121,7 +121,7 @@ A negative delay works only for altitude, speed, ground, slow, dynamic pressure 
 3. While a take records, the window is hidden so it is not in the video. Turn on **Keep this window open during a take** in Settings to keep it.
 4. When the take ends, the camera mode, the field of view and the sim speed come back. If you change the camera mode yourself during a take, the take ends and leaves your mode alone.
 
-The **Speed** tab has speed keys: each key ramps the sim speed to a target, for example 0.25x at the ignition and 1x after the lift-off. The game locks the throttle above 30x, so stay below that. The **Actions** tab can press the staging key at a time or an event, for example to release a fairing. This sends a real staging key, so use it with care.
+The **Speed** tab has speed keys: each key ramps the sim speed to a target, for example 0.25x at the ignition and 1x after the lift-off. The game locks the throttle above 30x, so stay below that. The **Actions** tab can press the staging key at a time or an event, for example to release a fairing. This sends a real staging key, so use it with care. An action set to **Cue** changes nothing in the flight: it gives a name, for example `overlay-in`, to other mods at its time, so a telemetry overlay of another mod can come in at the lift-off. A cue also fires in a dry run, a replay and a render, and it has a row in the event log. A shot can have a **Name** too, which other mods and the event log get when the shot starts. See [Integration for other mods](integration.md).
 
 ### Pause and edit
 

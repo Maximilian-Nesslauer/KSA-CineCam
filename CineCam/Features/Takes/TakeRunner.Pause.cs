@@ -83,6 +83,7 @@ internal static partial class TakeRunner
             }
 
             take.Camera.BeginFree();
+            ApiFeed.SyncInterface();
             int shot = take.LastFrame?.ShotIndex ?? -1;
             string detail = string.Create(CultureInfo.InvariantCulture,
                 $"the take is paused for an edit; simSpeedBefore={take.PausedSpeed}; shot={(shot >= 0 ? (shot + 1).ToString(CultureInfo.InvariantCulture) : "none")}; pause={take.Clock.PauseCount}");
@@ -121,6 +122,7 @@ internal static partial class TakeRunner
             }
 
             take.HideUiDeferred = false;
+            ApiFeed.SyncInterface();
 
             Universe.SetSimulationSpeed(SpeedOrOne(take.PausedSpeed), alert: false);
             WriteRow(take, "pause", "end", string.Create(CultureInfo.InvariantCulture,

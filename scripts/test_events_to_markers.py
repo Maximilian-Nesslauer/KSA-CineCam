@@ -20,6 +20,7 @@ SAMPLE = """realSeconds,gameSeconds,missionSeconds,simSpeed,frame,kind,name,deta
 60.000,1060.000,22.000,0.25,,pause,start,the take is paused
 60.000,1062.000,22.000,0,,pause,end,"the take goes on; length=10.0 s real; total=10.0 s real"
 70.000,1072.000,32.000,1,,action,stage,"actions[0]; fires sequence 3; next=3; active=2"
+75.000,1077.000,37.000,1,,cue,overlay-in,actions[1]
 80.000,1082.000,42.000,1,,take,end,the last shot is done
 """
 
@@ -61,6 +62,14 @@ class EventTests(unittest.TestCase):
         self.assertEqual(markers[0].frame, round((2.0 + 38.1) * 60))
         self.assertEqual(markers[0].color, "Blue")
         self.assertIn("shot camera[1] (Chase)", names)
+
+    def test_cue_is_a_default_kind(self):
+        with tempfile.TemporaryDirectory() as folder:
+            rows = tool.read_rows(write_sample(folder))
+        markers, _, _ = tool.build_event_markers(rows, 60.0, 0.0, set(tool.DEFAULT_KINDS.split(",")), True)
+        cue = next(m for m in markers if m.kind == "cue")
+        self.assertEqual(cue.name, "cue overlay-in")
+        self.assertEqual(cue.color, "Purple")
 
     def test_action_name_has_the_reason(self):
         with tempfile.TemporaryDirectory() as folder:

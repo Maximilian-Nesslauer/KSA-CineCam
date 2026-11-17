@@ -128,6 +128,7 @@ internal static partial class ReplaySession
                 if (!show)
                     NeedScene();
                 Program.DrawUI = show;
+                ApiFeed.SyncInterface();
                 return Program.DrawUI ? "Interface shown." : "Interface hidden.";
             case ReplayOperation.Reload:
                 return ReloadShotFile(command.Discard == true);

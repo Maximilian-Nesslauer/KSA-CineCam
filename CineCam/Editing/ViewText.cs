@@ -93,7 +93,8 @@ public static class ViewText
 
     public static TrackRow ActionRow(int index, TakeAction action) =>
         new((index + 1).ToString(CultureInfo.InvariantCulture), action.Kind.ToString().ToLowerInvariant(),
-            TriggerText(action.At, index), action.Sequence.HasValue ? "sequence " + action.Sequence.Value.ToString(CultureInfo.InvariantCulture) : "next sequence");
+            TriggerText(action.At, index), action.Kind == ActionKind.Cue ? action.Name
+                : action.Sequence.HasValue ? "sequence " + action.Sequence.Value.ToString(CultureInfo.InvariantCulture) : "next sequence");
 
     #region State
 

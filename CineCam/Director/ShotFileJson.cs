@@ -358,6 +358,7 @@ public static class ShotFileJson
                 }
             }
 
+            shot.Name = ReadShotName(obj);
             shot.Duration = obj.ReqNum("duration", 0.0, 3600.0, minExclusive: true);
             shot.Ease = obj.OptEnum<Ease>("ease") ?? (shot.Type == ShotType.Path ? Ease.InOut : Ease.None);
             shot.Fov = obj.OptNum("fov", 1.0, 150.0) ?? 40.0;
@@ -541,11 +542,15 @@ public static class ShotFileJson
         private TakeAction ReadAction(Obj obj)
         {
             string kindText = obj.OptString("action")
-                ?? throw new ShotFileException(obj.Child("action"), "an action needs a kind (stage)");
+                ?? throw new ShotFileException(obj.Child("action"), "an action needs a kind (stage or cue)");
             var action = new TakeAction { Kind = Obj.ParseEnum<ActionKind>(obj.Child("action"), kindText) };
             if (!obj.Has("at"))
                 throw new ShotFileException(obj.Child("at"), "an action needs a trigger: a take time or an event");
             action.At = ReadTrigger(obj, "at");
+
+            // A stage action leaves "name" to the unknown fields, which are kept, so an older file reads as before.
+            if (action.Kind == ActionKind.Cue)
+                action.Name = ReadCueName(obj);
 
             double? sequence = obj.OptNum("sequence", 1.0, 1e6);
             if (sequence.HasValue)
@@ -559,6 +564,27 @@ public static class ShotFileJson
 
             obj.CollectExtras(action.Extras);
             return action;
+        }
+
+        private static string ReadCueName(Obj obj)
+        {
+            string name = obj.OptString("name")
+                ?? throw new ShotFileException(obj.Child("name"), "a cue needs a name, " + TakeAction.NameRule);
+            if (!TakeAction.IsValidName(name))
+                throw new ShotFileException(obj.Child("name"), "expected " + TakeAction.NameRule);
+            return name;
+        }
+
+        // An older file can have a free label in the "name" of a shot, because the field had no meaning before.
+        // A label that is not a valid shot name stays in the unknown fields, so the file reads and writes as before.
+        private string ReadShotName(Obj obj)
+        {
+            if (!obj.Peek("name", out JsonElement value))
+                return "";
+            if (value.ValueKind == JsonValueKind.String && TakeAction.IsValidName(value.GetString()))
+                return obj.OptString("name")!;
+            _warnings.Add($"{obj.Child("name")}: this is not used as the shot name, because a shot name has {TakeAction.NameRule}. The field is kept as it is");
+            return "";
         }
 
         private Transition ReadTransition(Obj obj)
@@ -661,6 +687,10 @@ public static class ShotFileJson
         public string Child(string name) => Path.Length == 0 ? name : Path + "." + name;
 
         public bool Has(string name) => _element.TryGetProperty(name, out JsonElement v) && v.ValueKind != JsonValueKind.Null;
+
+        /// <summary>Gets a field without marking it as read, so it stays an extra unless a later call reads it.</summary>
+        public bool Peek(string name, out JsonElement value) =>
+            _element.TryGetProperty(name, out value) && value.ValueKind != JsonValueKind.Null;
 
         public bool TryGet(string name, out JsonElement value)
         {
@@ -969,9 +999,11 @@ public static class ShotFileJson
                 json.Item().BeginObject();
                 WriteTrigger(json, action.At);
                 json.Key("action").Str(Lower(action.Kind.ToString()));
+                if (action.Kind == ActionKind.Cue)
+                    json.Key("name").Str(action.Name);
                 if (action.Sequence.HasValue)
                     json.Key("sequence").Num(action.Sequence.Value);
-                WriteExtras(json, action.Extras);
+                WriteExtras(json, action.Extras, action.Kind == ActionKind.Cue ? "name" : null);
                 json.EndObject();
             }
 
@@ -982,6 +1014,8 @@ public static class ShotFileJson
     private static void WriteShot(JsonOut json, Shot shot)
     {
         json.Key("type").Str(Lower(shot.Type.ToString()));
+        if (shot.Name.Length > 0)
+            json.Key("name").Str(shot.Name);
         json.Key("target").Str(shot.Subject == ShotSubject.Separated && Shot.SupportsAim(shot.Type) ? "separated" : Lower(shot.Target.ToString()));
         switch (shot.Type)
         {
@@ -1068,7 +1102,7 @@ public static class ShotFileJson
         if (shot.Transition.Kind == TransitionKind.Blend)
             json.Key("transition").Raw($"{{ \"type\": \"blend\", \"seconds\": {Number(shot.Transition.Seconds)} }}");
         WriteTrigger(json, shot.At);
-        WriteExtras(json, shot.Extras);
+        WriteExtras(json, shot.Extras, shot.Name.Length > 0 ? "name" : null);
     }
 
     private static void WriteFit(JsonOut json, Shot shot)
@@ -1093,10 +1127,15 @@ public static class ShotFileJson
         }
     }
 
-    private static void WriteExtras(JsonOut json, Dictionary<string, JsonElement> extras)
+    // An extra with the key of a field that the object already wrote is left out, because a JSON reader takes the
+    // last of two equal keys and would read the old value.
+    private static void WriteExtras(JsonOut json, Dictionary<string, JsonElement> extras, string? written = null)
     {
         foreach (KeyValuePair<string, JsonElement> pair in extras)
-            json.Key(pair.Key).Raw(pair.Value.GetRawText());
+        {
+            if (pair.Key != written)
+                json.Key(pair.Key).Raw(pair.Value.GetRawText());
+        }
     }
 
     private static string VecText(V3 v) => $"[{Number(v.X)}, {Number(v.Y)}, {Number(v.Z)}]";
