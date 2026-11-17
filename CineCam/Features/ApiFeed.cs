@@ -45,7 +45,9 @@ internal static class ApiFeed
     public static void LiveStarted(ActiveTake take)
     {
         EndRun(Source.Replay, "a live take started");
+        if (!ReferenceEquals(TakeRunner.Current, take)) return;
         SyncInterface();
+        if (!ReferenceEquals(TakeRunner.Current, take)) return;
         _source = Source.Live;
         CineCamEvents.RaiseTakeStarted(take.Take.Name, take.DryRun ? "dryRun" : "live", take.HidUi, 0.0, []);
     }
@@ -71,6 +73,11 @@ internal static class ApiFeed
         CineCamEvents.SetTakeSeconds(takeSeconds);
         if (frame.ShotIndex != CineCamEvents.ShotIndex)
             Shot(take, frame.ShotIndex, false);
+    }
+
+    public static void LiveTime(double takeSeconds)
+    {
+        if (_source == Source.Live) CineCamEvents.SetTakeSeconds(takeSeconds);
     }
 
     #endregion
@@ -206,9 +213,12 @@ internal static class ApiFeed
     public static void RenderStarted(string take, string folder, ReplayTakePlan plan, double start)
     {
         EndRun(Source.Replay, "a render started");
-        CineCamEvents.RaiseRenderStarted(take, folder);
-        SyncInterface();
+        if (!ReplaySession.OwnsRender(plan, folder)) return;
         _source = Source.Render;
+        CineCamEvents.RaiseRenderStarted(take, folder);
+        if (!ReplaySession.OwnsRender(plan, folder)) return;
+        SyncInterface();
+        if (!ReplaySession.OwnsRender(plan, folder)) return;
         // ReplayRenderLog.TimedRows gives a cue at the first picture a row of its own, so only the cues before it count as passed.
         IEnumerable<string> passed = ReplayFeed.CuesUntil(plan, start).Where(cue => cue.TakeSeconds < start - 1e-9).Select(cue => cue.Name);
         CineCamEvents.RaiseTakeStarted(take, "render", true, start, passed);

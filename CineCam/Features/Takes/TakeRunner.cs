@@ -481,6 +481,7 @@ internal static partial class TakeRunner
         }
 
         ApiFeed.LiveStarted(active);
+        if (!ReferenceEquals(_take, active)) return;
 
         V3 vehicleInSite = site.FromEcl(vehicle.GetPositionEcl());
         string siteText = string.Create(CultureInfo.InvariantCulture,
@@ -787,9 +788,11 @@ internal static partial class TakeRunner
         DirectorFrame frame = take.Director.Update(t, world);
         take.LastFrame = frame;
         LogFrame(take, t, frame);
+        if (!ReferenceEquals(_take, take)) return false;
         ApiFeed.LiveTick(take.Take, frame, t);
         ApplySpeed(take, frame, t);
         RunActions(take, t);
+        if (!ReferenceEquals(_take, take)) return false;
 
         CameraPose pose = frame.Pose ?? take.HoldPose;
         take.Camera.Apply(take.Site, pose);
@@ -887,7 +890,9 @@ internal static partial class TakeRunner
         {
             DirectorFrame terminal = take.Director.Destroyed(t, take.Vehicle.TakeExplosions());
             LogFrame(take, t, terminal);
+            if (!ReferenceEquals(_take, take)) return;
             FireCues(take, t);
+            if (!ReferenceEquals(_take, take)) return;
         }
 
         End(UiText.MessageText("text.70737feb0431", "the vehicle is gone"));
@@ -937,6 +942,7 @@ internal static partial class TakeRunner
 
     private static void LogFrame(ActiveTake take, double t, DirectorFrame frame)
     {
+        ApiFeed.LiveTime(t);
         foreach (DetectedEvent seen in frame.NewEvents)
         {
             if (seen.Name == "ignition")
@@ -948,6 +954,7 @@ internal static partial class TakeRunner
             else
                 WriteRow(take, "event", seen.Name, seen.Detail, seen.TakeTime);
             ApiFeed.LiveEvent(seen.Name, seen.TakeTime, seen.Stamp?.GameSeconds);
+            if (!ReferenceEquals(_take, take)) return;
             if (take.HideUiEvent != null && seen.Name == take.HideUiEvent && !take.HidUi)
             {
                 if (take.IsPaused)
@@ -977,6 +984,7 @@ internal static partial class TakeRunner
             WriteRow(take, "shot", $"camera[{index}]",
                 string.Create(CultureInfo.InvariantCulture, $"type={shot.Type}; duration={shot.Duration}; fov={shot.Fov}{name}"), t);
             ApiFeed.LiveShot(take.Take, index);
+            if (!ReferenceEquals(_take, take)) return;
         }
 
         foreach (int index in frame.StartedSpeedKeys)

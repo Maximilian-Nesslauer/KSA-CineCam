@@ -33,6 +33,8 @@ internal static partial class ReplaySession
 
     private const int DiskCheckEvery = 200;
     private static (string Take, string Folder, string Reason)? _deferredRenderEnd;
+    public static bool OwnsRender(ReplayTakePlan plan, string folder) =>
+        _render != null && ReferenceEquals(_render.Plan, plan) && string.Equals(_render.Folder, folder, StringComparison.Ordinal);
 
     private static readonly TimeSpan RenderCollectTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TitleInterval = TimeSpan.FromMilliseconds(500);

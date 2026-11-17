@@ -23,6 +23,7 @@ internal static partial class TakeRunner
             return;
 
         FireCues(take, t);
+        if (!ReferenceEquals(_take, take)) return;
         if (take.DryRun)
         {
             take.PendingActions.Clear();
@@ -54,6 +55,7 @@ internal static partial class TakeRunner
             take.PendingActions.RemoveAt(i);
             WriteRow(take, "cue", action.Name, $"actions[{index}]", t);
             ApiFeed.LiveCue(action.Name, t);
+            if (!ReferenceEquals(_take, take)) return;
         }
     }
 

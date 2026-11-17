@@ -15,7 +15,11 @@ namespace KSA
 }
 namespace CineCam.Features.Takes
 {
-    internal static class TakeRunner { public static bool HidesInterface => false; }
+    internal static class TakeRunner
+    {
+        public static bool HidesInterface => false;
+        public static ActiveTake? Current { get; set; }
+    }
     internal sealed record ActiveTake(Take Take, bool DryRun, bool HidUi);
 }
 namespace CineCam.Features.Replay
@@ -28,7 +32,10 @@ namespace CineCam.Features.Replay
     {
         public static ReplayScene? Scene { get; set; }
         public static string? TakeName { get; set; }
-        public static bool IsRendering => false;
+        public static bool IsRendering { get; set; }
+        public static ReplayTakePlan? RenderPlan { get; set; }
+        public static string RenderFolder { get; set; } = "";
+        public static bool OwnsRender(ReplayTakePlan plan, string folder) => IsRendering && ReferenceEquals(plan, RenderPlan) && folder == RenderFolder;
         public static bool HidesInterface => false;
     }
 }

@@ -15,6 +15,7 @@ void Expect(bool condition, string text) { if (!condition) throw new Exception(t
 ReplayScene Scene(double duration, double eventTime, double start)
 {
     ApiFeed.Shutdown();
+    ReplaySession.IsRendering = false;
     var flight = new ReplayFlight("game", "system", "body", 1000,
         [new ReplayActor(0, "vehicle", [new ReplaySegment(0, "parts",
             [new ReplaySample(0, new V3(600010, 0, 0), new ReplayRotation(0, 0, 0, 1), []),
@@ -113,6 +114,51 @@ Check("closing from a jump end prevents an old-scene restart", () =>
     scene.Player.Seek(0.5);
     Tick(scene, 0.1);
     Expect(seen.SequenceEqual(["end", "closed"]) && !CineCamEvents.IsTakeRunning, string.Join(",", seen));
+});
+Check("live event callbacks observe the current frame rather than the previous tick", () =>
+{
+    ApiFeed.Shutdown();
+    var active = new CineCam.Features.Takes.ActiveTake(new Take { Name = "live" }, false, false);
+    CineCam.Features.Takes.TakeRunner.Current = active;
+    ApiFeed.LiveStarted(active);
+    double observed = -1, eventTime = -1;
+    CineCamEvents.FlightEvent += (_, time, _) => { observed = CineCamEvents.TakeSeconds; eventTime = time; };
+    ApiFeed.LiveTime(3);
+    ApiFeed.LiveEvent("maxq", 1, 1001);
+    Expect(observed == 3 && eventTime == 1, "current frame state and delayed peak time must remain distinct");
+});
+Check("render start keeps its documented interface and take ordering", () =>
+{
+    var scene = Scene(2, 1, 0);
+    var seen = new List<string>();
+    ReplaySession.IsRendering = true;
+    ReplaySession.RenderPlan = scene.Player.Plan;
+    ReplaySession.RenderFolder = "render";
+    CineCamEvents.RenderStarted += (_, _) => seen.Add("render");
+    CineCamEvents.InterfaceChanged += hidden => seen.Add(hidden ? "hidden" : "shown");
+    CineCamEvents.TakeStarted += (_, _, _) => seen.Add("take");
+    ApiFeed.RenderStarted("test", "render", scene.Player.Plan, 0);
+    Expect(seen.SequenceEqual(["render", "hidden", "take"]), string.Join(",", seen));
+});
+Check("closing a render from RenderStarted cannot publish an orphan take", () =>
+{
+    var scene = Scene(2, 1, 0);
+    var seen = Observe();
+    ReplaySession.IsRendering = true;
+    ReplaySession.RenderPlan = scene.Player.Plan;
+    ReplaySession.RenderFolder = "render";
+    CineCamEvents.RenderEnded += (_, _, _) => seen.Add("render_end");
+    CineCamEvents.RenderStarted += (_, _) =>
+    {
+        seen.Add("render");
+        ReplaySession.IsRendering = false;
+        ReplaySession.Scene = null;
+        ApiFeed.RenderEnded("test", "render", "closed");
+        ApiFeed.ReplayClosed();
+    };
+    ApiFeed.RenderStarted("test", "render", scene.Player.Plan, 0);
+    Expect(seen.SequenceEqual(["render", "render_end", "closed"]) && !CineCamEvents.IsTakeRunning,
+        string.Join(",", seen));
 });
 ApiFeed.Shutdown();
 Console.WriteLine(failed == 0 ? "All API feed tests passed." : $"{failed} API feed tests failed.");
