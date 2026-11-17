@@ -318,10 +318,11 @@ internal sealed class FlightRecorder
     {
         if (!ReferenceEquals(parent, _body) || string.IsNullOrWhiteSpace(template.Id) || template.Id.Length > 256)
             return;
+        intensity = KSA.Rendering.ExplosionIntensity.ClampIntensity(Finite(intensity));
         _effects.Add(new ReplayExplosion(Universe.GetElapsedSeconds() - Flight.StartTime, template.Id, parent.Id,
             ToV3(positionCcf), ToV3(velocityCcf), Math.Max(0f, Finite(intensity)), Math.Max(0f, Finite(ambientPressurePa)), Math.Max(0, seed)));
         _effectEnd = Math.Max(_effectEnd, Universe.GetElapsedSeconds() - Flight.StartTime
-            + template.GetScaledLifeSeconds(Math.Clamp(Finite(intensity), 0, 100), Math.Max(0, Finite(ambientPressurePa))));
+            + template.GetScaledLifeSeconds(intensity, Math.Max(0, Finite(ambientPressurePa))));
     }
 
     /// <summary>

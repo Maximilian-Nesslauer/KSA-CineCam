@@ -116,8 +116,11 @@ internal sealed class ReplayExplosions : IDisposable
     {
         if (Template(item.Template) is not { } template || _system.Get<Celestial>(item.Body) is not { } body)
             return;
-        if (Clock - (_startTime + item.Time) >= template.GetScaledLifeSeconds(item.Intensity, item.AmbientPressure))
+        float intensity = KSA.Rendering.ExplosionIntensity.ClampIntensity(item.Intensity);
+        if (item.Seed > 0 && Clock - (_startTime + item.Time) >= template.GetScaledLifeSeconds(intensity, item.AmbientPressure))
             return;
+        if (item.Seed <= 0 && _store.Count == 0) return;
+        ExplosionVolume[]? mergeBefore = item.Seed <= 0 ? Enumerable.Range(0, _store.Count).Select(i => _store[i]).ToArray() : null;
         HashSet<ExplosionVolume> before = Snapshot(_store);
         _spawnClock = _startTime + item.Time;
         try
@@ -130,7 +133,18 @@ internal sealed class ReplayExplosions : IDisposable
         }
 
         ExplosionVolume? volume = Added(_store, before);
-        if (item.Seed <= 0 || volume == null)
+        if (item.Seed <= 0)
+        {
+            // A recorded merge must not create a new volume when its original target has expired.
+            // Restore replaced slots too, because a full store can insert without growing.
+            if (volume != null)
+            {
+                _store.Clear();
+                foreach (ExplosionVolume original in mergeBefore!) _store.Add(original);
+            }
+            return;
+        }
+        if (volume == null)
             return;
         volume.NoiseSeed = item.Seed;
         volume.Shape = ExplosionVolumeShape.Build(volume.Template, volume.Parent, volume.PositionCcf,
