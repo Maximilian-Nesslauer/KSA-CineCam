@@ -133,7 +133,7 @@ static class ReplayFxTests
             var subject = new ReplayActor(1, "subject", [new ReplaySegment(0.5, "parts", [Sample(0.5, terminal), Sample(1, terminal)])]) { End = 1 };
             var flight = new ReplayFlight("game", "system", "body", 0, [old, subject], [])
                 { Follows = [new ReplayFollow(0.5, 1)], EndTime = 190 };
-            var world = new ReplayWorld(flight, 600000, segment => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), null));
+            var world = new ReplayWorld(flight, 600000, segment => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), V3.Zero));
             expect(world.Motion(130).OriginCcf == terminal && ReplayTimeline.Sample(old, 130) != null
                 && ReplayTimeline.Sample(subject, 130) == null, "the surviving booster must not replace the terminal camera anchor");
         });
