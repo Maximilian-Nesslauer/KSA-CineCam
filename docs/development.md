@@ -15,6 +15,7 @@ Targets **.NET 10**. The project references the game DLLs with the path `..\..\.
 dotnet build CineCam.slnx -maxcpucount:4 -p:DeployToMods=false
 dotnet run --project CineCam.Tests --no-build -maxcpucount:4 -p:DeployToMods=false
 dotnet run --project CineCam.ControlTests --no-build -maxcpucount:4 -p:DeployToMods=false
+dotnet run --project CineCam.ApiTests --no-build -maxcpucount:4 -p:DeployToMods=false
 ```
 
 `-p:DeployToMods=false` stops the build from copying the mod into the game folder. A build without it deploys the mod and fails while the game runs.
@@ -23,7 +24,7 @@ dotnet run --project CineCam.ControlTests --no-build -maxcpucount:4 -p:DeployToM
 
 `CineCam.ControlTests` links the picture guard, frame statistics, still capture and capture hooks against small game stand-ins, without loading KSA or a renderer.
 It tests the Harmony save prefix and finalizer on successful and failed saves, interface restore across a still warm-up and unload, quit refusal in every still phase, terminal explosion triggers and event times from older runs.
-`CineCam.Tests` also uses the stand-ins to check the FPS preference during a save and to hold a PNG task open after the GPU grab ends.
+The control tests also check the FPS preference during a save and hold a PNG task open after the GPU grab ends.
 The sound tests stall the WAV writer and check quit refusal until the final header has been written and the file is closed.
 These tests do not verify the Vulkan capture or the hook order inside the game.
 
@@ -76,12 +77,13 @@ python cinecam.py quit
 An active capture, a take, a flight that records or waits to be saved, or a reset blocks this command.
 A PNG write can still block quit with `capture_busy` after its capture ends.
 A WAV writer that is still closing the file blocks quit with `sound_pending`.
+`stop` replies after it saves the recording. A stop on a destruction frame can wait one frame for the last effects. A save error returns `file_error`, and `retry-save` can save the retained flight.
 Use `--help` for the remaining commands (`status`, `record`, `stop`, `retry-save`, `pause`, `interface`).
 Any program on this computer that can write to the control folder can send these commands, so leave it off unless you use it.
 
 ## Integration API
 
-Other mods subscribe to `CineCam.Api.CineCamEvents` through reflection, see [Integration for other mods](integration.md). The tests of the API, the cue action and the replay feed are in `CineCam.Tests/IntegrationTests.cs`. Run `python -I scripts/test_integration_example.py --scratch <test-folder>` to compile the actual example with the API and check its state over pauses, seeks, repeated cues, a render and a close. This test needs .NET 10 but no game assemblies.
+Other mods subscribe to `CineCam.Api.CineCamEvents` through reflection. See [Integration for other mods](integration.md). `CineCam.Tests/IntegrationTests.cs` covers the public API and cue actions. `CineCam.ApiTests` links the production feed and tests event order, run boundaries, and callbacks that close the replay or render. Run `python -I scripts/test_integration_example.py --scratch <test-folder>` to compile the documented example and check its state over pauses, seeks, repeated cues, a render and a close. These tests need .NET 10 and run without game assemblies.
 
 ## Maintenance on each game update
 
@@ -168,7 +170,8 @@ If the stop wait times out, the recorder retains the writer and refuses a new so
 
 - `Parachute._lineStretchElapsedS` and `Parachute._disreefElapsedS` (private `float` fields, through `AccessTools.FieldRefAccess`): the recorder reads them and the replay writes them, because `Parachute.DeployExtension` and `Parachute.DisreefProgress` come from them. Without them no parachute is recorded, with one log line.
 - `ChuteClothSystem.UpdateAttractorTargets(ChuteClothState, Parachute, float3[], float[], float, ref ClipFillCache)` (private, static; the last parameter is a private struct, so it runs through `MethodInfo.Invoke`): it fills the target shape of a canopy from the state of a parachute. Without it the replay shows no canopy, with one log line.
-- `ExplosionVolumeManager._store` (private field, an `ExplosionVolumeStore`): the replay keeps the live volumes outside the store while it is open and gives them back when it closes, and the recorder reads the noise seed of a new volume from it.
+- `ExplosionVolumeManager._store` (private `ExplosionVolumeStore`): the replay keeps live volumes outside the store until it closes. The recorder uses object identity to track births, merges and slot replacements and reads the native seed and lifetime.
+- `ExplosionVolumeManager._spawner` and the private method `ExplosionVolumeSpawner.SpawnVolume`: create each recorded birth directly, bypassing the game's search for a nearby volume to merge. Check that the method adds the volume to the store with its native lifetime. Merge and replacement records address their exact recorded identities.
 - `ModLibrary.AllExplosionVolumeTemplates` (internal static field, a `SerializedCollection<ExplosionVolumeTemplate>`): the replay finds the template of a recorded volume by `SerializedId.Id` in `GetList()`.
 
 ### Reflection keys (`Core/GameReflection.cs`)
