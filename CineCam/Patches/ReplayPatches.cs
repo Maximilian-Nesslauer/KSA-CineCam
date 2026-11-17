@@ -3,6 +3,7 @@ using Brutal.Numerics;
 using System.Reflection;
 using System.Reflection.Emit;
 using Brutal.GlfwApi;
+using CineCam.Director.Replay;
 using CineCam.Features.Replay;
 using HarmonyLib;
 using KSA;
@@ -104,6 +105,11 @@ internal static class ReplayPatches
             // The game is at speed 0 in a replay, so the stock alert "Simulation paused" would stay
             // over the view. A render hides the whole interface, so it needs no patch for that.
             PatchOptional(typeof(FixedAlert), nameof(FixedAlert.Draw), nameof(BeforeFixedAlert), [typeof(float), typeof(double)]);
+            // The sim stays at speed 0 in a replay, so the game gives every sound the pitch 0. The
+            // engine sounds of the replay get the pitch of the replay rate here. Without the patch
+            // the replay plays no engine sound.
+            ReplaySound.PitchHook = PatchOptional(typeof(ChannelWrapper), nameof(ChannelWrapper.HandleSimSpeedPitch),
+                nameof(BeforeSoundPitch), none);
             ReplaySession.Available = true;
         }
         catch (Exception ex)
@@ -122,17 +128,19 @@ internal static class ReplayPatches
             transpiler: transpiler ? hook : null);
     }
 
-    private static void PatchOptional(Type owner, string target, string method, Type[]? types, bool postfix = false, bool transpiler = false)
+    private static bool PatchOptional(Type owner, string target, string method, Type[]? types, bool postfix = false, bool transpiler = false)
     {
         try
         {
             if (types == null)
                 throw new MissingMethodException(owner.Name, target);
             Patch(owner, target, method, types, postfix, transpiler);
+            return true;
         }
         catch (Exception ex)
         {
             DefaultCategory.Log.Warning($"[CineCam] Replay runs without the patch of {owner.Name}.{target}: {ex.Message}");
+            return false;
         }
     }
 
@@ -159,6 +167,7 @@ internal static class ReplayPatches
         _harmony?.UnpatchAll(_harmony.Id);
         ReplayPartState.ReleaseAll();
         _harmony = null;
+        ReplaySound.PitchHook = false;
         _worldChangeDepth = 0;
         _pausedAlert = null;
         _pausedAlertLooked = false;
@@ -378,6 +387,15 @@ internal static class ReplayPatches
         }
 
         return null;
+    }
+
+    // The same value that ChannelWrapper.HandleSimSpeedPitch computes, with the replay rate in place of the sim speed.
+    private static bool BeforeSoundPitch(ChannelWrapper __instance)
+    {
+        if (ReplaySound.Current is not { } sound || !sound.Owns(__instance))
+            return true;
+        __instance.SimPitchMultiplier = ReplaySoundMath.SpeedPitch((SoundSpeedRule)(int)__instance.SoundReference.SimSpeedRule, sound.Rate);
+        return false;
     }
 
     // A null parent makes VolumetricTrailRenderer.PrepareAndRenderShadowCascades prepare no

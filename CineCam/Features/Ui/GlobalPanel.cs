@@ -48,6 +48,7 @@ internal static class GlobalPanel
         DrawCapture(session);
         LookPanel.DrawStill();
         DrawAliasFold(session);
+        DrawSound();
         Widgets.Section("Interface during a take");
         DrawInterface(session);
         Widgets.Section("Game sound");
@@ -97,6 +98,14 @@ internal static class GlobalPanel
         }
     }
 
+    private static void DrawSound()
+    {
+        bool record = CineCamSettings.RecordTakeSound;
+        if (Widgets.Check("Record the game sound of a take", ref record,
+                "Saves the game sound of each real-time take as game-sound.wav (32-bit float, stereo) in the take folder, as you hear it with your volume settings. The event log gives the take time of its first sample. An offline capture, a dry run and a preview record no sound, because an offline capture runs slower than real time. About 23 MB per minute."))
+            CineCamSettings.SetRecordTakeSound(record);
+    }
+
     private static void DrawExperimental()
     {
         bool replay = CineCamSettings.ExperimentalReplay;
@@ -109,6 +118,10 @@ internal static class GlobalPanel
         if (Widgets.Check("Record the flight with each take", ref record,
                 "Starts a flight recording when a take starts and saves it when the take ends, so the flight can be cut again in a replay. The recording has the name of the take. A dry run and a preview record nothing, and a recording that runs already goes on."))
             CineCamSettings.SetRecordWithTake(record);
+        bool sound = CineCamSettings.ReplaySound;
+        if (Widgets.Check("Engine sounds in a replay", ref sound,
+                "Plays the engine sounds of the recorded burning engines at their plumes. The pitch follows the replay speed as the game sound follows the game speed. A pause holds the sounds, and a render or a speed above 10x plays none."))
+            CineCamSettings.SetReplaySound(sound);
     }
 
     private static void DrawDeveloper(EditSession session)

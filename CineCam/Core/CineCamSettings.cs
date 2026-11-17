@@ -57,6 +57,11 @@ internal static class CineCamSettings
 
     // The size of a supersampled still as a multiple of the window size.
     public static int StillScale { get; private set; } = 4;
+    // Records the game sound of a real-time take into a WAV file in the take folder.
+    public static bool RecordTakeSound { get; private set; }
+
+    // Plays the engine sounds of the recorded flight in a replay.
+    public static bool ReplaySound { get; private set; } = true;
 
     // Empty when the last write succeeded.
     public static string SaveError { get; private set; } = "";
@@ -82,6 +87,8 @@ internal static class CineCamSettings
         MuteOfflineCapture = true;
         MuteReplay = true;
         StillScale = 4;
+        RecordTakeSound = false;
+        ReplaySound = true;
         LoadError = "";
         SaveError = "";
         string path = CineCamPaths.SettingsFile;
@@ -114,6 +121,8 @@ internal static class CineCamSettings
             MuteOfflineCapture = ReadBool(document.RootElement, "muteOfflineCapture", MuteOfflineCapture);
             MuteReplay = ReadBool(document.RootElement, "muteReplay", MuteReplay);
             StillScale = ReadInt(document.RootElement, "stillScale", StillScale, MinStillScale, MaxStillScale);
+            RecordTakeSound = ReadBool(document.RootElement, "recordTakeSound", RecordTakeSound);
+            ReplaySound = ReadBool(document.RootElement, "replaySound", ReplaySound);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -207,6 +216,18 @@ internal static class CineCamSettings
         Save();
     }
 
+    public static void SetRecordTakeSound(bool value)
+    {
+        RecordTakeSound = value;
+        Save();
+    }
+
+    public static void SetReplaySound(bool value)
+    {
+        ReplaySound = value;
+        Save();
+    }
+
     // The text goes to a temporary file first, so a failed write never leaves half a file.
     public static bool Save()
     {
@@ -273,6 +294,10 @@ internal static class CineCamSettings
   // The window is hidden while a take records. Set this to true to keep it on the screen.
   "showWindowDuringTake": {{Bool(ShowWindowDuringTake)}},
 
+  // Records the game sound of each real-time take into game-sound.wav in the take folder. An offline
+  // capture, a dry run and a preview record no sound.
+  "recordTakeSound": {{Bool(RecordTakeSound)}},
+
   // Shows the replay of recorded flights. The replay is experimental.
   "experimentalReplay": {{Bool(ExperimentalReplay)}},
 
@@ -287,6 +312,8 @@ internal static class CineCamSettings
 
   // The size of a supersampled still (cinecam_still) as a multiple of the window size, 2 to 8.
   "stillScale": {{StillScale}},
+  // Plays the engine sounds of the recorded flight in a replay. Needs experimentalReplay.
+  "replaySound": {{Bool(ReplaySound)}},
 
   // Shows the items for mod developers in the window: file paths, the local control and the autotest.
   "developerMode": {{Bool(DeveloperMode)}},

@@ -247,7 +247,17 @@ A shot that cuts 2 seconds before the vehicle comes down to 100 m over the groun
 
 ## Take folder and event log
 
-Each take run writes a folder `Documents\My Games\Kitten Space Agency\CineCam\takes\<date>-<time>-<take name>\`. It holds a copy of the shot file and the log `events.csv` with the time of every event, shot, speed key and action.
+Each take run writes a folder `Documents\My Games\Kitten Space Agency\CineCam\takes\<date>-<time>-<take name>\`. It holds a copy of the shot file and the log `events.csv` with the time of every event, shot, speed key and action. With **Record the game sound of a take** on, a real-time take also writes `game-sound.wav`, the game sound of the take in 32-bit float stereo.
+
+The sound file has three rows of the kind `info` in the log (`warning` when something failed):
+
+| Name | Detail |
+| --- | --- |
+| `sound` | `recording` with the file, the sample rate and the format, or why the take records no sound (an offline capture) |
+| `soundStart` | `firstSampleTakeSeconds`: the take time of the first sample of the file. Put the start of the file at this take time |
+| `soundEnd` | `seconds`: the length of the file; `droppedSeconds`: sound that the disk could not take in time, which the file holds as silence at its place so the timing stays |
+
+The file runs in real time, also through a pause for an edit, as a screen recording does. So the same pause shift of the marker tool below fits the file: its sample at real time `t` after the first sample is at take time `firstSampleTakeSeconds + t` minus the pauses before it.
 
 `scripts/events-to-markers.py` turns the event log into markers for a video editor, so the cuts can follow the flight. It needs Python 3 and nothing else.
 

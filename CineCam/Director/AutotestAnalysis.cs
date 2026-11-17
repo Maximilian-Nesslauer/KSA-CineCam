@@ -288,6 +288,52 @@ public static class AutotestAnalysis
             : new AutotestCheck("values restored", false, string.Join("; ", problems));
     }
 
+    /// <summary>
+    /// The WAV file of a real-time take holds sound, starts near the take start and runs in real time
+    /// to the take end, through the pauses, so its length is the take time plus the pauses minus the
+    /// take time of its first sample.
+    /// </summary>
+    public static AutotestCheck GameSound(IReadOnlyList<CsvRow> rows, Sound.WavInfo? wav, string? readError)
+    {
+        const string name = "game sound";
+        if (wav == null)
+            return new AutotestCheck(name, false, "no sound file: " + (readError ?? "not found"));
+        CsvRow? start = rows.FirstOrDefault(r => r.Name == "soundStart");
+        CsvRow? end = rows.LastOrDefault(r => r.Kind == "take" && r.Name == "end");
+        double? first = start == null ? null : DetailNumber(start.Detail, "firstSampleTakeSeconds");
+        if (first is not double offset || end == null)
+            return new AutotestCheck(name, false, "the log has no soundStart row or no take end");
+        double pauses = rows.Where(r => r.Kind == "pause" && r.Name == "end").Sum(r => DetailNumber(r.Detail, "length") ?? 0.0);
+        double expected = end.RealSeconds + pauses - offset;
+        bool pass = wav.Peak > 0.001f && Math.Abs(wav.Seconds - expected) < 0.25 && offset > -0.05 && offset < 0.5
+            && rows.Any(r => r.Name == "soundEnd" && r.Kind == "info");
+        return new AutotestCheck(name, pass, string.Create(CultureInfo.InvariantCulture,
+            $"{wav.Seconds:F3} s at {wav.SampleRate} Hz, {wav.Channels} channels, peak {wav.Peak:F4}, rms {wav.Rms:F4}; first sample at take time {offset:F4} s; take end {end.RealSeconds:F3} s plus pauses {pauses:F3} s gives {expected:F3} s"));
+    }
+
+    /// <summary>An offline capture records no sound and says so in the log.</summary>
+    public static AutotestCheck NoOfflineSound(IReadOnlyList<CsvRow> rows, bool fileExists)
+    {
+        CsvRow? row = rows.FirstOrDefault(r => r.Kind == "info" && r.Name == "sound");
+        bool pass = !fileExists && row != null && row.Detail.StartsWith("not recorded", StringComparison.Ordinal);
+        return new AutotestCheck("no sound in an offline capture", pass, row?.Detail ?? "the log has no sound row");
+    }
+
+    /// <summary>The number after <c>key=</c> in a detail text of the event log, or null.</summary>
+    public static double? DetailNumber(string detail, string key)
+    {
+        foreach (string part in detail.Split(';'))
+        {
+            string item = part.Trim();
+            if (!item.StartsWith(key + "=", StringComparison.Ordinal))
+                continue;
+            string value = item[(key.Length + 1)..].Split(' ')[0];
+            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double number) ? number : null;
+        }
+
+        return null;
+    }
+
     public static string ToJson(object report) =>
         JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 }
