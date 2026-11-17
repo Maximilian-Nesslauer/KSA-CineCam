@@ -57,6 +57,8 @@ public sealed class MaxQTracker
     /// <summary>The highest pressure since the tracking started, or 0.</summary>
     public double Peak => _tracking ? _peak : 0.0;
 
+    public double? PeakTime => _tracking ? _peakTime : null;
+
     /// <summary>Returns the time and the pressure of a max Q when this sample shows it.</summary>
     public (double Time, double Pascals)? Update(double time, double pascals, bool contact)
     {

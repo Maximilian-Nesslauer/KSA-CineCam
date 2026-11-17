@@ -14,6 +14,8 @@ static class OldRecordingTests
                 "parse 5901");
             expect(ReplayBuild.TryParse("2026.11.16.5901-beta+abc", out ReplayBuild.Numbers s) && s.Suffix == "beta", "no v, a suffix and metadata");
             expect(!ReplayBuild.TryParse("", out _) && !ReplayBuild.TryParse("v2026.11", out _) && !ReplayBuild.TryParse(null, out _), "bad texts");
+            expect(!ReplayBuild.TryParse("v\u0662026.11.16.5901", out _), "non-ASCII digits are refused without throwing");
+            expect(ReplayBuild.Short("v\u0662026.11.16.5901").Contains("5901"), "a malformed build can still be listed");
             expect(ReplayBuild.Compare(b5801, b5901) == ReplayBuildAge.Older, "5801 is older than 5901");
             expect(ReplayBuild.Compare(b5901, b5801) == ReplayBuildAge.Newer, "5901 is newer than 5801");
             expect(ReplayBuild.Compare(b5901, b5901) == ReplayBuildAge.Same, "same build");

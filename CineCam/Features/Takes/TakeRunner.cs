@@ -855,7 +855,10 @@ internal static partial class TakeRunner
             SeparatedNearest = nearest,
             BodyCentre = bodyCentre,
             Pole = pole,
-            Vehicle = take.Vehicle.Sample(TakeMarks(take)),
+            Vehicle = take.Vehicle.Sample(TakeMarks(take)) with
+            {
+                Stamp = new EventStamp(GameSeconds(), take.Offline?.FrameNumber ?? -1, Universe.GetSimulationSpeed()),
+            },
             VehicleFrame = take.Vehicle.Frame(take.Site),
             VehicleHeight = take.Vehicle.Height,
             VehicleWidth = take.Vehicle.Width,
@@ -925,8 +928,13 @@ internal static partial class TakeRunner
         {
             if (seen.Name == "ignition")
                 take.IgnitionGameSeconds = GameSeconds();
-            WriteRow(take, "event", seen.Name, seen.Detail, t);
-            ApiFeed.LiveEvent(seen.Name, t);
+            if (seen.Stamp is { } stamp)
+                take.Log.Write(seen.TakeTime, stamp.GameSeconds,
+                    take.IgnitionGameSeconds.HasValue ? stamp.GameSeconds - take.IgnitionGameSeconds.Value : 0,
+                    stamp.Speed, stamp.Frame, "event", seen.Name, seen.Detail);
+            else
+                WriteRow(take, "event", seen.Name, seen.Detail, seen.TakeTime);
+            ApiFeed.LiveEvent(seen.Name, seen.TakeTime, seen.Stamp?.GameSeconds);
             if (take.HideUiEvent != null && seen.Name == take.HideUiEvent && !take.HidUi)
             {
                 if (take.IsPaused)

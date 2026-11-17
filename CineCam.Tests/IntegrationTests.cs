@@ -143,7 +143,9 @@ internal static class IntegrationTests
         {
             ReplayTakePlan plan = Plan();
             var job = new ReplayRenderJob(2.0, plan.Duration, 10.0);
-            List<ReplayRenderRow> rows = ReplayRenderLog.TimedRows(plan, job);
+            List<ReplayRenderRow> rows = ReplayRenderLog.TimedRows(plan, job,
+                new Dictionary<string, string> { ["liftoff"] = "recorded flight detail" });
+            expect(rows.Single(r => r.Name == "liftoff").Detail.Contains("recorded flight detail"), "cue rows retain flight event details");
             ReplayRenderRow cue = rows.Single(r => r.Kind == "cue" && r.Name == "overlay-in");
             expect(cue.Picture == 11 && cue.Detail.StartsWith("actions[1]", StringComparison.Ordinal), $"picture {cue.Picture} detail {cue.Detail}");
             expect(rows.FindIndex(r => r.Name == "liftoff") < rows.IndexOf(cue), "the event before the cue of the same time");

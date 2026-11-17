@@ -155,7 +155,10 @@ internal static class FlightEventTests
             for (int i = 0; i <= 600 && found == null; i++)
             {
                 double t = i * 0.1;
-                var events = detector.Update(t, Flying() with { DynamicPressure = Q(t) });
+                var events = detector.Update(t, Flying() with
+                {
+                    DynamicPressure = Q(t), Stamp = new EventStamp(1000 + t * 0.25, i, 0.25),
+                });
                 if (Math.Abs(t - 15.0) < 1e-9 && detector.Predictions.TryGetValue("maxq", out double seconds))
                     predictedAt15 = seconds;
                 found = events.FirstOrDefault(e => e.Name == "maxq");
@@ -163,6 +166,7 @@ internal static class FlightEventTests
             }
 
             expect(found != null && Near(found.TakeTime, 20.0, 1e-9) && foundAt > 23.0 && foundAt < 24.0, $"peak time {found?.TakeTime} found at {foundAt}");
+            expect(found?.Stamp is { GameSeconds: 1005, Frame: 200, Speed: 0.25 }, "the delayed event keeps the peak clock and picture");
             expect(predictedAt15 is double p && Near(p, 5.0, 1.0), "prediction " + predictedAt15);
             expect(!detector.Predictions.ContainsKey("maxq:2"), "no prediction for an unwatched max Q");
 

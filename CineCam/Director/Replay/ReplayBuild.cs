@@ -15,7 +15,7 @@ public static partial class ReplayBuild
 {
     // The format of KSA.VersionInfo.VersionString, "v{Year}.{Month}.{Day}.{Revision}" with an optional
     // "-{Suffix}". VersionInfo.Parse accepts the same text with or without the "v".
-    [GeneratedRegex(@"^v?(?<Year>\d{1,9})\.(?<Month>\d{1,9})\.(?<Day>\d{1,9})\.(?<Revision>\d{1,9})(?:-(?<Suffix>[^+]+))?(?:\+.*)?$",
+    [GeneratedRegex(@"^v?(?<Year>[0-9]{1,9})\.(?<Month>[0-9]{1,9})\.(?<Day>[0-9]{1,9})\.(?<Revision>[0-9]{1,9})(?:-(?<Suffix>[^+]+))?(?:\+.*)?$",
         RegexOptions.CultureInvariant)]
     private static partial Regex Pattern();
 
@@ -37,11 +37,15 @@ public static partial class ReplayBuild
         numbers = default;
         if (string.IsNullOrWhiteSpace(text) || Pattern().Match(text.Trim()) is not { Success: true } match)
             return false;
-        numbers = new Numbers(Int(match, "Year"), Int(match, "Month"), Int(match, "Day"), Int(match, "Revision"),
+        if (!Int(match, "Year", out int year) || !Int(match, "Month", out int month)
+            || !Int(match, "Day", out int day) || !Int(match, "Revision", out int revision))
+            return false;
+        numbers = new Numbers(year, month, day, revision,
             match.Groups["Suffix"].Success ? match.Groups["Suffix"].Value : "");
         return true;
 
-        static int Int(Match match, string group) => int.Parse(match.Groups[group].Value, NumberStyles.None, CultureInfo.InvariantCulture);
+        static bool Int(Match match, string group, out int value) =>
+            int.TryParse(match.Groups[group].Value, NumberStyles.None, CultureInfo.InvariantCulture, out value);
     }
 
     /// <summary>Two builds with the same date and revision but another suffix have an unknown order.</summary>

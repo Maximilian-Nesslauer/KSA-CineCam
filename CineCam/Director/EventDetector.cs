@@ -52,7 +52,8 @@ public readonly record struct VehicleSample(
     int Boardings = 0,
     IReadOnlyList<string>? Explosions = null,
     double GimbalLimit = 0.0,
-    double DynamicPressure = 0.0);
+    double DynamicPressure = 0.0,
+    EventStamp? Stamp = null);
 
 /// <summary>The worst power state of the probe cores, as the status light of the game shows it.</summary>
 public enum PowerWarning { None, Low, Out }
@@ -60,7 +61,12 @@ public enum PowerWarning { None, Low, Out }
 /// <summary>The life support forecast of the crewed zones, as the game rates it.</summary>
 public enum SupplyWarning { None, Low, Critical, Out }
 
-public sealed record DetectedEvent(string Name, double TakeTime, string Detail);
+public readonly record struct EventStamp(double GameSeconds, int Frame, double Speed);
+
+public sealed record DetectedEvent(string Name, double TakeTime, string Detail)
+{
+    public EventStamp? Stamp { get; init; }
+}
 
 /// <summary>
 /// Turns the per-frame samples of the vehicle into the events of the shot file, each reported once,
@@ -107,6 +113,7 @@ public sealed class EventDetector
     private readonly List<double> _pressureTargets = new();
     private readonly HashSet<string> _maxQWatched = new(StringComparer.Ordinal);
     private readonly MaxQTracker _maxQ = new();
+    private EventStamp? _maxQStamp;
     private readonly HashSet<string> _above = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _seen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _predictions = new(StringComparer.Ordinal);
@@ -512,8 +519,11 @@ public sealed class EventDetector
             _predictions.Remove(next);
             Add(found, next, time, string.Create(CultureInfo.InvariantCulture,
                 $"peak {pascals / 1000.0:F2} kPa, found {takeTime - time:F1} s later"));
+            found[^1] = found[^1] with { Stamp = _maxQStamp };
             return;
         }
+        if (_maxQ.PeakTime == takeTime)
+            _maxQStamp = sample.Stamp;
 
         if (!_maxQWatched.Contains(next))
             return;

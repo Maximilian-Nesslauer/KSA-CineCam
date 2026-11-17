@@ -111,11 +111,12 @@ internal sealed class FlightRecorder
         if (_primary.Vehicle.IsDisposed)
             FollowSurvivor();
         Vehicle followed = _primary.Vehicle;
-        if (Lost(followed))
+        if (followed.IsDisposed)
         {
             AddDestroyedEvents();
-            return "The recorded vehicle was lost or changed its parent body.";
+            return "The recorded vehicle was lost.";
         }
+        bool changedBody = !ReferenceEquals(followed.Parent, _body);
 
         double time = Universe.GetElapsedSeconds() - Flight.StartTime;
         if (time < _lastTime && _splits.Count == 0)
@@ -137,7 +138,7 @@ internal sealed class FlightRecorder
         // A split or a changed part count starts a new segment at once, so the segment starts
         // where the vehicle changed. Other samples wait for the next step of the sampling grid.
         bool crewChanged = AnyCrewChanged();
-        bool changed = _splits.Count > 0 || _followChanged || crewChanged || AnyPartCountChanged();
+        bool changed = changedBody || _splits.Count > 0 || _followChanged || crewChanged || AnyPartCountChanged();
         if (!changed && !ReplaySampling.IsDue(time, _lastTime))
             return null;
         if (ReplaySampling.NeighborScanDue(_ticks))
@@ -243,7 +244,9 @@ internal sealed class FlightRecorder
 
         _lastTime = time;
         _bytes += _effects.Flush(Flight, time);
-        return null;
+        // The boundary pose still uses the recording body's fixed frame. Read the new vehicle state
+        // before ending, because MissionProgress.Record marks arrival after the SOI change.
+        return changedBody ? "The recorded vehicle changed its parent body." : null;
 
         CaptureFrame ReadFrame(Track track, bool newSegment)
         {

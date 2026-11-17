@@ -54,8 +54,8 @@ internal static class ApiFeed
         EndRun(Source.Live, reason);
     }
 
-    public static void LiveEvent(string name, double takeSeconds) =>
-        Raise(Source.Live, () => CineCamEvents.RaiseFlightEvent(name, takeSeconds, Universe.GetElapsedSeconds()));
+    public static void LiveEvent(string name, double takeSeconds, double? gameSeconds = null) =>
+        Raise(Source.Live, () => CineCamEvents.RaiseFlightEvent(name, takeSeconds, gameSeconds ?? Universe.GetElapsedSeconds()));
 
     public static void LiveShot(Take take, int index) => Raise(Source.Live, () => Shot(take, index, true));
 
