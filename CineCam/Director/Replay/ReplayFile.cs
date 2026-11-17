@@ -11,7 +11,7 @@ namespace CineCam.Director.Replay;
 /// </summary>
 public static class ReplayFile
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public const int MaxBytes = 256 * 1024 * 1024;
     public const int EventLimit = 10000;
 
@@ -79,8 +79,8 @@ public static class ReplayFile
         Envelope envelope;
         try { envelope = JsonSerializer.Deserialize<Envelope>(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), Options) ?? throw new InvalidDataException("Replay is empty."); }
         catch (JsonException ex) { throw new InvalidDataException("Replay JSON is invalid.", ex); }
-        if (envelope.Version is not (1 or CurrentVersion)) throw new InvalidDataException($"Unsupported replay version {envelope.Version}.");
-        ReplayFlight flight = Validate(envelope.Flight);
+        if (envelope.Version is not (1 or 2 or CurrentVersion)) throw new InvalidDataException($"Unsupported replay version {envelope.Version}.");
+        ReplayFlight flight = Validate(envelope.Flight) with { FormatVersion = envelope.Version };
         if (envelope.Version == 1)
             flight = flight with { Events = ReplayEvents.FromMarkers(flight.Markers), FormatVersion = 1 };
         return flight;

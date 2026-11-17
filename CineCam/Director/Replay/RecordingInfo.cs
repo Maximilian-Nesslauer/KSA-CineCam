@@ -70,7 +70,7 @@ public static class RecordingHeaderReader
             throw new InvalidDataException("Replay JSON is invalid.", ex);
         }
 
-        if (scan.Version is not (1 or ReplayFile.CurrentVersion))
+        if (scan.Version is not (1 or 2 or ReplayFile.CurrentVersion))
             throw new InvalidDataException($"Unsupported replay version {scan.Version}.");
         if (scan.Vehicle == null)
             throw new InvalidDataException("Invalid replay: actor");

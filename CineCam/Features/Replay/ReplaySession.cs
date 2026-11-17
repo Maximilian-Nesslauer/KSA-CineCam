@@ -384,7 +384,7 @@ internal static partial class ReplaySession
             string imported = ImportLegacy(scene, id);
             SyncTake(scene, true);
             scene.SetCameraMode(scene.Player.Plan.Take is { Shots.Count: > 0 } ? ReplayCameraMode.Take : ReplayCameraMode.Free);
-            string note = flight.FormatVersion < ReplayFile.CurrentVersion
+            string note = flight.FormatVersion == 1
                 ? " This recording is from an older version: only the lift-off and the ignitions are known as events."
                 : "";
             _openWarning = OpenWarningOf(flight.GameVersion, gameVersion, scene.Fit);

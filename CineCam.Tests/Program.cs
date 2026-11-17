@@ -4353,7 +4353,7 @@ const string replayTakeFile = """
 }
 """;
 
-Check("replay file: version 2 keeps the events, the vehicle states and the centers of mass", () =>
+Check("replay file: the current version keeps events, states and centers of mass", () =>
 {
     string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".ccreplay");
     try
@@ -4361,7 +4361,7 @@ Check("replay file: version 2 keeps the events, the vehicle states and the cente
         ReplayFlight flight = TakeFlight();
         ReplayFile.Save(path, flight);
         ReplayFlight loaded = ReplayFile.Load(path);
-        Expect(loaded.FormatVersion == 2, "version");
+        Expect(loaded.FormatVersion == ReplayFile.CurrentVersion, "version");
         Expect(loaded.Events.Select(e => e.Name).SequenceEqual(flight.Events.Select(e => e.Name)), "events");
         Expect(loaded.Actors[0].Segments[1].CenterOfMass == new V3(15.0, 0.1, 0.0), "center of mass");
         ReplaySample sample = loaded.Actors[0].Segments[0].Samples[100];
@@ -4402,7 +4402,7 @@ Check("replay file: a version 1 file stays readable and its markers become event
         var world = new ReplayWorld(flight, 600000, s => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), s.CenterOfMass));
         Expect(Near(world.VehicleAt(4).Speed, 40.0, 1e-9) && Near(world.VehicleAt(4).Altitude, 80.0, 1e-9), "speed from the velocity of the air");
         ReplayFile.Save(path, flight);
-        Expect(ReplayFile.Load(path).FormatVersion == 2, "a save writes version 2");
+        Expect(ReplayFile.Load(path).FormatVersion == ReplayFile.CurrentVersion, "a save writes the current version");
     }
     finally
     {
@@ -6562,6 +6562,28 @@ Check("replay file: the height over the ground is optional and must be finite", 
 });
 
 #endregion
+
+Check("replay file: version 2 retains its version and recorded events", () =>
+{
+    string path = Path.Combine(Path.GetTempPath(), "cinecam-v2-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+    try
+    {
+        ReplayFlight source = TakeFlight();
+        byte[] bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { Version = 2, Flight = source });
+        using (var file = File.Create(path))
+        using (var gzip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionLevel.Fastest))
+            gzip.Write(bytes);
+        ReplayFlight loaded = ReplayFile.Load(path);
+        Expect(loaded.FormatVersion == 2, "the envelope version is retained");
+        Expect(loaded.Events.SequenceEqual(source.Events), "version 2 events are not replaced by markers");
+        using var memory = new MemoryStream(bytes);
+        Expect(RecordingHeaderReader.Read(memory).Version == 2, "the recordings list accepts version 2");
+    }
+    finally
+    {
+        if (File.Exists(path)) File.Delete(path);
+    }
+});
 
 CineCam.Tests.FlightEventTests.Run(Check, Expect);
 TakeRenderTests.Run(Check, (condition, message) => Expect(condition, message));
