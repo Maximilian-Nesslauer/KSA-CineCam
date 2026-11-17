@@ -102,7 +102,7 @@ In a blend, the weight follows a smootherstep curve, so the camera starts and st
 
 `"preRoll": { "until": "liftoff", "loop": true }` is a field of a take. The shots before the first shot that starts on that event are the pre-roll block. They repeat as a loop, each shot after the one before with its own `transition`, until the event comes. Then the shot that is active is left through the transition of the waiting shot. The first shot may start at a time. The other shots of the block must follow the one before. Without `preRoll`, or with `"loop": false`, the shots play once, and a shot that waits holds the last pose of the shot before. In the window this is the switch **Repeat the opening shots until an event** above the shot list, with the field **Until the event** and the switch **Loop the opening shots** (off plays them once and holds the last pose).
 
-A trigger (`at` of a shot, a speed key or an action) is a take time in seconds (`"at": 12.5`), an object with a time (`{ "time": 12.5 }`), or an event with a delay (`{ "event": "liftoff", "delay": 3 }`). A negative delay works only for altitude, speed, ground and slow events. For other events it is set to 0 with a warning. A blend needs seconds above 0, and it lasts 3 seconds when the file gives no length.
+A trigger (`at` of a shot, a speed key or an action) is a take time in seconds (`"at": 12.5`), an object with a time (`{ "time": 12.5 }`), or an event with a delay (`{ "event": "liftoff", "delay": 3 }`). A negative delay works only for altitude, speed, ground, slow, q and maxq events. For other events it is set to 0 with a warning. A blend needs seconds above 0, and it lasts 3 seconds when the file gives no length.
 
 ## Speed keys
 
@@ -123,7 +123,7 @@ Actions. The only action now is `stage`.
 
 | Field | Meaning |
 | --- | --- |
-| `at` | When the action fires. It is required. A negative delay works for altitude, speed, ground and slow events only |
+| `at` | When the action fires. It is required. A negative delay works for altitude, speed, ground, slow, q and maxq events only |
 | `action` | `stage` |
 | `sequence` | Optional. The number of the sequence that must be the next one when the action fires |
 
@@ -188,8 +188,24 @@ Events, as the file names them:
 | `docked`, `docked:N` | A docking port of the vehicle was connected. When the game makes a new vehicle at the docking and gives it the control, the take follows it |
 | `undocked`, `undocked:N` | A docking port of the vehicle lost its connection, not within one second of a fired sequence. The take follows the vehicle that the game gives the control to |
 | `mark`, `mark:N` | The player gave a mark with the mark key or `cinecam_mark` during the take, or during the flight recording that a replay plays |
+| `q:P` | The dynamic pressure on the vehicle is P pascals or more, for example `q:20000` for 20 kPa. It is for a climb through the air: a take that starts at a higher pressure sees it at the start. The pressure is half the air density at the altitude times the square of the speed over the surface, as the game computes it. The delay may be negative |
+| `maxq`, `maxq:N` | The peak of the dynamic pressure (max Q), for example in the ascent and again in a reentry. The event has the time of the peak, but a live take knows the peak only when the pressure has fallen 3 percent (at least 100 Pa) below it, which takes a few seconds. So a shot at `maxq` starts in a live take when the event comes, and a shot with a later delay starts at its time after the peak. Use a negative delay to start before the peak: the take predicts it from the change of the pressure. A peak below 1 kPa, a peak with ground contact and a take that starts after the peak give no event. The next max Q needs the pressure below half of the last peak first. A replay knows the peak at once and starts the shot there |
+| `gimbal-limit`, `gimbal-limit:N` | An engine gimbal of the vehicle reaches 98 percent of its deflection limit while an engine runs, for example in a hard turn. It comes again after every gimbal was below 90 percent |
+| `explosion`, `explosion:N` | A part of the vehicle, or the whole vehicle, blew up (a part failure or a crash). The log says which part and why. When the explosion destroys the whole vehicle and no vehicle with its parts gets the control, the take ends, and the event is the last row of its log |
+| `control-lost`, `control-lost:N` | The vehicle lost its control: no able crew, or a probe core that is unpowered, switched off, failed, in storm standby or rebooting. The log names the reason. A vehicle without a control module gives no event |
+| `control-back`, `control-back:N` | The vehicle has control again |
+| `reboot`, `reboot:N` | A probe core reboots after a radiation upset (the radiation rule of the game) |
+| `probe-failed`, `probe-failed:N` | One more probe core of the vehicle has failed from radiation |
+| `power-low`, `power-low:N` | A probe core shows the status light for low power (less than 5 minutes of power left) or is out of power. A warning that comes again within 10 seconds after it cleared is the same warning |
+| `life-support-low`, `life-support-low:N` | The life support forecast of the crew falls to low (less than a day), critical (less than an hour) or out. Only with the life support rule of the game. A warning that comes again within 10 seconds after it cleared is the same warning |
+| `incapacitated`, `incapacitated:N` | One more kitten on board cannot act any more. Only with the life support rule |
+| `arrival`, `arrival:N` | The mission of the vehicle reached its destination body: the vehicle entered its sphere of influence. The log names the body |
+| `eva`, `eva:N` | A kitten left the vehicle on EVA. The take stays on the vehicle while the kitten is out, although the game gives the control to the kitten |
+| `board`, `board:N` | A kitten boarded the vehicle |
 
-Each event is reported once per take. A take that starts in flight sees the past events at the start, but not a `ground` or `slow` event, which needs the value above the target in the take first. An event name is not case sensitive.
+Each event is reported once per take. A take that starts in flight sees the past events at the start, but not a `ground` or `slow` event, which needs the value above the target in the take first. The events of the flight state (`control-lost` to `incapacitated`, `arrival` and `gimbal-limit`) come only from a change during the take, not from the state at its start. An event name is not case sensitive.
+
+An alias in `events` must not have the name of an event that the reader knows, except the events that came with CineCam 0.4.0 (`q` and the events from `maxq` on in the table): an older file can have an alias such as `"maxq": "altitude:11000"`, and the alias keeps its meaning.
 
 A shot that cuts 2 seconds before the vehicle comes down to 100 m over the ground:
 
