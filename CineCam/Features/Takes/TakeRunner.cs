@@ -106,7 +106,7 @@ internal static partial class TakeRunner
         try
         {
             ApplyPendingSpeed();
-            OfflineHooks.AfterGrab(_take != null);
+            OfflineHooks.AfterGrab();
             PauseAtRehearsalTime();
             ProcessRequests();
             if (_take is { HideUiNextFrame: true, IsPaused: false } hiding)
@@ -867,14 +867,13 @@ internal static partial class TakeRunner
         };
     }
 
-    // A vehicle that the game destroyed with an explosion has no sample any more, so its explosions go into the
-    // log at the end of the take.
     private static void EndGone(ActiveTake take, double t)
     {
         if (take.Preview == null)
         {
-            foreach (DetectedEvent seen in take.Director.Events.Destroyed(t, take.Vehicle.TakeExplosions()))
-                WriteRow(take, "event", seen.Name, seen.Detail, t);
+            DirectorFrame terminal = take.Director.Destroyed(t, take.Vehicle.TakeExplosions());
+            LogFrame(take, t, terminal);
+            FireCues(take, t);
         }
 
         End("the vehicle is gone");
@@ -913,9 +912,9 @@ internal static partial class TakeRunner
 
     private static void HideInterface(ActiveTake take)
     {
-        take.SavedDrawUi = Program.DrawUI;
+        take.SavedDrawUi = OfflineHooks.DrawUi;
         take.HidUi = true;
-        Program.DrawUI = false;
+        OfflineHooks.SetDrawUi(false);
         // The console draws over the picture, so new lines get no display time while the interface is hidden.
         Program.ConsoleWindow?.DisableMessageFading();
         GameUiGuard.ClearPartHighlights();

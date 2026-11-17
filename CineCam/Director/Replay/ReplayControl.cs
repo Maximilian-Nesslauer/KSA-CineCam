@@ -31,7 +31,7 @@ public static class ControlRules
     public static (string Code, string Message)? QuitBlock(QuitState state) => state switch
     {
         { Rendering: true } => ("rendering", "A render writes pictures. Stop it first with render-stop."),
-        { PictureWrite: true } => ("capture_busy", "The last pictures of a render are still written. Try again in a moment."),
+        { PictureWrite: true } => ("capture_busy", "A picture is being captured or saved. Try again in a moment."),
         { Recording: true } => ("recording", "A flight recording runs. Stop it first with stop, so the flight is saved."),
         { UnsavedFlight: true } => ("unsaved_flight", "A recorded flight is not saved yet. Save it with retry-save first."),
         { TakeRuns: true } => ("busy", "A take runs. Stop it first, so its event log and its pictures are complete."),

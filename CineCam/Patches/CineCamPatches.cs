@@ -104,6 +104,12 @@ internal static class CineCamPatches
                 prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(ConsoleDrawPrefix))));
 
         PictureGuard.ExposureAvailable = GameReflection.ValidateExposure();
+        PictureGuard.SaveGuarded = Group(true,
+            "[CineCam] The picture settings of a take are disabled because settings saves cannot be guarded",
+            () => harmony.Patch(AccessTools.DeclaredMethod(typeof(GameSettings), nameof(GameSettings.Save), Type.EmptyTypes)
+                    ?? throw new MissingMethodException("GameSettings.Save()"),
+                prefix: new HarmonyMethod(typeof(PictureGuard), nameof(PictureGuard.SavePrefix)),
+                finalizer: new HarmonyMethod(typeof(PictureGuard), nameof(PictureGuard.SaveFinalizer))));
         if (!PictureGuard.ExposureAvailable)
             DefaultCategory.Log.Warning("[CineCam] The exposure of a take is disabled - reflection targets not found.");
         LookGuard.SettingsGuarded = Group(GameReflection.ValidateSettingsGuard(),
@@ -160,7 +166,8 @@ internal static class CineCamPatches
         OfflineHooks.Detects = Group(GameReflection.ValidateOfflineDetection(),
             "[CineCam] A failed picture grab is found by a time out only",
             () => harmony.Patch(GameReflection.ScreenshotCapture_OnPostRender,
-                prefix: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.PostRenderPrefix))));
+                prefix: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.PostRenderPrefix)),
+                finalizer: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.PostRenderFinalizer))));
     }
 
     public static void Reset()

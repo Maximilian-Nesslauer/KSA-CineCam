@@ -1,5 +1,6 @@
 using Brutal.Numerics;
 using CineCam.Core;
+using CineCam.Features.Takes;
 using KSA;
 
 namespace CineCam.Features.Replay;
@@ -14,7 +15,7 @@ internal sealed class ReplayLiveState : IDisposable
     private readonly double3 _position = Camera.PositionCce;
     private readonly doubleQuat _rotation = Camera.LocalRotation;
     private readonly float _fov = (float)(Camera.GetFieldOfView() * (180.0 / Math.PI));
-    private readonly bool _ui = Program.DrawUI;
+    private readonly bool _ui = OfflineHooks.DrawUi;
     private readonly bool _control = Program.IsControlledVehicleActive;
     private readonly Vehicle? _controlled = Program.ControlledVehicle;
     private readonly double _speed = Universe.GetSimulationSpeed();
@@ -57,7 +58,7 @@ internal sealed class ReplayLiveState : IDisposable
         if (!_held)
             return;
         _held = false;
-        Program.DrawUI = _ui;
+        OfflineHooks.SetDrawUi(_ui);
         RestoreSpeed();
         try
         {

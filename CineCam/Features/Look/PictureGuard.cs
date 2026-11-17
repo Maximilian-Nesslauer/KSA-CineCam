@@ -37,6 +37,50 @@ internal static class PictureGuard
     /// <summary>True when Program.SetTonemapperSettings was found, so the exposure can change.</summary>
     public static bool ExposureAvailable { get; set; }
 
+    public static bool SaveGuarded { get; set; }
+
+    public static void SavePrefix(GameSettings __instance, out Action? __state) =>
+        __state = BeforeSave(__instance);
+
+    public static Exception? SaveFinalizer(Exception? __exception, Action? __state)
+    {
+        __state?.Invoke();
+        return __exception;
+    }
+
+    // GameSettings.Save serializes the instance directly, including calls from CrewClock.Toggle.
+    public static Action? BeforeSave(GameSettings owner)
+    {
+        if (_saved is not { } saved || !ReferenceEquals(saved.Owner, owner))
+            return null;
+        GameSettings.GraphicsSettings graphics = owner.Graphics;
+        float exposure = graphics.TonemapExposure;
+        bool ambient = graphics.CloudAmbientLight;
+        GameSettings.CloudShadows shadows = graphics.CloudShadows;
+        bool reflections = graphics.Reflections;
+        if (saved.WroteExposure)
+            graphics.TonemapExposure = saved.Exposure;
+        if (saved.WroteAmbient)
+            graphics.CloudAmbientLight = saved.CloudAmbientLight;
+        if (saved.WroteShadows)
+            graphics.CloudShadows = saved.CloudShadows;
+        if (saved.WroteReflections)
+            graphics.Reflections = saved.Reflections;
+        return () =>
+        {
+            if (!ReferenceEquals(_saved, saved) || !ReferenceEquals(GameSettings.Current, owner))
+                return;
+            if (saved.WroteExposure)
+                graphics.TonemapExposure = exposure;
+            if (saved.WroteAmbient)
+                graphics.CloudAmbientLight = ambient;
+            if (saved.WroteShadows)
+                graphics.CloudShadows = shadows;
+            if (saved.WroteReflections)
+                graphics.Reflections = reflections;
+        };
+    }
+
     public static void Update(TakePicture? wanted)
     {
         if (_broken)
@@ -165,6 +209,7 @@ internal static class PictureGuard
 
     public static void Reset()
     {
+        SaveGuarded = false;
         _saved = null;
         _broken = false;
         _warnedShadows = false;

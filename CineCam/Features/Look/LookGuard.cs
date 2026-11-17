@@ -79,7 +79,7 @@ internal static class LookGuard
     // only while the interface is hidden and the window cannot be open.
     private static TakePicture? WantedPicture()
     {
-        if (GameSettings.Show || (!SettingsGuarded && Program.DrawUI))
+        if (!PictureGuard.SaveGuarded || GameSettings.Show || (!SettingsGuarded && Program.DrawUI))
             return null;
         return LookTake()?.Picture;
     }

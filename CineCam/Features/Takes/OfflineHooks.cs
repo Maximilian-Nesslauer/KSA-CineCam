@@ -2,6 +2,7 @@ using System.Reflection;
 using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Director;
+using CineCam.Features.Look;
 using KSA;
 
 namespace CineCam.Features.Takes;
@@ -22,7 +23,7 @@ internal static class OfflineHooks
 {
     private static Action<int, string>? _screenshot;
     private static bool _expecting;
-    private static bool _cleanInFlight;
+    private static ScreenshotCapture? _cleanCapture;
     private static bool? _drawUiAfterGrab;
 
     public static bool Available { get; set; }
@@ -34,6 +35,9 @@ internal static class OfflineHooks
 
     /// <summary>Counts the calls of ScreenshotCapture.OnPostRender. A frame that returns early never calls it.</summary>
     public static long PostRenderCount { get; private set; }
+
+    public static bool DrawUi => _cleanCapture?.IsActive == true && _drawUiAfterGrab is bool shown
+        ? shown : Program.DrawUI;
 
     // The flag "ui" is the swapchain grab, which copies the image of this frame after the interface
     // is drawn, and scale 1 keeps the window size. Without the flag, ScreenshotCapture.Request at scale
@@ -47,12 +51,26 @@ internal static class OfflineHooks
         WaitForIdleCapture();
         if (Program.Instance?.IsScreenshotCaptureActive == true)
             return false;
+        AfterGrab();
         Result = PostRenderResult.Unknown;
         _expecting = true;
-        _cleanInFlight = grab == CaptureGrab.Clean;
+        _cleanCapture = grab == CaptureGrab.Clean ? Capture() : null;
+        _drawUiAfterGrab = grab == CaptureGrab.Clean ? Program.DrawUI : null;
         _screenshot(1, grab == CaptureGrab.Clean ? "" : "ui");
         return true;
     }
+
+    public static void RequestStill(int scale, int warmFrames)
+    {
+        AfterGrab();
+        _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
+        _cleanCapture = Capture();
+        _drawUiAfterGrab = Program.DrawUI;
+        _screenshot(scale, FormattableString.Invariant($"warm={warmFrames}"));
+    }
+
+    private static ScreenshotCapture? Capture() =>
+        GameReflection.Program_ScreenshotCapture!.GetValue(Program.Instance) as ScreenshotCapture;
 
     // A clean grab hides the interface in ScreenshotCapture.OnPrepareFrame and sets the value from
     // that moment back in ScreenshotCapture.OnPostRender, so a change of Program.DrawUI in between
@@ -60,24 +78,30 @@ internal static class OfflineHooks
     public static void SetDrawUi(bool shown)
     {
         Program.DrawUI = shown;
-        if (_cleanInFlight && Program.Instance?.IsScreenshotCaptureActive == true)
+        FrameStats.Update(!shown);
+        if (_cleanCapture?.IsActive == true)
             _drawUiAfterGrab = shown;
     }
 
-    // Runs at the start of each frame. A run that started since then owns the interface.
-    public static void AfterGrab(bool runActive)
+    // The last interface owner wins, including changes during a multi-frame warm-up.
+    public static void AfterGrab()
     {
-        if (_drawUiAfterGrab is not bool shown || Program.Instance?.IsScreenshotCaptureActive == true)
+        if (_cleanCapture?.IsActive == true)
+            return;
+        _cleanCapture = null;
+        if (_drawUiAfterGrab is not bool shown)
             return;
         _drawUiAfterGrab = null;
-        if (!runActive)
-            Program.DrawUI = shown;
+        SetDrawUi(shown);
     }
 
     public static void Shutdown()
     {
+        // ScreenshotCapture.Abort restores its saved interface value before the hooks are removed.
+        _cleanCapture?.Abort();
+        AfterGrab();
         Reset();
-        _cleanInFlight = false;
+        _cleanCapture = null;
         _drawUiAfterGrab = null;
     }
 
@@ -104,13 +128,14 @@ internal static class OfflineHooks
     public static void PostRenderPrefix(ScreenshotCapture __instance)
     {
         PostRenderCount++;
-        _cleanInFlight = false;
         if (!_expecting)
             return;
-        _expecting = false;
         try
         {
             string state = GameReflection.ScreenshotCapture_State!.GetValue(__instance)?.ToString() ?? "";
+            if (state is "PendingHiRes" or "Warming")
+                return;
+            _expecting = false;
             bool recorded = GameReflection.ScreenshotCapture_CopyRecorded!.GetValue(__instance) is true;
             bool armed = state is "ArmSwapchainGrab" or "CaptureFrame";
             Result = armed && recorded ? PostRenderResult.Saving : PostRenderResult.NoPicture;
@@ -119,5 +144,11 @@ internal static class OfflineHooks
         {
             LogHelper.ErrorOnce("offline-postrender", $"[CineCam] The state of the screenshot capture could not be read: {ex.Message}");
         }
+    }
+
+    public static Exception? PostRenderFinalizer(Exception? __exception)
+    {
+        AfterGrab();
+        return __exception;
     }
 }

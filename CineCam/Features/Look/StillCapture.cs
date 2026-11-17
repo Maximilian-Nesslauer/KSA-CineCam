@@ -34,7 +34,6 @@ internal static class StillCapture
         public Stopwatch SinceCaptureEnd { get; } = new();
     }
 
-    private static Action<int, string>? _screenshot;
     private static int? _requested;
     private static int _waitFrames;
     private static Pending? _pending;
@@ -106,8 +105,7 @@ internal static class StillCapture
         string folder = CineCamPaths.StillsFolder;
         var collector = new ScreenshotCollector(CineCamPaths.ScreenshotsFolder, folder);
         string name = TakeFolders.Unique(OfflineOutput.StillName(DateTime.Now, scale), n => File.Exists(Path.Combine(folder, n)));
-        _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
-        _screenshot(scale, string.Create(CultureInfo.InvariantCulture, $"warm={WarmFrames}"));
+        OfflineHooks.RequestStill(scale, WarmFrames);
         _pending = new Pending(collector, Path.Combine(folder, name), scale);
         DefaultCategory.Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"[CineCam] Still at {scale} times the window size requested, with {WarmFrames} warm-up frames."));
@@ -143,7 +141,6 @@ internal static class StillCapture
     {
         _requested = null;
         _pending = null;
-        _screenshot = null;
         _waitFrames = 0;
         Status = "";
     }

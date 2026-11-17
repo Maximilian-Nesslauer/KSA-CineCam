@@ -104,6 +104,7 @@ public sealed class Mod
         CineCamWindow.Shutdown();
         CineCamCommands.Unregister();
         // After the take and the replay ended, so nothing wants the sound or the picture settings any more.
+        OfflineHooks.Shutdown();
         LookGuard.Shutdown();
         ApiFeed.Shutdown();
 

@@ -162,6 +162,14 @@ public sealed class TakeDirector
 
     public EventDetector Events => _events;
 
+    // A destroyed vehicle has no world sample, so only its events and action triggers advance.
+    public DirectorFrame Destroyed(double takeTime, IReadOnlyList<string> explosions)
+    {
+        IReadOnlyList<DetectedEvent> events = _events.Destroyed(takeTime, explosions);
+        TimelineState state = _timeline.Update(takeTime, _events.Seen);
+        return new DirectorFrame { NewEvents = events, StartedActions = state.StartedActions };
+    }
+
     public DirectorFrame Update(double takeTime, WorldSample world)
     {
         double dt = double.IsNaN(_lastTime) ? 0.0 : Math.Max(takeTime - _lastTime, 0.0);

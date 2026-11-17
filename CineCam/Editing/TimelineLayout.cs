@@ -310,6 +310,22 @@ public sealed class TimelineLayout
     /// </summary>
     public sealed record RunLog(Dictionary<string, double> Times, bool Finished, double? EndSeconds);
 
+    public static IEnumerable<(string Folder, RunLog Run)> ReadFinishedRuns(string root, string takeName)
+    {
+        IEnumerable<string> names = Directory.GetDirectories(root).Select(d => Path.GetFileName(d));
+        foreach (string folder in RunFoldersNewestFirst(names, takeName))
+        {
+            string path = Path.Combine(root, folder, "events.csv");
+            if (!File.Exists(path))
+                continue;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            RunLog run = ReadRun(reader);
+            if (run.Finished)
+                yield return (folder, run);
+        }
+    }
+
     /// <summary>
     /// The event times of the finished runs, newest first. The newest run gives every time it has. An older
     /// run adds only the events after the end of all newer runs, because a newer run that a reset or a stop

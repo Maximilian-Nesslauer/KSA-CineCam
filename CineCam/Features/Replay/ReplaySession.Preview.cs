@@ -57,9 +57,9 @@ internal static partial class ReplaySession
         CleanPreviews();
         string folder = Path.Combine(PreviewRoot, Guid.NewGuid().ToString("N"));
         var collector = new ScreenshotCollector(CineCamPaths.ScreenshotsFolder, folder);
-        bool visible = Program.DrawUI;
+        bool visible = OfflineHooks.DrawUi;
         scene.SetPlaying(false);
-        Program.DrawUI = false;
+        OfflineHooks.SetDrawUi(false);
         try
         {
             if (!OfflineHooks.RequestPicture(CaptureGrab.Swapchain))
@@ -68,7 +68,7 @@ internal static partial class ReplaySession
         }
         catch
         {
-            Program.DrawUI = visible;
+            OfflineHooks.SetDrawUi(visible);
             throw;
         }
     }
@@ -98,7 +98,7 @@ internal static partial class ReplaySession
         if (_preview is not { } pending)
             return;
         _preview = null;
-        Program.DrawUI = pending.InterfaceVisible;
+        OfflineHooks.SetDrawUi(pending.InterfaceVisible);
         Complete(pending.Completion, ok, code, message, path);
     }
 }

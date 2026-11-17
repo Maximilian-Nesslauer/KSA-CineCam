@@ -198,7 +198,7 @@ internal static partial class ReplaySession
                 SavedPlaying = scene.IsPlaying,
                 SavedSpeed = scene.Player.PreviewSpeed,
                 SavedMode = scene.CameraMode,
-                SavedDrawUi = Program.DrawUI,
+                SavedDrawUi = OfflineHooks.DrawUi,
                 SavedTitle = Program.GetWindow()?.Title,
                 SavedAlerts = RenderAlerts.Snapshot(),
             };
@@ -232,7 +232,7 @@ internal static partial class ReplaySession
             scene.Seek(job.Start);
             scene.ResetCrew();
             scene.SetCameraMode(ReplayCameraMode.Take);
-            Program.DrawUI = false;
+            OfflineHooks.SetDrawUi(false);
             // The console draws its lines over the picture, so new lines get no display time.
             Program.ConsoleWindow?.DisableMessageFading();
             ApiFeed.RenderStarted(take.Name, folder, plan, job.Start);
@@ -290,7 +290,7 @@ internal static partial class ReplaySession
         {
             // The stock key that shows and hides the interface works in the key dispatch of the
             // game, so the render hides the interface again in each frame.
-            Program.DrawUI = false;
+            OfflineHooks.SetDrawUi(false);
 
             if (capture.Pending && !capture.Rendered && ++capture.CarryFrames <= RenderMaxCarryFrames)
             {

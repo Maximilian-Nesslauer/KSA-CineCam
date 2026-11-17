@@ -78,7 +78,7 @@ internal static partial class TakeRunner
             take.Clock.Pause(ClockSeconds);
             if (take.HidUi)
             {
-                Program.DrawUI = true;
+                OfflineHooks.SetDrawUi(true);
                 Program.ConsoleWindow?.EnableMessageFading();
             }
 
@@ -108,7 +108,7 @@ internal static partial class TakeRunner
             take.LastTickFrame = _frame;
             if (take.HidUi)
             {
-                Program.DrawUI = false;
+                OfflineHooks.SetDrawUi(false);
                 Program.ConsoleWindow?.DisableMessageFading();
                 GameUiGuard.ClearPartHighlights();
                 // Keeps the alert of the camera mode switch out of the pictures.
