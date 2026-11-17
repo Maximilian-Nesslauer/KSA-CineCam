@@ -50,6 +50,9 @@ internal static class GameReflection
     public static readonly MethodInfo? Program_Screenshot =
         AccessTools.Method(typeof(Program), "Screenshot", new[] { typeof(int), typeof(string) });
 
+    public static readonly FieldInfo? Program_ScreenshotCapture =
+        AccessTools.Field(typeof(Program), "_screenshotCapture");
+
     // ScreenshotCapture.OnPostRender saves the picture of the frame. A prefix reads its state to
     // learn whether this frame has a picture, so a failed grab is known at once.
     public static readonly MethodInfo? ScreenshotCapture_OnPostRender =
@@ -210,6 +213,7 @@ internal static class GameReflection
         var targets = new (string name, object? target)[]
         {
             ("Program.Screenshot(int, string)", Program_Screenshot),
+            ("Program._screenshotCapture", Program_ScreenshotCapture?.FieldType == typeof(ScreenshotCapture) ? Program_ScreenshotCapture : null),
         };
         return ValidateTargets("OfflineCapture", targets);
     }

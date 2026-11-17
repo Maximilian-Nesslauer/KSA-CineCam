@@ -20,12 +20,6 @@ internal static class LiveTimeline
         ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoScrollWithMouse;
     private const string MenuId = "##cinecam-timeline-menu";
 
-    // The search for an event log reads at most this many of the newest take folders.
-    private const int MaxRunsToRead = 20;
-
-    // A run that a reset or a stop ended early leaves the later events to the older runs, up to this many runs.
-    private const int MaxRunsToMerge = 4;
-
     private enum ItemKind { None, Shot, ShotEdge, Key, Action }
 
     private static bool _hidden;
@@ -312,23 +306,12 @@ internal static class LiveTimeline
             string root = CineCamPaths.TakesFolder;
             if (!Directory.Exists(root))
                 return;
-            IEnumerable<string> names = Directory.GetDirectories(root).Select(d => Path.GetFileName(d));
             var runs = new List<TimelineLayout.RunLog>();
-            foreach (string folder in TimelineLayout.RunFoldersNewestFirst(names, takeName).Take(MaxRunsToRead))
+            foreach ((string folder, TimelineLayout.RunLog run) in TimelineLayout.ReadFinishedRuns(root, takeName))
             {
-                string path = Path.Combine(root, folder, "events.csv");
-                if (!File.Exists(path))
-                    continue;
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                using var reader = new StreamReader(stream);
-                TimelineLayout.RunLog run = TimelineLayout.ReadRun(reader);
-                if (!run.Finished)
-                    continue;
                 if (runs.Count == 0)
                     _runFolder = folder;
                 runs.Add(run);
-                if (runs.Count >= MaxRunsToMerge)
-                    break;
             }
 
             if (runs.Count == 0)

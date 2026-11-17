@@ -4,6 +4,7 @@ using CineCam.Core;
 using CineCam.Director;
 using CineCam.Director.Replay;
 using CineCam.Editing;
+using CineCam.Features.Look;
 using CineCam.Features.Takes;
 using CineCam.Features.TimeOfDay;
 using CineCam.Features.Ui;
@@ -127,7 +128,7 @@ internal static partial class ReplaySession
                     throw new Refusal("hotkeys_unavailable", "No key can show the interface again. Set a window key on the Settings page, or the key patch is not available on this game build.");
                 if (!show)
                     NeedScene();
-                Program.DrawUI = show;
+                OfflineHooks.SetDrawUi(show);
                 ApiFeed.SyncInterface();
                 return Program.DrawUI ? "Interface shown." : "Interface hidden.";
             case ReplayOperation.Reload:
@@ -219,7 +220,7 @@ internal static partial class ReplaySession
     // An open replay closes before, so the interface and the camera are as the player left them.
     private static string Quit()
     {
-        var state = new QuitState(_render != null, _strayCapture != null, IsRecording, HasUnsavedFlight,
+        var state = new QuitState(_render != null, _strayCapture != null || StillCapture.IsBusy, IsRecording, HasUnsavedFlight,
             TakeRunner.IsRunning, TakeRunner.Reset.IsActive);
         if (ControlRules.QuitBlock(state) is { } block)
             throw new Refusal(block.Code, block.Message);
