@@ -457,7 +457,7 @@ internal sealed class FlightRecorder
             RocketNozzleState state = vehicle.Parts.RocketNozzles.GetStateByIdx(nozzle.StatesIdx);
             if (!(state.DutyCycle > 0) || !(state.Exhaust.Pressure > 0) || !(state.ExhaustVelocity > 0))
                 continue;
-            RocketCoreConditions core = vehicle.Parts.RocketCores.States[nozzle.Rocket.Core.StatesIdx].Conditions;
+            RocketCoreConditions core = vehicle.Parts.RocketCores.States[nozzle.Core.StatesIdx].Conditions;
             nozzles[i] = new ReplayNozzle(state.DutyCycle, state.ExhaustVelocity,
                 state.Exhaust.Pressure, state.Exhaust.Temperature, core.Gas.Gamma, core.Gas.SpecificGasConstant,
                 core.Core.Pressure, core.Core.Temperature, core.Exit.Pressure, core.Exit.Temperature,

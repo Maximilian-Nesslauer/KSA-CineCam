@@ -20,7 +20,7 @@ public sealed class Mod
 {
     private static Harmony? _harmony;
 
-    private const string TestedGameVersion = "v2026.11.10.5801";
+    private const string TestedGameVersion = "v2026.11.16.5901";
 
     private readonly IModMenuService _menu;
     private IDisposable? _menuItem;

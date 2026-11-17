@@ -109,6 +109,7 @@ internal static partial class TakeRunner
             {
                 Program.DrawUI = false;
                 Program.ConsoleWindow?.DisableMessageFading();
+                GameUiGuard.ClearPartHighlights();
                 // Keeps the alert of the camera mode switch out of the pictures.
                 TimedAlert.ClearAll();
             }

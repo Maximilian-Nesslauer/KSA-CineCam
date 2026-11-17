@@ -302,6 +302,7 @@ internal static partial class TakeRunner
         {
             Universe.SetSimulationSpeed(0.0, alert: false);
             _resetHoldsSim = true;
+            _resetHoldLogged = false;
             LogReset("Reset: the sim is stopped until the take starts.");
         }
     }

@@ -25,8 +25,10 @@ internal static partial class ReplaySession
     private const int RenderMaxCarryFrames = 120;
 
     // Frames that the game draws without a picture after the start and after a cut, so the terrain,
-    // the clouds and the temporal effects of the new view can catch up.
-    private const int StartSettleFrames = 30;
+    // the clouds and the temporal effects of the new view can catch up. The start can jump in time,
+    // and the cloud lighting volume (CloudShadowVolume.UpdateLightingVolumes) then needs 32 frames to
+    // refresh all its slices.
+    private const int StartSettleFrames = 36;
     private const int CutSettleFrames = 8;
 
     private const int DiskCheckEvery = 200;

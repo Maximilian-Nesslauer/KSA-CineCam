@@ -7,7 +7,7 @@ A camera mod for [Kitten Space Agency](https://ahwoo.com/app/100000/kitten-space
 Requirements:
 
 - [StarMap](https://github.com/StarMapLoader/StarMap) 0.5.3 or later
-- KSA build 2026.11.10.5801. The mod is tested against this build only.
+- KSA build 2026.11.16.5901. The mod is tested against this build only.
 
 ## Features
 
@@ -57,7 +57,7 @@ enabled = true
 - A replay does not show audio, crew, kittens on EVA, parachute canopies, dents, plume trails, smoke and particles. For a launch video with engine sound, use a live take.
 - A replay opens only on the game build of the recording, in the same star system, with its parts installed.
 - A recording holds 20 minutes of game time at 1x speed and follows the controlled vehicle and a limited number of other vehicles.
-- The mod is tested against KSA build 2026.11.10.5801 only. It patches game methods that are not a public modding interface, so a game update can break a feature until the mod is updated. It writes a warning in the log on another build.
+- The mod is tested against KSA build 2026.11.16.5901 only. It patches game methods that are not a public modding interface, so a game update can break a feature until the mod is updated. It writes a warning in the log on another build.
 - The import of the marker file into DaVinci Resolve has not been tested.
 
 ## How this mod was made

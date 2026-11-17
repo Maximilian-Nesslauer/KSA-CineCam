@@ -144,16 +144,16 @@ internal sealed class VehicleReader
         fresh = 0;
         bool any = false;
         PartTree parts = _vehicle.Parts;
+        // The state list is null when the vehicle has no rocket at all.
+        if (!ModuleStateful<Rocket, RocketState, EmptyStruct, EmptyStruct>.TryGetFrom(parts.States, out var states) || states == null)
+            return false;
         Span<EngineController> engines = parts.Modules.Get<EngineController>();
         for (int i = 0; i < engines.Length; i++)
         {
-            RocketCore[] cores = engines[i].Cores;
+            Rocket[] rockets = engines[i].Rockets;
             bool on = false;
-            for (int j = 0; j < cores.Length && !on; j++)
-            {
-                ref readonly RocketCoreState state = ref parts.RocketCores.GetStateByIdx(cores[j].StatesIdx);
-                on = state.Throttle > 0f;
-            }
+            for (int j = 0; j < rockets.Length && !on; j++)
+                on = states.GetState(rockets[j]).Throttle > 0f;
 
             if (!on)
                 continue;

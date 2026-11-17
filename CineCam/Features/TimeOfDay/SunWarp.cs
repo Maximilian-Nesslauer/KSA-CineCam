@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Brutal.Logging;
 using Brutal.Numerics;
+using CineCam.Core;
 using CineCam.Features.Replay;
 using CineCam.Features.Takes;
 using CineCam.Patches;
@@ -41,7 +42,7 @@ internal static class SunWarp
         if (TakeRunner.Refused("move of the game time", CineCamPatches.FrameBlock))
             return;
 
-        if (TakeRunner.IsRunning || ReplaySession.IsBusy)
+        if (TakeRunner.IsRunning || TakeRunner.Reset.IsActive || ReplaySession.IsBusy)
         {
             DefaultCategory.Log.Warning("[CineCam] Finish the active take or replay operation before changing the time of day.");
             return;
@@ -74,8 +75,11 @@ internal static class SunWarp
             return;
         }
 
-        if (Program.ControlledVehicle != null)
+        if (Program.ControlledVehicle is { } vehicle)
+        {
             DefaultCategory.Log.Warning("[CineCam] A vehicle exists, and a long warp with a vehicle on the pad is not tested.");
+            WarnProbePower(vehicle, (target - now).Seconds());
+        }
 
         _target = target;
         _started = Clock.Elapsed.TotalSeconds;
@@ -156,6 +160,60 @@ internal static class SunWarp
         });
         DefaultCategory.Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"[CineCam] Warp to game time {_target.Seconds() / 86400.0:F4} days (try {_tries})."));
+    }
+
+    // The game stops every warp 5 minutes before the probe cores of an uncrewed vehicle run out of
+    // power (Vehicle.UpdateProbePowerWarning) and again when the vehicle loses control
+    // (Vehicle.UpdateControl). The move tries again after each stop, but the vehicle is out of control
+    // at the target.
+    private static void WarnProbePower(Vehicle vehicle, double warpSeconds)
+    {
+        try
+        {
+            if (ProbePowerSeconds(vehicle) is not double remaining || remaining >= warpSeconds + PowerForecast.LOW_SECONDS)
+                return;
+            DefaultCategory.Log.Warning(string.Create(CultureInfo.InvariantCulture,
+                $"[CineCam] The probe core of {vehicle.Id} has power for about {remaining / 60.0:F0} min, and the move takes {warpSeconds / 3600.0:F1} h of game time. The game stops the warp before the power runs out, and the vehicle has no control at the target. Charge it, give it solar power or crew, or move the time before the vehicle is on the pad."));
+        }
+        catch (Exception ex)
+        {
+            LogHelper.WarnOnce("sun-probe-power", $"[CineCam] The probe power of the vehicle could not be read: {ex.Message}");
+        }
+    }
+
+    // The time until the probe cores of the vehicle run out, as Vehicle.ScanControls computes it: the
+    // longest forecast of the cores. Null for a vehicle with crew, because the game stops the warp only
+    // for an uncrewed one; infinite for a core with no switchable power consumer, which the game counts
+    // as always powered. A command pod is not a probe core.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static double? ProbePowerSeconds(Vehicle vehicle)
+    {
+        foreach (IVASeat seat in vehicle.Crew)
+        {
+            if (seat.AssignedKittenHash != KeyHash.Zero)
+                return null;
+        }
+
+        PartTree tree = vehicle.Parts;
+        double? longest = null;
+        foreach (Control control in tree.Modules.Get<Control>())
+        {
+            if (HabitatZone.FindZone(tree, control.Parent) != null)
+                continue;
+            double seconds = double.PositiveInfinity;
+            foreach (PowerConsumer consumer in control.Parent.Modules.Get<PowerConsumer>())
+            {
+                if (!consumer.PowerSwitch)
+                    continue;
+                UniverseTime remaining = PowerForecast.Compute(tree, consumer.Parent.FullPart).Remaining;
+                seconds = remaining.IsEndOfTime() ? double.PositiveInfinity : remaining.Seconds();
+                break;
+            }
+
+            longest = Math.Max(longest ?? 0.0, seconds);
+        }
+
+        return longest;
     }
 
     #endregion

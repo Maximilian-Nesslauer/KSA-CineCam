@@ -841,6 +841,7 @@ internal static partial class TakeRunner
         Program.DrawUI = false;
         // The console draws over the picture, so new lines get no display time while the interface is hidden.
         Program.ConsoleWindow?.DisableMessageFading();
+        GameUiGuard.ClearPartHighlights();
     }
 
     private static void LogFrame(ActiveTake take, double t, DirectorFrame frame)

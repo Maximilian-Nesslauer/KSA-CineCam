@@ -64,6 +64,8 @@ public sealed class OfflineCapture
 
     public bool WarnedSlowSim { get; set; }
 
+    public bool WarnedStepLimit { get; set; }
+
     public double NextStep => Retry ? RetryStepSeconds : FrameStep;
 
     /// <summary>Moves the time of the game loop by a step and returns the time the game must see.</summary>

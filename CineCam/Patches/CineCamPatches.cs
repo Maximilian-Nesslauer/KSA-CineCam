@@ -39,7 +39,15 @@ internal static class CineCamPatches
             "[CineCam] Takes, dry runs, shot previews, quick cameras, checkpoints, resets, the sun move, the offline capture, the replay preview pictures, the replay render and the self test are disabled. Replays still open and play",
             () => PatchFrame(harmony));
         if (FrameAvailable)
+        {
             PatchOffline(harmony);
+            Group(true,
+                "[CineCam] When the game sets the sim speed by itself (an uncrewed vehicle that runs low on probe power), a take can run one frame at that speed and a reset can stop holding the sim",
+                () => harmony.Patch(AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetJobSimStep), [typeof(double)])
+                        ?? throw new MissingMethodException("Universe.GetJobSimStep(double)"),
+                    prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(SimStepPrefix)),
+                    postfix: new HarmonyMethod(typeof(CineCamPatches), nameof(SimStepPostfix))));
+        }
 
         CameraAvailable = Group(GameReflection.ValidateCamera(),
             "[CineCam] Takes, dry runs, shot previews, quick cameras, the automatic start after a reset and the self test are disabled, because CineCam cannot move the camera. Replays, checkpoints and resets still work",
@@ -66,6 +74,7 @@ internal static class CineCamPatches
         KeysAvailable = Group(GameReflection.ValidateKeys(),
             "[CineCam] Keys disabled. Use the console commands",
             () => harmony.Patch(GameReflection.Program_OnKey,
+                prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(KeyPrefix)),
                 postfix: new HarmonyMethod(typeof(CineCamPatches), nameof(KeyPostfix))));
 
         Group(GameReflection.ValidateConsoleHide(),
@@ -136,6 +145,7 @@ internal static class CineCamPatches
         OfflineHooks.Available = false;
         OfflineHooks.Detects = false;
         OfflineHooks.Reset();
+        GameUiGuard.Reset();
     }
 
     private static void FramePrefix()
@@ -208,13 +218,22 @@ internal static class CineCamPatches
         return !ReferenceEquals(__instance, Program.MainViewport.FixedController);
     }
 
+    // Program.OnKey gives the cancel key to the part picker first (PartPicking.OnKey), which ends the
+    // pick, so a pick that was active before the key and is gone after it took the key.
+    private static void KeyPrefix(out bool __state)
+    {
+        __state = GameUiGuard.PickActive();
+    }
+
     // The same guard as the game uses for its own keys. The keys work while the game interface is
     // hidden, because Program.OnKey does not depend on it.
-    private static void KeyPostfix(GlfwKey key, GlfwKeyAction action)
+    private static void KeyPostfix(GlfwKey key, GlfwKeyAction action, bool __state)
     {
         try
         {
             if (action != GlfwKeyAction.Press || !Program.IsLoaded)
+                return;
+            if (__state && !GameUiGuard.PickActive())
                 return;
             if (ImGui.GetIO().WantCaptureKeyboard || Program.ConsoleWindow.IsOpen)
                 return;
@@ -275,6 +294,11 @@ internal static class CineCamPatches
             LogHelper.ErrorOnce("key", $"[CineCam] Error in the key handler: {ex}");
         }
     }
+
+    private static void SimStepPrefix() => TakeRunner.BeforeSimStep();
+
+    // __0 is the dtPlayer parameter of Universe.GetJobSimStep.
+    private static void SimStepPostfix(SimStep __result, double __0) => TakeRunner.AfterSimStep(__result.DeltaTime, __0);
 
     private static bool ConsoleDrawPrefix()
     {

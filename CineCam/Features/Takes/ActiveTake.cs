@@ -74,6 +74,8 @@ internal sealed class ActiveTake
 
     public bool ReportedSpeedOverride { get; set; }
 
+    public bool ReportedGameSpeedStop { get; set; }
+
     /// <summary>A test run, where the camera follows the shots but the sim speed is not touched and nothing is written to disk.</summary>
     public bool DryRun { get; init; }
 
