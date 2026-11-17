@@ -121,6 +121,9 @@ internal static partial class TakeRunner
         }
     }
 
+    // The same free flight as the apsis events of VehicleReader.Sample: no ground contact, outside the
+    // atmosphere, a closed orbit, and on an airless body a periapsis above the terrain. A vehicle on a
+    // pad or in a hop in the air has an orbit too, but its apsides are no events.
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static List<(double Time, string Name)> ApsisTimes(Vehicle vehicle)
     {
@@ -128,7 +131,10 @@ internal static partial class TakeRunner
         if (vehicle.IsDisposed || vehicle.Situation.HasAnyContact())
             return times;
         Orbit orbit = vehicle.Orbit;
-        if (orbit.GetOrbitType() != Orbit.OrbitType.Elliptical)
+        IParentBody parent = vehicle.Parent;
+        double atmosphere = parent.GetAtmosphereRadius();
+        if (orbit.GetOrbitType() != Orbit.OrbitType.Elliptical || vehicle.GetPositionCci().Length() <= atmosphere
+            || (atmosphere <= 0.0 && orbit.Periapsis < parent.GetNearSurfaceRadius()))
             return times;
         UniverseTime now = Universe.GetElapsedTime();
         if (orbit.GetNextApoapsisTime(now) is UniverseTime apoapsis)

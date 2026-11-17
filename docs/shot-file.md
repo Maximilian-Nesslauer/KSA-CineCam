@@ -165,7 +165,7 @@ A sequence whose parts all leave the vehicle when it fires, for example a fairin
 "picture": { "exposure": 1.8, "cloudShadows": false }
 ```
 
-`"exactApsides": true` makes an offline capture land a picture exactly on each apoapsis and periapsis that the orbit of the vehicle forecasts while the vehicle has no ground contact and the orbit is closed. When an apsis is less than two pictures ahead, the two pictures before it share the way, so no picture steps less than half of the normal step, and the game time after the apsis is a little behind the speed track (less than one picture step). The log gets an `info` row `exactTime` that names the picture and the game time. A realtime take ignores the field.
+`"exactApsides": true` makes an offline capture land a picture exactly on each apoapsis and periapsis that the orbit of the vehicle forecasts, in the same free flight as the `apoapsis` and `periapsis` events: no ground contact, outside the atmosphere, a closed orbit, and on a body without an atmosphere a periapsis above the terrain. When an apsis is less than two pictures ahead, the two pictures before it share the way, so no picture steps less than half of the normal step, and the game time after the apsis is a little behind the speed track (less than one picture step). The log gets an `info` row `exactTime` that names the picture and the game time. A realtime take ignores the field.
 
 ## Capture options
 
