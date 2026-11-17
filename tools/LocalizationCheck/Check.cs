@@ -79,8 +79,14 @@ public sealed class Check
 
     private static void Select()
     {
-        UiText.Language = _step < Pages.Length ? UiLanguage.English : UiLanguage.German;
+        UiLanguage wanted = _step < Pages.Length ? UiLanguage.English : UiLanguage.German;
+        if (UiText.Language != wanted)
+            typeof(UiText).Assembly.GetType("CineCam.Core.CineCamSettings", true)!.GetMethod("SetLanguage", Flags)!.Invoke(null, [wanted]);
         int page = _step % Pages.Length;
+        var session = Window.GetProperty("EditorSession", Flags)!.GetValue(null) as CineCam.Editing.EditSession;
+        string? longName = Environment.GetEnvironmentVariable("CINECAM_LOCALIZATION_LONG_TAKE");
+        if (session?.Document != null)
+            session.SelectTakeByName(page == 1 && longName != null ? longName : "Ready");
         FieldInfo main = Window.GetField("_page", Flags)!;
         main.SetValue(null, Enum.Parse(main.FieldType, Pages[page]));
         FieldInfo tab = Window.GetField("_liveTab", Flags)!;
