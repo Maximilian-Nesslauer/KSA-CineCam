@@ -6166,8 +6166,19 @@ Check("replay heading: the heading run costs little on a long recording", () =>
     for (int i = 0; i < 100; i++)
         plan.Headings!.At(1000.0 * i + 0.99);
     double lookupMs = watch.Elapsed.TotalMilliseconds / 100.0;
-    Console.WriteLine($"  long take ({plan.Duration:F0} take s, step {plan.Headings!.Step:F3} s): resolve {plainMs:F1} ms without and {resolveMs:F1} ms with the heading run, apply {applyMs:F1} ms, exact seek {seekMs:F1} ms, heading lookup {lookupMs:F3} ms");
-    Expect(resolveMs < 1000.0, $"{resolveMs} ms on the worker");
+    // The reference reads the recording once per step of the heading run, which is the part of the
+    // run that does not depend on the heading code. The ratio holds in a Debug and a Release build.
+    double headingStep = plan.Headings!.Step;
+    long steps = (long)Math.Floor(plan.Duration / headingStep + 1e-9);
+    watch.Restart();
+    double sink = 0.0;
+    for (long i = 0; i <= steps; i++)
+        sink += world.Motion(plan.RecordingTime(i * headingStep)).VelocityCcf.X;
+    double sampleMs = watch.Elapsed.TotalMilliseconds;
+    double ratio = resolveMs / Math.Max(sampleMs, 1.0);
+    Console.WriteLine($"  long take ({plan.Duration:F0} take s, step {headingStep:F3} s): resolve {plainMs:F1} ms without and {resolveMs:F1} ms with the heading run, {sampleMs:F1} ms to read the recording at each step ({ratio:F2}x), apply {applyMs:F1} ms, exact seek {seekMs:F1} ms, heading lookup {lookupMs:F3} ms");
+    Expect(double.IsFinite(sink), "the reads of the recording are finite");
+    Expect(ratio < 3.0, $"the heading run takes {ratio:F2} times the reads of the recording ({resolveMs:F1} ms against {sampleMs:F1} ms)");
     Expect(lookupMs < 2.0, $"{lookupMs} ms per lookup");
 });
 
