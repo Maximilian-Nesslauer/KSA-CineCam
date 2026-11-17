@@ -686,13 +686,13 @@ internal static class TrackPanel
 
                 changed |= DrawEventPicker(trigger, file);
                 double delay = trigger.Delay;
-                if (Widgets.Num("Delay (s)", ref delay, 0.05f, -3600.0, 3600.0, "%.2f", "Seconds after the event. A delay below 0 works only for altitude, speed, ground and slow events."))
+                if (Widgets.Num("Delay (s)", ref delay, 0.05f, -3600.0, 3600.0, "%.2f", "Seconds after the event. A delay below 0 works only for altitude, speed, ground, slow, q and maxq events."))
                 {
                     trigger.Delay = delay;
                     changed = true;
                 }
 
-                Widgets.Tip("A delay below 0 works only for altitude, speed, ground and slow events.");
+                Widgets.Tip("A delay below 0 works only for altitude, speed, ground, slow, q and maxq events.");
                 break;
         }
 
@@ -728,11 +728,11 @@ internal static class TrackPanel
             }
         }
 
-        Widgets.Tip("Type ignition:N, burnout:N, sequence:N, altitude:METERS, speed:METERS_PER_SECOND, ground:METERS or slow:METERS_PER_SECOND in the field above for the others. ignition:2 is the second time the engines come on, for example the upper stage in a hot staging. ground:100 comes when the lowest corner of the part bounding box comes down to 100 m over the terrain or the sea, and slow:50 when the speed over the surface falls to 50 m/s. Both need the vehicle in the air with the value above the target first, so they do not come on the pad or after a landing.");
+        Widgets.Tip("Type ignition:N, burnout:N, sequence:N, altitude:METERS, speed:METERS_PER_SECOND, ground:METERS, slow:METERS_PER_SECOND or q:PASCALS in the field above for the others, and :N after a counted event for its Nth time. ignition:2 is the second time the engines come on, for example the upper stage in a hot staging. ground:100 comes when the lowest corner of the part bounding box comes down to 100 m over the terrain or the sea, and slow:50 when the speed over the surface falls to 50 m/s. Both need the vehicle in the air with the value above the target first, so they do not come on the pad or after a landing. q:20000 comes when the dynamic pressure rises to 20 kPa, and maxq at the peak of the dynamic pressure (a live take finds the peak a few seconds after it, so start the shot with a negative delay).");
         return changed;
     }
 
-    private static readonly string[] EventNames = { "ignition", "ignition:2", "liftoff", "burnout", "burnout:2", "sequence:1", "sequence:2", "sequence:3", "ground:100", "landed", "soi", "apoapsis", "periapsis", "docked", "undocked", "mark" };
+    private static readonly string[] EventNames = { "ignition", "ignition:2", "liftoff", "burnout", "burnout:2", "sequence:1", "sequence:2", "sequence:3", "ground:100", "landed", "soi", "apoapsis", "periapsis", "docked", "undocked", "mark", "maxq", "q:20000", "gimbal-limit", "explosion", "control-lost", "control-back", "reboot", "probe-failed", "power-low", "life-support-low", "incapacitated", "arrival", "eva", "board" };
 
     #endregion
 }

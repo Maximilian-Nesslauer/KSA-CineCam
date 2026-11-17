@@ -233,7 +233,7 @@ internal static partial class ReplaySession
     private static bool Flag(bool? value) => value ?? throw new Refusal("invalid_argument", "Specify enabled or disabled.");
 
     /// <summary>The events of the recording for the take that plays, with their recording and take times, in the order of time.</summary>
-    // The list is made once per plan, because the altitude, speed, ground and slow events scan the whole recording.
+    // The list is made once per plan, because the altitude, speed, ground, slow, q and maxq events scan the whole recording.
     public static IReadOnlyList<ReplayEventStatus> Events()
     {
         if (Scene is not { } scene)
@@ -243,7 +243,7 @@ internal static partial class ReplaySession
             return _events;
         IEnumerable<EventName> watched = plan.Take != null && plan.File != null ? EventDetector.Watched(plan.Take, plan.File.Events) : [];
         _events = ReplayEvents.ForTake(scene.Flight, watched, scene.World.BodyRadius, scene.World.GroundHeight)
-            .Select(e => new ReplayEventStatus(e.Name, EventDisplay.Name(e.Name), e.Time,
+            .Select(e => new ReplayEventStatus(e.Name, e.Detail is { } detail ? EventDisplay.Name(e.Name) + " (" + detail + ")" : EventDisplay.Name(e.Name), e.Time,
                 plan.Take == null ? plan.TakeTime(e.Time) : plan.EventTimes.TryGetValue(e.Name, out double t) ? t : null))
             .ToArray();
         _eventsPlan = plan;

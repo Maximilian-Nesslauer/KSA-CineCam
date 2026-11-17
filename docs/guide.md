@@ -102,8 +102,17 @@ A shot, a speed key or an action starts **After** the one before, at a **Time** 
 | **Apoapsis**, **Periapsis** | The vehicle passes the highest or lowest point of its orbit. |
 | **Docked**, **Undocked** | A docking port connects or disconnects. The take follows the vehicle that the game gives the control to. |
 | **Mark** | You pressed the mark key during the take, or during a flight recording. |
+| **Dynamic pressure 20 kPa** | The dynamic pressure rises to a value. Type `q:20000` (pascals). |
+| **Max Q** | The peak of the dynamic pressure. A live take finds it a few seconds after the peak, so start a shot before it with a negative delay. |
+| **Gimbal at limit** | An engine gimbal reaches its deflection limit while an engine runs. |
+| **Explosion** | A part or the whole vehicle blew up. |
+| **Control lost**, **Control back** | The vehicle loses or gets back its control, for example when the probe core runs out of power or the crew left. |
+| **Probe core reboot**, **Probe core failed** | A probe core reboots after a radiation upset, or fails. |
+| **Probe power low**, **Life support low**, **Crew incapacitated** | The status light of a probe core shows low power, the life support forecast falls to low, or a kitten on board cannot act any more. |
+| **Mission arrival** | The vehicle enters the sphere of influence of the destination of its mission. |
+| **EVA**, **Boarding** | A kitten leaves the vehicle or boards it. The take stays on the vehicle while the kitten is out. |
 
-A negative delay works only for altitude, speed, ground and slow events, which the mod can predict. The altitude and speed events come when the value rises to the target, and the ground and slow events when it falls to it. The **Take setup** tab shows the events that the mod sees on your vehicle live, so you can check them on the pad.
+A negative delay works only for altitude, speed, ground, slow, dynamic pressure and max Q events, which the mod can predict. The altitude, speed and dynamic pressure events come when the value rises to the target, and the ground and slow events when it falls to it. The **Take setup** tab shows the events that the mod sees on your vehicle live, so you can check them on the pad, with a second line for the flight state: control, probe cores, power, life support, crew, mission, gimbal deflection and dynamic pressure. [The shot file reference](shot-file.md#events) has the exact rules of each event.
 
 ### Run a take
 

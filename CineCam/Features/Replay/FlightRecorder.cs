@@ -101,7 +101,10 @@ internal sealed class FlightRecorder
             FollowSurvivor();
         Vehicle followed = _primary.Vehicle;
         if (Lost(followed))
+        {
+            AddDestroyedEvents();
             return "The recorded vehicle was lost or changed its parent body.";
+        }
 
         double time = Universe.GetElapsedSeconds() - Flight.StartTime;
         if (time < _lastTime && _splits.Count == 0)
@@ -209,8 +212,7 @@ internal sealed class FlightRecorder
         _neighbors.Clear();
         foreach (DetectedEvent marker in markers)
         {
-            if (Flight.Events.Count < ReplayFile.EventLimit)
-                Flight.Events.Add(new ReplayEvent(time, marker.Name));
+            AddEvent(marker);
             if (marker.Name.StartsWith("ignition", StringComparison.Ordinal))
                 Flight.Markers.Add(new ReplayMarker(time, "Ignition" + marker.Name["ignition".Length..]));
             else if (marker.Name == "liftoff")
@@ -238,6 +240,23 @@ internal sealed class FlightRecorder
                 sample = sample with { State = state };
             return new CaptureFrame(track, nozzles, segment, sample, partState, channels, channelBytes);
         }
+    }
+
+    // A max Q has the time of its peak, which is before the sample that found it.
+    private void AddEvent(DetectedEvent detected)
+    {
+        if (Flight.Events.Count < ReplayFile.EventLimit)
+            Flight.Events.Add(new ReplayEvent(detected.TakeTime, detected.Name) { Detail = EventText.Clip(detected.Detail, ReplayFile.DetailLimit) });
+    }
+
+    // A vehicle that the game destroyed with an explosion has no sample any more, so its explosions get the time
+    // of the last sample.
+    private void AddDestroyedEvents()
+    {
+        if (_lastTime < 0)
+            return;
+        foreach (DetectedEvent detected in _events.Destroyed(_lastTime, _primary.TakeExplosions()))
+            AddEvent(detected);
     }
 
     // The part state is a part of the picture, not of the flight, so a failure to read it leaves the

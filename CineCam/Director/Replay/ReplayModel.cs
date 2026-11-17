@@ -105,7 +105,12 @@ public readonly record struct ReplayNozzle(float DutyCycle, float ExhaustVelocit
 public sealed record ReplayMarker(double Time, string Label);
 
 /// <summary><see cref="Name"/> is canonical (see <see cref="EventName.Canonical"/>), and the time is recording time.</summary>
-public sealed record ReplayEvent(double Time, string Name);
+public sealed record ReplayEvent(double Time, string Name)
+{
+    /// <summary>What the take log says about the event, for example why the control was lost, or null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Detail { get; init; }
+}
 
 // A camera view of a recording of version 1. A mount makes the pose part-local, otherwise an actor ID
 // makes it vehicle-local.

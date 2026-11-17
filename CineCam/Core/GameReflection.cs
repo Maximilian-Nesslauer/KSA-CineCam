@@ -87,7 +87,63 @@ internal static class GameReflection
 
     #endregion
 
+    #region Flight events
+
+    // The private VehicleControl that Vehicle.UpdateControl computes. It names why the vehicle has no control;
+    // Vehicle.NoControlTooltip gives the same reason only as a translated text.
+    public static readonly FieldInfo? Vehicle_Control =
+        AccessTools.Field(typeof(Vehicle), "_control");
+
+    // An EVA: the method makes the KittenEva and gives it the control at its end. The postfix reads the parameter "vehicle".
+    public static readonly MethodInfo? EVADoor_SpawnEva =
+        AccessTools.Method(typeof(EVADoor), nameof(EVADoor.SpawnEva),
+            new[] { typeof(Vehicle), typeof(IVASeat), typeof(KittenRosterEntryData), typeof(Camera) });
+
+    // A boarding. The postfix reads the parameter "host" and the CrewSeatResult.
+    public static readonly MethodInfo? KittenEva_BoardVehicle =
+        AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), new[] { typeof(Vehicle), typeof(EVADoor) });
+
+    // Every destruction with an explosion goes through this method (PartFailureEvent.Apply,
+    // Universe.DestroyVehicleFromEvent). The postfix reads the parameter "context".
+    public static readonly MethodInfo? ExplosionSystem_SpawnForDestruction =
+        AccessTools.Method(typeof(ExplosionSystem), nameof(ExplosionSystem.SpawnForDestruction), new[] { typeof(ExplosionContext).MakeByRefType() });
+
+    #endregion
+
     #region Validation
+
+    public static bool ValidateControlReason()
+    {
+        var targets = new (string name, object? target)[]
+        {
+            ("Vehicle._control (VehicleControl)", Vehicle_Control?.FieldType == typeof(VehicleControl) ? Vehicle_Control : null),
+        };
+        return ValidateTargets("ControlReason", targets);
+    }
+
+    public static bool ValidateEvaWatch() => ValidateParameter("EvaWatch",
+        "EVADoor.SpawnEva(Vehicle, IVASeat, KittenRosterEntryData, Camera)", EVADoor_SpawnEva, "vehicle", typeof(Vehicle));
+
+    public static bool ValidateBoardWatch() => ValidateParameter("BoardWatch",
+        "KittenEva.BoardVehicle(Vehicle, EVADoor)", KittenEva_BoardVehicle, "host", typeof(Vehicle))
+        && ValidateTargets("BoardWatch", new (string, object?)[]
+        {
+            ("KittenEva.BoardVehicle returns CrewSeatResult", KittenEva_BoardVehicle?.ReturnType == typeof(CrewSeatResult) ? KittenEva_BoardVehicle : null),
+        });
+
+    public static bool ValidateExplosionWatch() => ValidateParameter("ExplosionWatch",
+        "ExplosionSystem.SpawnForDestruction(in ExplosionContext)", ExplosionSystem_SpawnForDestruction, "context", typeof(ExplosionContext).MakeByRefType());
+
+    private static bool ValidateParameter(string feature, string name, MethodInfo? method, string parameter, Type type)
+    {
+        bool has = method?.GetParameters().Any(p => p.Name == parameter && p.ParameterType == type) ?? false;
+        var targets = new (string name, object? target)[]
+        {
+            (name, method),
+            ($"{name} parameter \"{parameter}\" ({type.Name})", has ? method : null),
+        };
+        return ValidateTargets(feature, targets);
+    }
 
     public static bool ValidateFrame()
     {

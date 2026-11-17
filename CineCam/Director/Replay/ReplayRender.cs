@@ -148,7 +148,9 @@ public static class ReplayRenderLog
         TakeFolders.SafeName(recordingId) + "-" + TakeFolders.SafeName(takeName);
 
     /// <summary>An event at the end of the take has no picture of its own, so it goes on the last picture.</summary>
-    public static List<ReplayRenderRow> EventRows(IReadOnlyDictionary<string, double> eventTimes, ReplayRenderJob job)
+    /// <param name="details">The recorded details of the events by canonical name, see <see cref="ReplayEvent.Detail"/>.</param>
+    public static List<ReplayRenderRow> EventRows(IReadOnlyDictionary<string, double> eventTimes, ReplayRenderJob job,
+        IReadOnlyDictionary<string, string>? details = null)
     {
         var rows = new List<ReplayRenderRow>();
         foreach ((string name, double time) in eventTimes.OrderBy(e => e.Value).ThenBy(e => e.Key, StringComparer.Ordinal))
@@ -158,7 +160,8 @@ public static class ReplayRenderLog
             double video = Math.Max(time - job.Start, 0.0);
             int picture = Math.Min(ReplayRenderJob.PictureAt(video, job.Fps), job.Total);
             rows.Add(new ReplayRenderRow(video, time, picture, "event", name,
-                string.Create(CultureInfo.InvariantCulture, $"takeSeconds={time:F3}")));
+                string.Create(CultureInfo.InvariantCulture, $"takeSeconds={time:F3}")
+                + (details != null && details.TryGetValue(name, out string? detail) ? "; " + detail : "")));
         }
 
         return rows;

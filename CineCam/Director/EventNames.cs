@@ -2,16 +2,39 @@ using System.Globalization;
 
 namespace CineCam.Director;
 
-public enum EventKind { Ignition, Liftoff, Burnout, Sequence, Altitude, Speed, Landed, Soi, Apoapsis, Periapsis, Docked, Undocked, Mark, Ground, Slow }
+public enum EventKind
+{
+    Ignition, Liftoff, Burnout, Sequence, Altitude, Speed, Landed, Soi, Apoapsis, Periapsis, Docked, Undocked, Mark, Ground, Slow,
+    ControlLost, ControlBack, Reboot, ProbeFailed, PowerLow, LifeSupportLow, Incapacitated, Arrival, Eva, Board, Explosion,
+    GimbalLimit, MaxQ, Q,
+}
 
 /// <summary>
 /// A parsed canonical event name. For a counted event (ignition, burnout, landed, soi, apoapsis,
-/// periapsis, docked, undocked and mark) the value is the count: 1 (or 0) for the first time,
-/// 2 for the second time, and so on.
+/// periapsis, docked, undocked, mark and the flight state events such as control-lost or maxq) the value is
+/// the count: 1 (or 0) for the first time, 2 for the second time, and so on.
 /// </summary>
 public readonly record struct EventName(EventKind Kind, double Value)
 {
-    public bool IsPredictable => Kind is EventKind.Altitude or EventKind.Speed or EventKind.Ground or EventKind.Slow;
+    /// <summary>
+    /// A predictable event can have a negative delay, because the take predicts it from the rate of a value, and a
+    /// replay finds it from the samples of the recording.
+    /// </summary>
+    public bool IsPredictable => Kind is EventKind.Altitude or EventKind.Speed or EventKind.Ground or EventKind.Slow
+        or EventKind.Q or EventKind.MaxQ;
+
+    /// <summary>
+    /// A max Q has the time of the peak, but a take finds it only when the pressure has fallen below the peak, so
+    /// its time is in the past when it comes. A start in the past would jump into the middle of the shot, so the
+    /// timeline starts the shot when the event comes.
+    /// </summary>
+    public bool IsFoundLate => Kind == EventKind.MaxQ;
+
+    /// <summary>
+    /// True for the events that came with CineCam 0.4.0. A shot file of an older version can have an alias with
+    /// such a name, and that alias keeps its meaning (see <see cref="TryResolve"/>).
+    /// </summary>
+    public bool AliasMayShadow => Kind >= EventKind.ControlLost;
 
     /// <summary>
     /// The value above which a ground or slow event arms, see <see cref="EventDetector"/>. The margin is
@@ -30,6 +53,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
         EventKind.Speed => "speed:" + Value.ToString("R", CultureInfo.InvariantCulture),
         EventKind.Ground => "ground:" + Value.ToString("R", CultureInfo.InvariantCulture),
         EventKind.Slow => "slow:" + Value.ToString("R", CultureInfo.InvariantCulture),
+        EventKind.Q => "q:" + Value.ToString("R", CultureInfo.InvariantCulture),
         _ => Counted(CountedHead(Kind), Value),
     };
 
@@ -43,6 +67,19 @@ public readonly record struct EventName(EventKind Kind, double Value)
         ("docked", EventKind.Docked),
         ("undocked", EventKind.Undocked),
         ("mark", EventKind.Mark),
+        ("control-lost", EventKind.ControlLost),
+        ("control-back", EventKind.ControlBack),
+        ("reboot", EventKind.Reboot),
+        ("probe-failed", EventKind.ProbeFailed),
+        ("power-low", EventKind.PowerLow),
+        ("life-support-low", EventKind.LifeSupportLow),
+        ("incapacitated", EventKind.Incapacitated),
+        ("arrival", EventKind.Arrival),
+        ("eva", EventKind.Eva),
+        ("board", EventKind.Board),
+        ("explosion", EventKind.Explosion),
+        ("gimbal-limit", EventKind.GimbalLimit),
+        ("maxq", EventKind.MaxQ),
     };
 
     private static string CountedHead(EventKind kind)
@@ -68,8 +105,8 @@ public readonly record struct EventName(EventKind Kind, double Value)
         count < 1.5 ? head : head + ":" + count.ToString("0", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// The names are case insensitive. Altitude and the height over the ground are in meters, and speed is in
-    /// meters per second.
+    /// The names are case insensitive. Altitude and the height over the ground are in meters, speed is in
+    /// meters per second, and the dynamic pressure of "q" is in pascals.
     /// </summary>
     public static bool TryParse(string? text, out EventName name, out string error)
     {
@@ -111,7 +148,7 @@ public readonly record struct EventName(EventKind Kind, double Value)
                 name = new EventName(countedKind, count);
                 return true;
             }
-            case "sequence" or "altitude" or "speed" or "ground" or "slow":
+            case "sequence" or "altitude" or "speed" or "ground" or "slow" or "q":
                 if (!double.TryParse(tail, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
                     || double.IsNaN(value) || double.IsInfinity(value))
                 {
@@ -137,17 +174,24 @@ public readonly record struct EventName(EventKind Kind, double Value)
                     return false;
                 }
 
+                if (head == "q" && value <= 0)
+                {
+                    error = "the dynamic pressure of \"q\" is more than 0 pascals, for example \"q:20000\"";
+                    return false;
+                }
+
                 name = new EventName(head switch
                 {
                     "sequence" => EventKind.Sequence,
                     "altitude" => EventKind.Altitude,
                     "speed" => EventKind.Speed,
                     "ground" => EventKind.Ground,
+                    "q" => EventKind.Q,
                     _ => EventKind.Slow,
                 }, value);
                 return true;
             default:
-                error = $"unknown event \"{trimmed}\" (known: ignition, liftoff, burnout, landed, soi, apoapsis, periapsis, docked, undocked and mark, each counted with :N, and sequence:N, altitude:M, speed:V, ground:M, slow:V, or an alias from \"events\")";
+                error = $"unknown event \"{trimmed}\" (known: ignition, liftoff, burnout, landed, soi, apoapsis, periapsis, docked, undocked, mark, control-lost, control-back, reboot, probe-failed, power-low, life-support-low, incapacitated, arrival, eva, board, explosion, gimbal-limit and maxq, each counted with :N, and sequence:N, altitude:M, speed:V, ground:M, slow:V, q:PASCALS, or an alias from \"events\")";
                 return false;
         }
     }
@@ -208,6 +252,20 @@ public static class EventDisplay
             EventKind.Docked => Counted("Docked", name.Value),
             EventKind.Undocked => Counted("Undocked", name.Value),
             EventKind.Mark => Counted("Mark", name.Value),
+            EventKind.ControlLost => Counted("Control lost", name.Value),
+            EventKind.ControlBack => Counted("Control back", name.Value),
+            EventKind.Reboot => Counted("Probe core reboot", name.Value),
+            EventKind.ProbeFailed => Counted("Probe core failed", name.Value),
+            EventKind.PowerLow => Counted("Probe power low", name.Value),
+            EventKind.LifeSupportLow => Counted("Life support low", name.Value),
+            EventKind.Incapacitated => Counted("Crew incapacitated", name.Value),
+            EventKind.Arrival => Counted("Mission arrival", name.Value),
+            EventKind.Eva => Counted("EVA", name.Value),
+            EventKind.Board => Counted("Boarding", name.Value),
+            EventKind.Explosion => Counted("Explosion", name.Value),
+            EventKind.GimbalLimit => Counted("Gimbal at limit", name.Value),
+            EventKind.MaxQ => Counted("Max Q", name.Value),
+            EventKind.Q => "Dynamic pressure " + Pressure(name.Value),
             _ => eventName,
         };
     }
@@ -217,6 +275,9 @@ public static class EventDisplay
     private static string Whole(double value) => value.ToString("0", CultureInfo.InvariantCulture);
 
     private static string Short(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string Pressure(double pascals) =>
+        Math.Abs(pascals) >= 1000.0 ? Short(pascals / 1000.0) + " kPa" : Short(pascals) + " Pa";
 
     private static string Distance(double meters) =>
         Math.Abs(meters) >= 1000.0 ? Short(meters / 1000.0) + " km" : Short(meters) + " m";

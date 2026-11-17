@@ -190,7 +190,7 @@ internal static partial class ReplaySession
             var capture = new OfflineCapture(job.Fps, output, frames, collector);
             run = new RenderRun(job, capture, log, folder, plan, scene.Flight.StartTime)
             {
-                EventRows = ReplayRenderLog.EventRows(plan.EventTimes, job),
+                EventRows = ReplayRenderLog.EventRows(plan.EventTimes, job, EventDetails(scene.Flight)),
                 SavedTime = scene.TakeTime,
                 SavedPlaying = scene.IsPlaying,
                 SavedSpeed = scene.Player.PreviewSpeed,
@@ -420,6 +420,18 @@ internal static partial class ReplaySession
     }
 
     // A row at the time of the pictures saved so far.
+    private static Dictionary<string, string> EventDetails(ReplayFlight flight)
+    {
+        var details = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (ReplayEvent item in flight.Events)
+        {
+            if (item.Detail is { } detail)
+                details.TryAdd(item.Name, detail);
+        }
+
+        return details;
+    }
+
     private static ReplayRenderRow RenderRow(RenderRun run, int picture, string kind, string name, string detail) =>
         new(run.Capture.Count / run.Capture.Fps, run.Job.TakeTime(run.Capture.Count), picture, kind, name, detail);
 

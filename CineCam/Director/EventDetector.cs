@@ -12,6 +12,16 @@ namespace CineCam.Director;
 /// another vehicle object, which the game makes when vehicles dock or undock. <see cref="Ground"/> is the height in
 /// meters of the lowest corner of the part bounding box over the terrain or the sea under the vehicle (see
 /// <see cref="GroundClearance"/>), or null when it is not known.
+/// <para>
+/// The flight state: <see cref="Controllable"/> is null for a vehicle without a control module, and
+/// <see cref="ControlReason"/> says why a vehicle has no control. <see cref="ProbesRebooting"/> and
+/// <see cref="ProbesFailed"/> count the probe cores that reboot after an upset or have failed.
+/// <see cref="Incapacitated"/> counts the kittens on board that cannot act. <see cref="MissionArrived"/> is true
+/// once the mission of the vehicle reached its destination body <see cref="MissionBody"/>. <see cref="Evas"/>,
+/// <see cref="Boardings"/> and <see cref="Explosions"/> are what happened since the sample before, and each
+/// explosion is a text that says what blew up. <see cref="GimbalLimit"/> is the deflection of the most deflected
+/// gimbal as a share of its limit, see <see cref="GimbalMath.Share"/>. <see cref="DynamicPressure"/> is in pascals.
+/// </para>
 /// </summary>
 public readonly record struct VehicleSample(
     bool EngineOn,
@@ -28,13 +38,33 @@ public readonly record struct VehicleSample(
     int DockedPorts = 0,
     int Marks = 0,
     bool VehicleChanged = false,
-    double? Ground = null);
+    double? Ground = null,
+    bool? Controllable = null,
+    string? ControlReason = null,
+    int ProbesRebooting = 0,
+    int ProbesFailed = 0,
+    PowerWarning ProbePower = PowerWarning.None,
+    SupplyWarning LifeSupport = SupplyWarning.None,
+    int Incapacitated = 0,
+    bool MissionArrived = false,
+    string? MissionBody = null,
+    int Evas = 0,
+    int Boardings = 0,
+    IReadOnlyList<string>? Explosions = null,
+    double GimbalLimit = 0.0,
+    double DynamicPressure = 0.0);
+
+/// <summary>The worst power state of the probe cores, as the status light of the game shows it.</summary>
+public enum PowerWarning { None, Low, Out }
+
+/// <summary>The life support forecast of the crewed zones, as the game rates it.</summary>
+public enum SupplyWarning { None, Low, Critical, Out }
 
 public sealed record DetectedEvent(string Name, double TakeTime, string Detail);
 
 /// <summary>
 /// Turns the per-frame samples of the vehicle into the events of the shot file, each reported once,
-/// and predicts the altitude, speed, ground and slow events so that a shot can start before them. A ground or
+/// and predicts the altitude, speed, ground, slow, q and maxq events so that a shot can start before them. A ground or
 /// slow event comes the first time its value falls to the target after the take saw the vehicle without ground
 /// contact and the value above <see cref="EventName.ArmLevel"/>, so a vehicle that is low, slow or landed at the
 /// start does not give the event until it flew above that level.
@@ -66,10 +96,17 @@ public sealed class EventDetector
     // stage, so it does not count as an undocking.
     private const double UndockAfterStageSeconds = 1.0;
 
+    // A power or life support warning that the forecast of the game gives again comes as a new event only after
+    // the state was clear for this many seconds, because a forecast near its limit can flicker.
+    private const double WarningRearmSeconds = 10.0;
+
     private readonly List<double> _altitudeTargets = new();
     private readonly List<double> _speedTargets = new();
     private readonly List<double> _groundTargets = new();
     private readonly List<double> _slowTargets = new();
+    private readonly List<double> _pressureTargets = new();
+    private readonly HashSet<string> _maxQWatched = new(StringComparer.Ordinal);
+    private readonly MaxQTracker _maxQ = new();
     private readonly HashSet<string> _above = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _seen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _predictions = new(StringComparer.Ordinal);
@@ -102,6 +139,36 @@ public sealed class EventDetector
     private int _undockings;
     private double _lastSequenceTime = double.NegativeInfinity;
     private int _marks;
+    private bool? _controllable;
+    private int _controlLosses;
+    private int _controlReturns;
+    private int _rebooting;
+    private int _reboots;
+    private int _failedProbes;
+    private int _probeFailures;
+    private readonly WarningState _power = new();
+    private readonly WarningState _lifeSupport = new();
+    private int _incapacitated;
+    private int _incapacitations;
+    private bool _arrived;
+    private int _arrivals;
+    private int _evas;
+    private int _boardings;
+    private int _explosions;
+    private bool _gimbalArmed = true;
+    private int _gimbalLimits;
+    private int _maxQs;
+    private double _lastPressure;
+    private double _pressureRate;
+    private double _pressureRateChange;
+
+    private sealed class WarningState
+    {
+        public int Level;
+        public bool Armed;
+        public double ClearSince;
+        public int Count;
+    }
 
     public EventDetector(IEnumerable<EventName> watched)
     {
@@ -115,6 +182,10 @@ public sealed class EventDetector
                 _groundTargets.Add(name.Value);
             else if (name.Kind == EventKind.Slow && !_slowTargets.Contains(name.Value))
                 _slowTargets.Add(name.Value);
+            else if (name.Kind == EventKind.Q && !_pressureTargets.Contains(name.Value))
+                _pressureTargets.Add(name.Value);
+            else if (name.Kind == EventKind.MaxQ)
+                _maxQWatched.Add(name.Canonical);
         }
     }
 
@@ -164,6 +235,8 @@ public sealed class EventDetector
             _body = sample.Body;
             _radialSign = RadialSign(sample.RadialSpeed);
             _docked = sample.DockedPorts;
+            _lastPressure = sample.DynamicPressure;
+            StartFlightState(takeTime, sample);
         }
         else
         {
@@ -231,6 +304,7 @@ public sealed class EventDetector
             UpdateSoi(found, takeTime, sample);
             UpdateApsis(found, takeTime, sample);
             UpdateDocking(found, takeTime, sample);
+            UpdateFlightState(found, takeTime, sample);
 
             if (dt > 1e-6)
             {
@@ -239,8 +313,21 @@ public sealed class EventDetector
                 _speedRate += ((sample.Speed - _lastSpeed) / dt - _speedRate) * blend;
                 if (sample.Ground is double ground && _lastGround is double lastGround)
                     _groundRate += ((ground - lastGround) / dt - _groundRate) * blend;
+                double pressureRate = _pressureRate;
+                _pressureRate += ((sample.DynamicPressure - _lastPressure) / dt - _pressureRate) * blend;
+                _pressureRateChange += ((_pressureRate - pressureRate) / dt - _pressureRateChange) * blend;
             }
         }
+
+        AddCounted(found, "eva", ref _evas, sample.Evas, takeTime);
+        AddCounted(found, "board", ref _boardings, sample.Boardings, takeTime);
+        foreach (string explosion in sample.Explosions ?? [])
+        {
+            _explosions++;
+            Add(found, EventName.Counted("explosion", _explosions), takeTime, explosion);
+        }
+
+        UpdateMaxQ(found, takeTime, sample);
 
         for (int i = 0; i < sample.Marks; i++)
         {
@@ -249,13 +336,15 @@ public sealed class EventDetector
         }
 
         foreach (double target in _altitudeTargets)
-            Reach(found, "altitude", target, sample.Altitude, _altitudeRate, takeTime);
+            Reach(found, new EventName(EventKind.Altitude, target).Canonical, target, sample.Altitude, _altitudeRate, takeTime);
         foreach (double target in _speedTargets)
-            Reach(found, "speed", target, sample.Speed, _speedRate, takeTime);
+            Reach(found, new EventName(EventKind.Speed, target).Canonical, target, sample.Speed, _speedRate, takeTime);
         foreach (double target in _groundTargets)
             Fall(found, new EventName(EventKind.Ground, target), sample.Ground, sample.Contact, _groundRate, takeTime);
         foreach (double target in _slowTargets)
             Fall(found, new EventName(EventKind.Slow, target), sample.Speed, sample.Contact, _speedRate, takeTime);
+        foreach (double target in _pressureTargets)
+            Reach(found, new EventName(EventKind.Q, target).Canonical, target, sample.DynamicPressure, _pressureRate, takeTime);
 
         _wasEngineOn = sample.EngineOn;
         _wasContact = sample.Contact;
@@ -263,8 +352,176 @@ public sealed class EventDetector
         _lastAltitude = sample.Altitude;
         _lastSpeed = sample.Speed;
         _lastGround = sample.Ground;
+        _lastPressure = sample.DynamicPressure;
         _lastTime = takeTime;
         return found;
+    }
+
+    /// <summary>
+    /// The explosions of a vehicle that the game destroyed with them, so no sample of it can come any more. The
+    /// take or the recording ends then, and the events go into its log.
+    /// </summary>
+    public IReadOnlyList<DetectedEvent> Destroyed(double takeTime, IReadOnlyList<string> explosions)
+    {
+        var found = new List<DetectedEvent>();
+        foreach (string explosion in explosions)
+        {
+            _explosions++;
+            Add(found, EventName.Counted("explosion", _explosions), takeTime, explosion);
+        }
+
+        return found;
+    }
+
+    // The state at the start gives no event: a take that starts without control or with low power does not see
+    // control-lost or power-low, because those events are for the moment of the change.
+    private void StartFlightState(double takeTime, in VehicleSample sample)
+    {
+        _controllable = sample.Controllable;
+        _rebooting = sample.ProbesRebooting;
+        _failedProbes = sample.ProbesFailed;
+        StartWarning(_power, (int)sample.ProbePower, takeTime);
+        StartWarning(_lifeSupport, (int)sample.LifeSupport, takeTime);
+        _incapacitated = sample.Incapacitated;
+        _arrived = sample.MissionArrived;
+        _gimbalArmed = sample.GimbalLimit < GimbalMath.RearmShare;
+    }
+
+    // A new vehicle object (a docking, an undocking or a breakup) brings its own probe cores, crew and mission, so
+    // their counts start again from its state. The control is compared, because control that is lost with the
+    // vehicle before is lost for the take too.
+    private void UpdateFlightState(List<DetectedEvent> found, double takeTime, in VehicleSample sample)
+    {
+        if (sample.Controllable is bool controllable && _controllable is bool was && controllable != was)
+        {
+            if (controllable)
+            {
+                _controlReturns++;
+                Add(found, EventName.Counted("control-back", _controlReturns), takeTime, "");
+            }
+            else
+            {
+                _controlLosses++;
+                Add(found, EventName.Counted("control-lost", _controlLosses), takeTime, sample.ControlReason ?? "");
+            }
+        }
+
+        _controllable = sample.Controllable;
+
+        if (sample.ProbesRebooting > 0 && _rebooting == 0 && !sample.VehicleChanged)
+        {
+            _reboots++;
+            Add(found, EventName.Counted("reboot", _reboots), takeTime, "");
+        }
+
+        _rebooting = sample.ProbesRebooting;
+
+        if (sample.ProbesFailed > _failedProbes && !sample.VehicleChanged)
+        {
+            _probeFailures++;
+            Add(found, EventName.Counted("probe-failed", _probeFailures), takeTime,
+                string.Create(CultureInfo.InvariantCulture, $"failed probe cores {_failedProbes} to {sample.ProbesFailed}"));
+        }
+
+        _failedProbes = sample.ProbesFailed;
+
+        if (Warn(_power, (int)sample.ProbePower, takeTime))
+            Add(found, EventName.Counted("power-low", _power.Count), takeTime, sample.ProbePower == PowerWarning.Out ? "out of power" : "low");
+        if (Warn(_lifeSupport, (int)sample.LifeSupport, takeTime))
+            Add(found, EventName.Counted("life-support-low", _lifeSupport.Count), takeTime, EventText.Words(sample.LifeSupport.ToString()));
+
+        if (sample.Incapacitated > _incapacitated && !sample.VehicleChanged)
+        {
+            _incapacitations++;
+            Add(found, EventName.Counted("incapacitated", _incapacitations), takeTime,
+                string.Create(CultureInfo.InvariantCulture, $"kittens incapacitated {_incapacitated} to {sample.Incapacitated}"));
+        }
+
+        _incapacitated = sample.Incapacitated;
+
+        if (sample.MissionArrived && !_arrived && !sample.VehicleChanged)
+        {
+            _arrivals++;
+            Add(found, EventName.Counted("arrival", _arrivals), takeTime, sample.MissionBody ?? "");
+        }
+
+        _arrived = sample.MissionArrived;
+
+        if (sample.GimbalLimit < GimbalMath.RearmShare)
+            _gimbalArmed = true;
+        else if (_gimbalArmed && sample.EngineOn && sample.GimbalLimit >= GimbalMath.LimitShare)
+        {
+            _gimbalArmed = false;
+            _gimbalLimits++;
+            Add(found, EventName.Counted("gimbal-limit", _gimbalLimits), takeTime,
+                string.Create(CultureInfo.InvariantCulture, $"deflection {sample.GimbalLimit * 100.0:F0} percent of the limit"));
+        }
+    }
+
+    private static void StartWarning(WarningState state, int level, double takeTime)
+    {
+        state.Level = level;
+        state.Armed = false;
+        state.ClearSince = level == 0 ? takeTime : double.PositiveInfinity;
+        if (level == 0)
+            state.Armed = true;
+    }
+
+    // Returns true when the level rises from clear to a warning while the warning is armed. After a warning it
+    // arms again when the level was clear for WarningRearmSeconds.
+    private static bool Warn(WarningState state, int level, double takeTime)
+    {
+        if (level == 0)
+        {
+            if (state.Level != 0)
+                state.ClearSince = takeTime;
+            if (takeTime - state.ClearSince >= WarningRearmSeconds)
+                state.Armed = true;
+            state.Level = 0;
+            return false;
+        }
+
+        bool fire = state.Level == 0 && (state.Armed || takeTime - state.ClearSince >= WarningRearmSeconds);
+        state.Level = level;
+        state.ClearSince = double.PositiveInfinity;
+        if (!fire)
+            return false;
+        state.Armed = false;
+        state.Count++;
+        return true;
+    }
+
+    private void AddCounted(List<DetectedEvent> found, string head, ref int count, int added, double takeTime)
+    {
+        for (int i = 0; i < added; i++)
+        {
+            count++;
+            Add(found, EventName.Counted(head, count), takeTime, "");
+        }
+    }
+
+    // The event has the time of the peak, which the detector knows only when the pressure has fallen below it,
+    // so the take sees it a few seconds late. A watched max Q has a prediction while the pressure rises toward a
+    // peak, from the rate of the pressure and the change of that rate.
+    private void UpdateMaxQ(List<DetectedEvent> found, double takeTime, in VehicleSample sample)
+    {
+        string next = EventName.Counted("maxq", _maxQs + 1);
+        if (_maxQ.Update(takeTime, sample.DynamicPressure, sample.Contact) is var (time, pascals))
+        {
+            _maxQs++;
+            _predictions.Remove(next);
+            Add(found, next, time, string.Create(CultureInfo.InvariantCulture,
+                $"peak {pascals / 1000.0:F2} kPa, found {takeTime - time:F1} s later"));
+            return;
+        }
+
+        if (!_maxQWatched.Contains(next))
+            return;
+        double? seconds = _maxQ.Armed && !sample.Contact ? MaxQTracker.SecondsToPeak(_pressureRate, _pressureRateChange) : null;
+        if (seconds.HasValue)
+            _predictions[next] = seconds.Value;
+        else
+            _predictions.Remove(next);
     }
 
     // The apsis watch starts again on a change of body, because a radial speed about another body
@@ -329,9 +586,8 @@ public sealed class EventDetector
     private static int RadialSign(double radialSpeed) =>
         radialSpeed > ApsisDeadband ? 1 : radialSpeed < -ApsisDeadband ? -1 : 0;
 
-    private void Reach(List<DetectedEvent> found, string kind, double target, double value, double rate, double takeTime)
+    private void Reach(List<DetectedEvent> found, string name, double target, double value, double rate, double takeTime)
     {
-        string name = new EventName(kind == "altitude" ? EventKind.Altitude : EventKind.Speed, target).Canonical;
         if (_seen.ContainsKey(name))
             return;
         if (value >= target)

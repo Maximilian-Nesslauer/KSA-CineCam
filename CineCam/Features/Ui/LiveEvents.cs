@@ -50,6 +50,11 @@ internal sealed class LiveEvents
             return;
         }
 
+        // The watch stays on the vehicle while a kitten of it is on EVA, as a take does, so "eva" and "board" show.
+        if (vehicle is KittenEva kitten && _reader != null && !_reader.Vehicle.IsDisposed
+            && ReferenceEquals(FlightHooks.SourceOf(kitten), _reader.Vehicle))
+            vehicle = _reader.Vehicle;
+
         if (_reader == null || !ReferenceEquals(_reader.Vehicle, vehicle))
         {
             _reader = new VehicleReader(vehicle);
