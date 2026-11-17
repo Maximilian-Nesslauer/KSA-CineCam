@@ -320,6 +320,18 @@ public sealed class EditSession
         Changed();
     }
 
+    /// <summary>Null turns the pause off. A time is kept inside the range of the file reader.</summary>
+    public void SetPauseAt(double? seconds)
+    {
+        if (Take is not { } take)
+            return;
+        double? value = seconds is double s ? Math.Clamp(s, RehearsalEdit.MinPauseAt, Take.MaxPauseAt) : null;
+        if (take.PauseAt == value)
+            return;
+        take.PauseAt = value;
+        Changed();
+    }
+
     /// <summary>
     /// A document without other changes is written at once, because the save on disk and the name in the
     /// file belong together. A document with unsaved changes keeps the name as one more unsaved change.

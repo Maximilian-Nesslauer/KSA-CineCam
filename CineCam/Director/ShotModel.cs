@@ -264,6 +264,14 @@ public sealed class Take
     /// <summary>Seconds between the end of a reset and the automatic take start.</summary>
     public double AutoStartDelay { get; set; } = DefaultAutoStartDelay;
 
+    public const double MaxPauseAt = 86400.0;
+
+    /// <summary>
+    /// The take time in seconds at which a run pauses for an edit, once per run, to rehearse the start of a
+    /// take, or null for no pause. An offline capture and a replay do not pause.
+    /// </summary>
+    public double? PauseAt { get; set; }
+
     /// <summary>Null to use the boxes of the file. An empty list turns them off for the take.</summary>
     public List<KeepOutBox>? KeepOut { get; set; }
 

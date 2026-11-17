@@ -217,6 +217,7 @@ public static class ShotEdit
             HideUiAt = source.HideUiAt,
             AutoStart = source.AutoStart,
             AutoStartDelay = source.AutoStartDelay,
+            PauseAt = source.PauseAt,
             PreRoll = source.PreRoll?.Clone(),
         };
         if (source.KeepOut != null)

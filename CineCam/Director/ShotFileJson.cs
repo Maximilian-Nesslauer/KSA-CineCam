@@ -257,6 +257,7 @@ public static class ShotFileJson
 
             take.AutoStart = obj.OptBool("autoStart") ?? false;
             take.AutoStartDelay = obj.OptNum("autoStartDelay", 0.0, 600.0) ?? Take.DefaultAutoStartDelay;
+            take.PauseAt = obj.OptNum("pauseAt", 0.0, Take.MaxPauseAt, minExclusive: true);
 
             if (!obj.TryGet("camera", out JsonElement camera) || camera.ValueKind != JsonValueKind.Array)
                 throw new ShotFileException(obj.Child("camera"), "expected a list of shots");
@@ -854,6 +855,8 @@ public static class ShotFileJson
             json.Key("autoStart").Bool(true);
         if (take.AutoStartDelay != Take.DefaultAutoStartDelay)
             json.Key("autoStartDelay").Num(take.AutoStartDelay);
+        if (take.PauseAt is double pauseAt)
+            json.Key("pauseAt").Num(pauseAt);
     }
 
     private static void WriteTrack(JsonOut json, Take take)

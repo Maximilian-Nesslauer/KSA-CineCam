@@ -147,5 +147,19 @@ internal static partial class TakeRunner
         LogFrame(take, t, frame);
     }
 
+    // Runs at the start of the frame, as a pause request does, so the take pauses between two frames.
+    private static void PauseAtRehearsalTime()
+    {
+        ActiveTake? take = _take;
+        if (take == null || take.PauseAtReached)
+            return;
+        bool canPause = take.Preview == null && take.Offline == null;
+        if (!RehearsalEdit.PauseAtDue(take.Take.PauseAt, take.Seconds, take.IsPaused, canPause))
+            return;
+        take.PauseAtReached = true;
+        DefaultCategory.Log.Info(FormattableString.Invariant($"[CineCam] Take \"{take.Take.Name}\" reached its pause time {take.Take.PauseAt:F1} s."));
+        Pause(take);
+    }
+
     private static double SpeedOrOne(double? speed) => speed is > 0.0 ? speed.Value : 1.0;
 }

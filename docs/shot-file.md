@@ -34,7 +34,7 @@ Top level fields:
 | `keepOut` | Boxes the camera must stay out of, see the keep-out boxes. A take can set its own `keepOut`, and then the take wins |
 | `takes` | The list of takes. A file with one take can keep `camera` and `speed` at the top level |
 
-A take has `name`, `default` (the take that starts without a name), `site`, `anchor`, `checkpoint`, `autoStart`, `autoStartDelay`, `preRoll`, `camera` (a list of shots, at least one), `speed` (a list of speed keys) and `actions` (a list of actions).
+A take has `name`, `default` (the take that starts without a name), `site`, `anchor`, `checkpoint`, `autoStart`, `autoStartDelay`, `pauseAt`, `preRoll`, `camera` (a list of shots, at least one), `speed` (a list of speed keys) and `actions` (a list of actions).
 
 `anchor` is a point on a body that is the origin of the site frame when no Landmark is named: `{ "body": "Earth", "latitude": 28.6, "longitude": -80.6, "altitude": 0 }`. Latitude and longitude are in degrees (north and east are positive, longitude 0 is the 0 meridian of the body), and `altitude` is in meters above the terrain (default 0). When a take names a `site` too, the Landmark wins and the anchor has no effect.
 
@@ -97,6 +97,12 @@ In a blend, the weight follows a smootherstep curve, so the camera starts and st
 ```json
 { "type": "chase", "target": "separated", "pick": "newest", "frame": "local", "offset": [0, 30, -20], "aim": "vehicle", "fit": 0.5, "avoidSun": 30, "duration": 8, "transition": 1 }
 ```
+
+## Rehearsal pause
+
+`"pauseAt": 12` is a field of a take: a take or a dry run plays once up to this take time in seconds (above 0 and at most 86400) and then pauses for an edit, as the edit key does. Resume plays on, and the run does not pause there again. Use it to rehearse the start of a take: with **Start the take after a reset** on, each reset plays the start and stops at the same moment. An offline capture, a shot preview and a replay do not pause, and the event log of a run has a row `info, pauseAt` that says the time. In the window this is the switch **Pause the run at a take time** with the field **Pause at (s)** on the **Take setup** tab. Turn it off for the final take.
+
+The pause time does not fit into `preRoll`, which loops or plays the opening shots until a flight event and then goes on without a stop: the pause stops the sim and gives the camera free, which only the edit pause of a live run can do.
 
 ## Pre-roll and triggers
 

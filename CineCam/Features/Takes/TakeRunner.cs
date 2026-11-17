@@ -105,6 +105,7 @@ internal static partial class TakeRunner
         try
         {
             ApplyPendingSpeed();
+            PauseAtRehearsalTime();
             ProcessRequests();
         }
         catch (Exception ex)
@@ -454,6 +455,10 @@ internal static partial class TakeRunner
         WriteRow(active, "take", "start", $"take={take.Name}; dryRun={dryRun}; site={siteText}; rule={siteNote}; file={path}{(fromEditor ? " (unsaved copy)" : "")}; hideUi={file.HideUi}; syncFlash={file.SyncFlash}{(dryRun ? "" : $"; run={run}")}{ResetNoteFor(take)}");
         if (offline != null)
             WriteRow(active, "take", "offline", string.Create(CultureInfo.InvariantCulture, $"fps={offline.Fps}; frames={offline.FramesFolder}"));
+        if (take.PauseAt is double pauseAt)
+            WriteRow(active, "info", "pauseAt", offline != null
+                ? "an offline capture does not pause, so the pause time of the take has no effect"
+                : string.Create(CultureInfo.InvariantCulture, $"the run pauses for an edit at {pauseAt:F1} s"));
 
         if (!dryRun && CineCamSettings.ExperimentalReplay && CineCamSettings.RecordWithTake && !ReplaySession.IsRecording)
         {

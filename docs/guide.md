@@ -138,6 +138,7 @@ A checkpoint is a game save that lets you fly the same take again and again from
 1. Stand at the start of the flight and press **Save checkpoint**. The mod saves the game as `CineCam <take name>` and stores the name in the take. A second save replaces the first.
 2. Fly the take. For another run, press **Reset to checkpoint**, or the reset key (off by default). The reset ends a running take, loads the save and makes the take ready.
 3. With **Start the take after a reset** on, the take starts by itself after a **Delay** (2 s by default). Without it, press **Start take**.
+4. To rehearse the start of a take, turn on **Pause the run at a take time** and set **Pause at (s)**. The take or the dry run plays once up to that time and then pauses for an edit, as **Pause and edit** does. Resume plays on; a reset plays the start again. An offline capture and a replay do not pause. Turn it off for the final take.
 
 Other mods lose their state when the game loads a save. Arm them again after a reset. A good loop: fly the take, pause where a shot needs a change, edit, resume, and reset for the next run.
 

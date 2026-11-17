@@ -104,6 +104,65 @@ internal static class BacklogTests
         });
     }
 
+    public static void RunPauseAt(Action<string, Action> check, Action<bool, string> expect)
+    {
+        check("pause at: a take keeps its rehearsal pause time through the file, a copy and the editor", () =>
+        {
+            const string json = """
+            { "takes": [ { "name": "launch", "default": true, "pauseAt": 12.5,
+              "camera": [ { "type": "tripod", "position": [1, 2, 3], "lookAt": [4, 5, 6], "duration": 5 } ] } ] }
+            """;
+            ShotFile file = ShotFileJson.Parse(json).File;
+            expect(file.DefaultTake.PauseAt == 12.5, "read: " + file.DefaultTake.PauseAt);
+            string text = ShotFileJson.Write(file);
+            expect(text.Contains("\"pauseAt\": 12.5", StringComparison.Ordinal) && ShotFileJson.Write(ShotFileJson.Parse(text).File) == text, "round trip: " + text);
+            expect(ShotEdit.Clone(file.DefaultTake, "copy").PauseAt == 12.5, "a copy of the take keeps it");
+            file.DefaultTake.PauseAt = null;
+            expect(!ShotFileJson.Write(file).Contains("pauseAt", StringComparison.Ordinal), "off is not written");
+
+            foreach (string bad in new[] { "0", "-1", "90000", "\"soon\"" })
+            {
+                bool rejected = false;
+                try
+                {
+                    ShotFileJson.Parse(json.Replace("12.5", bad, StringComparison.Ordinal));
+                }
+                catch (ShotFileException ex)
+                {
+                    rejected = ex.FieldPath.EndsWith("pauseAt", StringComparison.Ordinal);
+                }
+
+                expect(rejected, "rejected: " + bad);
+            }
+
+            string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(path, json);
+                var session = new EditSession();
+                expect(session.Load(path), session.Message);
+                session.SetPauseAt(0.0);
+                expect(session.Take!.PauseAt == RehearsalEdit.MinPauseAt && session.Dirty, "the window keeps the time in range");
+                session.SetPauseAt(null);
+                expect(session.Take!.PauseAt == null, "off");
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        });
+
+        check("pause at: a run pauses once when it reaches the time, and a preview or a capture never", () =>
+        {
+            expect(!RehearsalEdit.PauseAtDue(null, 100.0, false, true), "no pause time");
+            expect(!RehearsalEdit.PauseAtDue(10.0, 9.99, false, true), "before the time");
+            expect(RehearsalEdit.PauseAtDue(10.0, 10.0, false, true), "at the time");
+            expect(RehearsalEdit.PauseAtDue(10.0, 10.5, false, true), "a frame after the time");
+            expect(!RehearsalEdit.PauseAtDue(10.0, 10.5, true, true), "paused already");
+            expect(!RehearsalEdit.PauseAtDue(10.0, 10.5, false, false), "a preview or an offline capture");
+        });
+    }
+
     private static TimelineLayout.RunLog Run(params string[] rows)
     {
         var text = new System.Text.StringBuilder("takeSeconds,gameSeconds,missionSeconds,simSpeed,frame,kind,name,detail\n");

@@ -47,6 +47,7 @@ public static class ProblemText
         ["until"] = "end event",
         ["loop"] = "loop",
         ["autoStartDelay"] = "start delay",
+        ["pauseAt"] = "pause time",
         ["hideUiAt"] = "hide event",
         ["syncFlash"] = "white frame",
         ["fps"] = "frames per second",
@@ -62,7 +63,7 @@ public static class ProblemText
 
     private static readonly HashSet<string> SecondFields = new(StringComparer.Ordinal)
     {
-        "duration", "time", "delay", "seconds", "ramp", "autoStartDelay", "smoothing",
+        "duration", "time", "delay", "seconds", "ramp", "autoStartDelay", "smoothing", "pauseAt",
     };
 
     private static readonly Dictionary<string, string> FieldUnits = new(StringComparer.Ordinal)
