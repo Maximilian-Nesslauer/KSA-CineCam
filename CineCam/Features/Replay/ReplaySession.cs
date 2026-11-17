@@ -147,9 +147,11 @@ internal static partial class ReplaySession
                     ApplyScrub(scene);
                 }
 
+                double before = scene.Player.Time;
+                int jumps = scene.Player.Jumps;
                 scene.Update(frameTime);
                 if (_render == null)
-                    ApiFeed.ReplayFrame(scene);
+                    ApiFeed.ReplayFrame(scene, before, jumps);
             }
             catch (Exception ex)
             {

@@ -75,9 +75,11 @@ internal static class ApiFeed
 
     #region Replay
 
-    // Runs after the replay moved in a frame without a render. A run lasts while the replay plays without a
-    // jump, so a seek, an edit of the take, a pause and the end each end it.
-    public static void ReplayFrame(ReplayScene scene)
+    // Runs after the replay moved in a frame without a render, with the take time and the seek count from before
+    // the move. A run lasts while the replay plays without a jump, so a seek, an edit of the take, a pause and the
+    // end each end it. A new run starts where the play started in this frame, so a play from the take start
+    // gives the items at 0 too.
+    public static void ReplayFrame(ReplayScene scene, double before, int jumpsBefore)
     {
         if (_source is Source.Live or Source.Render)
             return;
@@ -97,7 +99,11 @@ internal static class ApiFeed
         }
 
         if (_replay == null && playing)
-            StartReplayRun(scene);
+        {
+            double start = player.Jumps == jumpsBefore && before <= player.Time ? before : player.Time;
+            StartReplayRun(scene, start);
+            Step(scene, _replay!);
+        }
     }
 
     public static void ReplayOpened(string recording)
@@ -113,11 +119,12 @@ internal static class ApiFeed
         CineCamEvents.RaiseReplayClosed();
     }
 
-    private static void StartReplayRun(ReplayScene scene)
+    // The frame is already at the time after the move, so the shot that runs at the start is the one of the frame
+    // unless it started in the move, which the first step reports.
+    private static void StartReplayRun(ReplayScene scene, double time)
     {
         ReplayTakePlayer player = scene.Player;
         Take take = player.Plan.Take!;
-        double time = player.Time;
         bool fromStart = time <= 1e-9;
         _replay = new ReplayRun(player.Plan, player.Jumps, time, fromStart);
         _source = Source.Replay;
@@ -125,7 +132,7 @@ internal static class ApiFeed
         IEnumerable<string> passed = ReplayFeed.CuesUntil(player.Plan, time)
             .Where(cue => !fromStart || cue.TakeSeconds < time).Select(cue => cue.Name);
         CineCamEvents.RaiseTakeStarted(take.Name, "replay", CineCamEvents.InterfaceHidden, time, passed);
-        if (player.Frame is { ShotIndex: >= 0 } frame)
+        if (player.Frame is { ShotIndex: >= 0 } frame && !(player.Time > time && frame.StartedShots.Contains(frame.ShotIndex)))
             Shot(take, frame.ShotIndex, true);
     }
 
@@ -196,8 +203,8 @@ internal static class ApiFeed
 
     public static void RenderEnded(string take, string folder, string reason)
     {
-        EndRun(Source.Render, reason);
         SyncInterface();
+        EndRun(Source.Render, reason);
         CineCamEvents.RaiseRenderEnded(take, folder, reason);
     }
 
