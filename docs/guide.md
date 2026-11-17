@@ -81,7 +81,7 @@ The timeline sits at the bottom of the screen while the window shows the **Edito
 - **Mouse wheel** zooms. **Shift and the wheel**, or a drag on the ruler, scrolls. In a replay a drag on the ruler moves the replay instead.
 - **Fit** shows the whole take. **Hide** hides the dock, and the **Timeline** button at the bottom shows it again.
 
-A blend shows as a ramp at the start of a shot, and the play head shows the take time while a take runs. The times of the events come from the run that is going on, or from the last finished run of the take. An event that no run has seen yet has an estimated time. The mod spaces such items evenly and draws them hatched or dashed, so run the take once to measure the events. In a replay every event time comes from the recording, so nothing is estimated.
+A blend shows as a ramp at the start of a shot, and the play head shows the take time while a take runs. The times of the events come from the run that is going on, or from the last finished run of the take. When a reset or a stop ended that run early, the events after its end keep their times from the older runs. An event that no run has seen yet has an estimated time. The mod spaces such items evenly and draws them hatched or dashed, so run the take once to measure the events. In a replay every event time comes from the recording, so nothing is estimated.
 
 ### Start on an event
 
