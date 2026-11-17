@@ -140,6 +140,28 @@ static class SoundTests
             }
         });
 
+        check("self test: the sound file runs from its first sample to the take end through the pauses", () =>
+        {
+            CsvRow Row(double t, string kind, string name, string detail) => new(t, 0, 0, 1, -1, kind, name, detail);
+            var rows = new List<CsvRow>
+            {
+                Row(0, "take", "start", ""),
+                Row(0.02, "info", "soundStart", "file=game-sound.wav; firstSampleTakeSeconds=0.0120"),
+                Row(5, "pause", "end", "the take goes on; length=3.000 s real; total=3.000 s real"),
+                Row(20, "info", "soundEnd", "file=game-sound.wav; seconds=22.988; droppedSeconds=0.000"),
+                Row(20, "take", "end", "the last shot is done"),
+            };
+            expect(AutotestAnalysis.DetailNumber("a=1; length=3.000 s real", "length") == 3.0, "a number with a unit");
+            expect(AutotestAnalysis.DetailNumber("a=1", "b") == null, "a missing key");
+            var wav = new WavInfo(48000, 2, (long)(22.988 * 48000), 0.3f, 0.05);
+            expect(AutotestAnalysis.GameSound(rows, wav, null).Pass, "20 s plus a 3 s pause minus 0.012 s");
+            expect(!AutotestAnalysis.GameSound(rows, wav with { Frames = 20 * 48000 }, null).Pass, "a file without the pause is too short");
+            expect(!AutotestAnalysis.GameSound(rows, wav with { Peak = 0f }, null).Pass, "a silent file");
+            expect(!AutotestAnalysis.GameSound(rows, null, "gone").Pass, "no file");
+            var offline = new List<CsvRow> { Row(0, "info", "sound", "not recorded: an offline capture runs slower than real time") };
+            expect(AutotestAnalysis.NoOfflineSound(offline, false).Pass && !AutotestAnalysis.NoOfflineSound(offline, true).Pass, "offline");
+        });
+
         check("replay sound: the pitch follows the replay rate by the rule of the game", () =>
         {
             expect(ReplaySoundMath.SpeedPitch(SoundSpeedRule.All, 1.0) == 1.2f, "All at 1x is 1 + 1/5, as in the game");

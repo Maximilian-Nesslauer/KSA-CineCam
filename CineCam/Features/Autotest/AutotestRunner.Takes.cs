@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Globalization;
 using CineCam.Core;
 using CineCam.Director;
+using CineCam.Director.Sound;
+using CineCam.Features.Sound;
 using CineCam.Features.Takes;
 using KSA;
 
@@ -163,9 +165,28 @@ internal static partial class AutotestRunner
         report.Checks.Add(new AutotestCheck("speed keys started", keys == 2, $"{keys} of 2 speed keys started"));
         report.Checks.Add(AutotestAnalysis.SimSpeedFollowsTarget(_samples, rows));
         report.Checks.Add(ScreenshotCheck());
+        report.Checks.Add(SoundCheck(rows));
         report.Checks.Add(AutotestAnalysis.Restored(_before, Snapshot()));
         report.Samples = _samples.Count;
         LogChecks(report);
+    }
+
+    private static AutotestCheck SoundCheck(IReadOnlyList<CsvRow> rows)
+    {
+        string path = Path.Combine(_takeFolder, GameSoundRecorder.FileName);
+        WavInfo? wav = null;
+        string? error = null;
+        try
+        {
+            if (File.Exists(path))
+                wav = WavInfo.Read(path);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            error = ex.Message;
+        }
+
+        return AutotestAnalysis.GameSound(rows, wav, error);
     }
 
     private static void LogChecks(TakeReport report)
@@ -394,6 +415,7 @@ internal static partial class AutotestRunner
         report.Checks.Add(AutotestAnalysis.ShotsStarted(rows, expected, 0.25));
         report.Checks.Add(AutotestAnalysis.SimSpeedFollowsTarget(_samples, rows));
         report.Checks.Add(AutotestAnalysis.FrameSteps(_samples, AutotestPlan.OfflineFps));
+        report.Checks.Add(AutotestAnalysis.NoOfflineSound(rows, File.Exists(Path.Combine(_takeFolder, GameSoundRecorder.FileName))));
 
         string frames = Path.Combine(_root, "takeB", OfflineOutput.FramesFolderName);
         int files = Directory.Exists(frames) ? Directory.EnumerateFiles(frames, "*.png").Count() : 0;

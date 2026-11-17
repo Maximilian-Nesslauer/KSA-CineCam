@@ -81,6 +81,8 @@ internal static partial class AutotestRunner
             else
             {
                 _active = true;
+                // The real-time take checks the sound file, without a change of the settings file.
+                TakeRunner.SoundOverride = true;
             }
 
             StartWatchdog();
