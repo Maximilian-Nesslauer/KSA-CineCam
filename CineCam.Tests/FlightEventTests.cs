@@ -259,6 +259,10 @@ internal static class FlightEventTests
                 catch (InvalidDataException) { rejected = true; }
                 expect(rejected, "a detail over the limit");
                 expect(EventText.Clip(new string('x', 500), ReplayFile.DetailLimit)!.Length == ReplayFile.DetailLimit && EventText.Clip("  ") == null, "clip");
+
+                List<ReplayRenderRow> rows = ReplayRenderLog.EventRows(new Dictionary<string, double> { ["control-lost"] = 1.0, ["maxq"] = 3.0 },
+                    new ReplayRenderJob(0.0, 5.0, 30.0), new Dictionary<string, string> { ["control-lost"] = "probe core unpowered" });
+                expect(rows[0].Detail == "takeSeconds=1.000; probe core unpowered" && rows[1].Detail == "takeSeconds=3.000", "render rows carry the detail");
             }
             finally
             {
