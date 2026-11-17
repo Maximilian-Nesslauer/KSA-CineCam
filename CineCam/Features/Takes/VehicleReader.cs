@@ -130,7 +130,8 @@ internal sealed class VehicleReader
             ProbePower: power,
             LifeSupport: LifeSupportLevel(),
             Incapacitated: Incapacitated(),
-            MissionArrived: mission?.ArrivedAt.HasValue == true,
+            MissionArrived: mission?.ArrivedAt.HasValue == true || (mission is { Destination: MissionDestination.Body, Custom: false, LeftAt: null }
+                && MissionProgress.FindRelation(_vehicle.Parent, mission.BodyId) == MissionBodyRelation.Inside),
             MissionBody: mission?.Destination == MissionDestination.Body ? mission.BodyId : null,
             Evas: evas,
             Boardings: boardings,

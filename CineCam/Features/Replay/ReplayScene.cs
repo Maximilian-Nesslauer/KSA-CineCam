@@ -48,6 +48,8 @@ internal sealed class ReplayScene : IDisposable
 
     /// <summary>What the replay left out because the recording does not fit the parts of this build.</summary>
     public ReplayFitReport Fit { get; } = new();
+    public ReplayCloudState CloudState { get; } = new();
+    public ReplayStormCache Storms { get; } = new();
 
     // The site frame of the take that plays. It is fixed in the body-fixed frame like the site of a live take.
     public SiteFrame Site { get; private set; }
@@ -167,6 +169,7 @@ internal sealed class ReplayScene : IDisposable
         }
         finally
         {
+            CloudState.Restore();
             // The seats own the renderables of the seated kittens, so they go before the part trees.
             _crew.Dispose();
             foreach (Model model in _models.Values)

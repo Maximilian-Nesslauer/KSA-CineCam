@@ -143,6 +143,7 @@ public static class ReplayFile
             actors.Add(actor with { Segments = segments });
         }
         double duration = ReplayTimeline.Duration(flight);
+        Require(flight.EndTime is not double terminalEnd || (double.IsFinite(terminalEnd) && terminalEnd >= 0), "terminal effect end");
         Require(actors[0].Segments[0].Start == 0, "the primary vehicle does not start at time zero");
         foreach (ReplayMarker marker in flight.Markers)
             Require(marker != null && double.IsFinite(marker.Time) && marker.Time >= 0 && marker.Time <= duration && Text(marker.Label), "marker");

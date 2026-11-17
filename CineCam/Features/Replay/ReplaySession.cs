@@ -35,6 +35,7 @@ internal static partial class ReplaySession
     private static string? _takeName;
     private static string? _recordingTake;
     private static bool _recordingForTake;
+    private static ulong? _finishTakeFrame;
     private static string _takeProblem = "";
     private static string _openWarning = "";
     private static string Folder => Path.Combine(CineCamPaths.Root, "replays");
@@ -137,6 +138,8 @@ internal static partial class ReplaySession
             {
                 if (_recorder.Capture() is { } reason)
                     FinishRecording(reason);
+                else if (_finishTakeFrame is ulong frame && Program.FrameNumber > frame)
+                    FinishRecording();
                 else if (_recorder.TakeNote() is { } note)
                     Status = $"{Status} {note}";
             }
@@ -293,6 +296,13 @@ internal static partial class ReplaySession
     {
         if (!_recordingForTake || _recorder == null)
             return;
+        // ExplosionSystem.Update makes volumes after the camera hook can end a destroyed take.
+        // Retain the recorder through that frame so the final effects reach the recording.
+        if (_recorder.PrimaryDestroyed)
+        {
+            _finishTakeFrame ??= Program.FrameNumber;
+            return;
+        }
         try
         {
             FinishRecording();
@@ -310,6 +320,7 @@ internal static partial class ReplaySession
         _recorder = null;
         _recordingTake = null;
         _recordingForTake = false;
+        _finishTakeFrame = null;
         if (recorder == null)
             return;
         recorder.Close();

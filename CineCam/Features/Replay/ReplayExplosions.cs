@@ -116,7 +116,9 @@ internal sealed class ReplayExplosions : IDisposable
     {
         if (Template(item.Template) is not { } template || _system.Get<Celestial>(item.Body) is not { } body)
             return;
-        int count = _store.Count;
+        if (Clock - (_startTime + item.Time) >= template.GetScaledLifeSeconds(item.Intensity, item.AmbientPressure))
+            return;
+        HashSet<ExplosionVolume> before = Snapshot(_store);
         _spawnClock = _startTime + item.Time;
         try
         {
@@ -127,12 +129,26 @@ internal sealed class ReplayExplosions : IDisposable
             _spawnClock = null;
         }
 
-        if (item.Seed <= 0 || _store.Count <= count)
+        ExplosionVolume? volume = Added(_store, before);
+        if (item.Seed <= 0 || volume == null)
             return;
-        ExplosionVolume volume = _store[_store.Count - 1];
         volume.NoiseSeed = item.Seed;
         volume.Shape = ExplosionVolumeShape.Build(volume.Template, volume.Parent, volume.PositionCcf,
             volume.Template.GetMaximumRadius(volume.Expansion) * volume.RadiusScale, item.Seed);
+    }
+
+    public static HashSet<ExplosionVolume> Snapshot(ExplosionVolumeStore store)
+    {
+        var result = new HashSet<ExplosionVolume>(ReferenceEqualityComparer.Instance);
+        for (int i = 0; i < store.Count; i++) result.Add(store[i]);
+        return result;
+    }
+
+    public static ExplosionVolume? Added(ExplosionVolumeStore store, HashSet<ExplosionVolume> before)
+    {
+        for (int i = 0; i < store.Count; i++)
+            if (!before.Contains(store[i])) return store[i];
+        return null;
     }
 
     private ExplosionVolumeTemplate? Template(string id)

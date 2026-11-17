@@ -2,11 +2,11 @@ namespace CineCam.Director.Replay;
 
 public static class ReplayTimeline
 {
-    public static double Duration(ReplayFlight flight) => flight.Actors
+    public static double Duration(ReplayFlight flight) => Math.Max(flight.EndTime ?? 0, flight.Actors
         .SelectMany(actor => actor.Segments)
         .SelectMany(segment => segment.Samples)
         .Select(sample => sample.Time)
-        .DefaultIfEmpty(0.0).Max();
+        .DefaultIfEmpty(0.0).Max());
 
     /// <summary>The first actor is followed from recording time 0 until the first follow change of the file.</summary>
     public static List<(double Start, ReplayActor Actor)> Follows(ReplayFlight flight)

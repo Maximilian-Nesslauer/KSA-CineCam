@@ -7,6 +7,10 @@ public sealed record ReplayFlight(string GameVersion, string SystemId, string Bo
 {
     public List<ReplayEvent> Events { get; init; } = new();
 
+    /// <summary>The end of terminal effects after the last vehicle sample, or null without a tail.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? EndTime { get; init; }
+
     /// <summary>The camera views of a file of version 1, read only for the import into a take.</summary>
     public List<ReplayView> Views { get; init; } = new();
 

@@ -108,6 +108,8 @@ public static class RecordingHeaderReader
                         _wanted = Wanted.SystemId;
                     else if (reader.ValueTextEquals("BodyId"u8))
                         _wanted = Wanted.BodyId;
+                    else if (reader.ValueTextEquals("EndTime"u8))
+                        _wanted = Wanted.Time;
                 }
                 else if (_section == Section.Actors)
                 {

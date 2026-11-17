@@ -79,14 +79,11 @@ public sealed class ReplayEffectLog
 /// <summary>
 /// The explosion volumes that the replay makes for a move of the recording time. A move forward makes the volumes
 /// that start after the time before and up to the new time. Any other move, and the first one, removes the volumes
-/// of the replay and makes every volume again that starts at most <see cref="Lookback"/> seconds before the new
-/// time, so a volume that burns at a seek target burns with its age and a later one does not show.
+/// of the replay and considers every volume before the new time. The renderer tests the actual template
+/// lifetime, so a long-lived volume still appears after a seek.
 /// </summary>
 public sealed class ReplayExplosionSchedule
 {
-    /// <summary>Longer than any volume of the game burns, so a rebuild never misses one that still shows.</summary>
-    public const double Lookback = 120.0;
-
     private readonly IReadOnlyList<ReplayExplosion> _items;
     private double _time = double.NaN;
 
@@ -105,8 +102,7 @@ public sealed class ReplayExplosionSchedule
     public (int From, int To) Advance(double time, out bool reset)
     {
         reset = !(time >= _time);
-        double after = reset ? time - Lookback : _time;
-        int from = reset ? LowerBound(after) : UpperBound(after);
+        int from = reset ? 0 : UpperBound(_time);
         int to = UpperBound(time);
         _time = time;
         return (from, Math.Max(from, to));

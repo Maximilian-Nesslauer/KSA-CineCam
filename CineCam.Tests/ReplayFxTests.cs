@@ -29,15 +29,15 @@ static class ReplayFxTests
             var schedule = new ReplayExplosionSchedule([Explosion(1), Explosion(130), Explosion(140), Explosion(200)]);
             schedule.Advance(150, out _);
             (int from, int to) = schedule.Advance(135, out bool reset);
-            expect(reset && from == 1 && to == 2, "a backward move rebuilds only the volumes up to its time");
+            expect(reset && from == 0 && to == 2, "a backward move considers long-lived earlier volumes");
             schedule.Jump();
             (from, to) = schedule.Advance(135, out reset);
-            expect(reset && from == 1 && to == 2, "a jump to the same time rebuilds them again");
+            expect(reset && from == 0 && to == 2, "a jump to the same time rebuilds them again");
             (from, to) = schedule.Advance(0.5, out reset);
             expect(reset && from == to, "a seek before every volume shows none");
             schedule.Jump();
             (from, to) = schedule.Advance(250, out reset);
-            expect(reset && from == 1 && to == 4, "a forward seek leaves out the volumes older than the lookback");
+            expect(reset && from == 0 && to == 4, "a forward seek lets the renderer check every template lifetime");
         });
 
         check("replay fx: the effect log adds only the items up to the last sample, with one marker per moment", () =>
@@ -54,6 +54,33 @@ static class ReplayFxTests
             expect(log.Pending == 1, "the later explosion waits");
             log.Flush(flight, 3);
             expect(flight.Explosions.Count == 2 && log.Pending == 0, "it goes in with the next sample");
+        });
+
+        check("replay fx: terminal effects outlive a destroyed actor without reading another pose", () =>
+        {
+            var actor = new ReplayActor(0, "Rocket", [new ReplaySegment(0, "<parts/>",
+                [new ReplaySample(0, V3.Zero, new ReplayRotation(0, 0, 0, 1), []),
+                 new ReplaySample(1, V3.Zero, new ReplayRotation(0, 0, 0, 1), [])])]) { End = 1 };
+            var flight = new ReplayFlight("game", "system", "Earth", 0, [actor], [])
+            {
+                EndTime = 190, Explosions = [Explosion(1.1)], Destructions = [],
+            };
+            expect(ReplayTimeline.Duration(flight) == 190 && ReplayTimeline.Sample(actor, 130) == null,
+                "the timeline continues without a frozen vehicle");
+            string path = Path.Combine(Path.GetTempPath(), "cinecam-tail-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+            try
+            {
+                ReplayFile.Save(path, flight);
+                ReplayFlight loaded = ReplayFile.Load(path);
+                expect(ReplayTimeline.Duration(loaded) == 190 && loaded.Explosions!.Single().Time == 1.1, "the tail survives a round trip");
+                byte[] bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { Version = ReplayFile.CurrentVersion, Flight = loaded });
+                using var stream = new MemoryStream(bytes);
+                expect(RecordingHeaderReader.Read(stream).Duration == 190, "the library lists the effect tail duration");
+            }
+            finally
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
         });
 
         check("replay fx: parachute kinds are their own group and the state steps", () =>

@@ -16,6 +16,7 @@ namespace CineCam.Patches;
 
 internal static class ReplayPatches
 {
+    private static bool _cloudStateReady;
     private static Harmony? _harmony;
     private static int _worldChangeDepth;
 
@@ -68,6 +69,10 @@ internal static class ReplayPatches
             // the view, so the replay draws its kittens here in place of the live crew. Without this patch the
             // replay shows no kittens and the live crew stays visible.
             PatchOptional(typeof(Vehicle), nameof(Vehicle.UpdateSeatedCrewRenderData), nameof(BeforeSeatedCrew), draw);
+            PatchOptional(typeof(KittenRenderable), nameof(KittenRenderable.UpdateRenderData), nameof(ReplayKittenStateStep),
+                [typeof(IViewport), typeof(int), typeof(double), typeof(float4x4), typeof(double3), typeof(double3),
+                    typeof(LocomotionState).MakeByRefType(), typeof(KittenAnimInputs).MakeByRefType()], transpiler: true);
+            PatchOptional(typeof(ExplosionFlashSystem), nameof(ExplosionFlashSystem.SubmitLights), nameof(BeforeVehicleDraw), [typeof(IViewport)]);
             Type[]? trails = Shape(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
                 "CommandBuffer", nameof(IViewport), nameof(Celestial), "Int32");
             PatchOptional(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
@@ -107,6 +112,11 @@ internal static class ReplayPatches
                 [typeof(int), typeof(int), typeof(double), typeof(double4x4)], transpiler: true);
             PatchOptional(typeof(CloudShadowVolume), "GetPlanetToCloudRotation", nameof(ReplayCloudTime),
                 [typeof(CloudLayerRenderData)], transpiler: true);
+            bool commonState = PatchOptional(typeof(CloudLayerRenderData), nameof(CloudLayerRenderData.UpdateCommonFrameData), nameof(BeforeCloudState),
+                [typeof(int), typeof(int), typeof(double), typeof(double4x4)]);
+            bool volumeState = PatchOptional(typeof(CloudLayerRenderData), nameof(CloudLayerRenderData.UpdateVolumetricsFrameData), nameof(BeforeCloudState),
+                [typeof(int), typeof(double3), typeof(double3), typeof(int), typeof(double), typeof(float4x4)]);
+            _cloudStateReady = commonState && volumeState;
             // The waves and the aurora move with the game time. These patches give them the recorded
             // moment. Without them they stay as they were when the replay opened.
             PatchOptional(typeof(OceanFFT), "EvolveSpectrums", nameof(ReplayWaveTime),
@@ -202,6 +212,7 @@ internal static class ReplayPatches
         ReplaySound.PitchHook = false;
         _worldChangeDepth = 0;
         _hideTrails = false;
+        _cloudStateReady = false;
         ReplayExplosions.PatchesReady = false;
         _pausedAlert = null;
         _pausedAlertLooked = false;
@@ -244,7 +255,6 @@ internal static class ReplayPatches
     {
         if (ReplaySession.Scene is not { } scene || !ReferenceEquals(__0, Program.MainViewport))
             return true;
-        scene.DrawCrew(__0, __1);
         return false;
     }
 
@@ -299,9 +309,19 @@ internal static class ReplayPatches
             AccessTools.DeclaredMethod(typeof(ReplayPatches), nameof(CloudTime)));
 
     // AuroraRenderer.FillAuroraData reads the game time once for StormState.Get and once for the phase.
-    private static IEnumerable<CodeInstruction> ReplayAuroraTime(IEnumerable<CodeInstruction> instructions) =>
-        ReplaceCall(instructions, AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetElapsedSeconds)),
+    private static IEnumerable<CodeInstruction> ReplayAuroraTime(IEnumerable<CodeInstruction> instructions)
+    {
+        IEnumerable<CodeInstruction> timed = ReplaceCall(instructions,
+            AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetElapsedSeconds)),
             AccessTools.DeclaredMethod(typeof(ReplayPatches), nameof(CloudTime)), expected: 2);
+        return ReplaceCall(timed, AccessTools.DeclaredMethod(typeof(StormState), nameof(StormState.Get), [typeof(Celestial), typeof(double)]),
+            AccessTools.DeclaredMethod(typeof(ReplayPatches), nameof(ReplayStorm)));
+    }
+
+    private static Storm ReplayStorm(Celestial body, double seconds) =>
+        ReplaySession.Scene?.Storms.Get(body, seconds) ?? StormState.Get(body, seconds);
+
+    private static void BeforeCloudState(CloudLayerRenderData __instance) => ReplaySession.Scene?.CloudState.Capture(__instance);
 
     // CloudRenderer.RenderWithCompute reads Universe.GetLastSimStep().DeltaTime once for the flow map
     // phases and the noise scroll of all cloud layers.
@@ -339,9 +359,32 @@ internal static class ReplayPatches
     {
         SimStep last = Universe.GetLastSimStep();
         return ReplaySession.Scene is { } scene
-            ? new SimStep { PreviousTime = last.PreviousTime, NextTime = last.NextTime, DeltaTime = scene.CloudStep }
+            ? new SimStep { PreviousTime = last.PreviousTime, NextTime = last.NextTime, DeltaTime = _cloudStateReady && scene.CloudState.Available ? scene.CloudStep : 0 }
             : last;
     }
+
+    // The third speed/fraction pair advances the main clip, which ReplayCrew advances explicitly.
+    // The other pairs drive jump state, locomotion blends and MMU arms and need the replay step.
+    private static IEnumerable<CodeInstruction> ReplayKittenStateStep(IEnumerable<CodeInstruction> instructions)
+    {
+        List<CodeInstruction> list = instructions.ToList();
+        foreach (string method in new[] { nameof(Universe.GetSimulationSpeed), nameof(Universe.GetAchivedSpeedFraction) })
+        {
+            MethodInfo original = AccessTools.DeclaredMethod(typeof(Universe), method, Type.EmptyTypes);
+            List<CodeInstruction> calls = list.Where(item => item.Calls(original)).ToList();
+            if (calls.Count != 4) throw new MissingMethodException($"KittenRenderable.{method}: expected 4 calls, found {calls.Count}.");
+            for (int i = 0; i < calls.Count; i++)
+            {
+                if (i == 2) continue;
+                calls[i].operand = AccessTools.DeclaredMethod(typeof(ReplayPatches), method == nameof(Universe.GetSimulationSpeed)
+                    ? nameof(KittenSpeed) : nameof(KittenFraction));
+            }
+        }
+        return list;
+    }
+
+    private static double KittenSpeed() => ReplayCrew.InAnimationDraw ? 1 : Universe.GetSimulationSpeed();
+    private static double KittenFraction() => ReplayCrew.InAnimationDraw ? 1 : Universe.GetAchivedSpeedFraction();
 
     private static bool BeforePowerStatus(PowerConsumer __instance, ref PowerStatus __result)
     {
@@ -477,23 +520,24 @@ internal static class ReplayPatches
         return false;
     }
 
-    // ExplosionVolumeStore.Add appends a new volume while the store has room, so a longer store after the call
-    // holds the new volume last. A merge into a burning volume leaves the length as it was.
-    private static void BeforeExplosionSpawn(ExplosionVolumeManager __instance, out int __state)
+    // ExplosionVolumeStore.Add replaces a slot when full. Object identity detects that insertion as
+    // well as an append, while a merge keeps the original object.
+    private static void BeforeExplosionSpawn(ExplosionVolumeManager __instance, out HashSet<ExplosionVolume>? __state)
     {
-        __state = ReplaySession.IsRecording && !ReplaySession.IsPlayingBack ? ReplayExplosions.StoreOf(__instance)?.Count ?? -1 : -1;
+        __state = ReplaySession.IsRecording && !ReplaySession.IsPlayingBack && ReplayExplosions.StoreOf(__instance) is { } store
+            ? ReplayExplosions.Snapshot(store) : null;
     }
 
-    private static void AfterExplosionSpawn(ExplosionVolumeManager __instance, int __state, ExplosionVolumeTemplate __0, Celestial __1,
+    private static void AfterExplosionSpawn(ExplosionVolumeManager __instance, HashSet<ExplosionVolume>? __state, ExplosionVolumeTemplate __0, Celestial __1,
         double3 __2, double3 __3, float __4, float __5)
     {
-        if (__state < 0)
+        if (__state == null)
             return;
         try
         {
             int seed = 0;
-            if (ReplayExplosions.StoreOf(__instance) is { } store && store.Count > __state && ReferenceEquals(store[store.Count - 1].Template, __0))
-                seed = (int)store[store.Count - 1].NoiseSeed;
+            if (ReplayExplosions.StoreOf(__instance) is { } store && ReplayExplosions.Added(store, __state) is { } volume)
+                seed = (int)volume.NoiseSeed;
             ReplaySession.ObserveExplosion(__0, __1, __2, __3, __4, __5, seed);
         }
         catch (Exception ex)
@@ -524,6 +568,9 @@ internal static class ReplayPatches
         try
         {
             scene.DrawCanopies(__0);
+            // KittenRenderable.UpdateRenderData does not use its frame-index argument on this build.
+            // The unconditional bucket hook also draws crew when the live controlled vehicle is gone.
+            scene.DrawCrew(__0, 0);
         }
         catch (Exception ex)
         {

@@ -37,6 +37,7 @@ internal sealed class FlightRecorder
     private bool _followChanged;
     private int _pendingMarks;
     private readonly ReplayEffectLog _effects = new();
+    private double _effectEnd;
 
     private sealed record Track(Vehicle Vehicle, ReplayActor Actor)
     {
@@ -70,7 +71,8 @@ internal sealed class FlightRecorder
         Capture();
     }
 
-    public ReplayFlight Flight { get; }
+    public ReplayFlight Flight { get; private set; }
+    public bool PrimaryDestroyed => _primary.Vehicle.IsDisposed;
     public double Duration => Math.Max(0, _lastTime);
 
     public string FollowedName => _primary.Vehicle.Id;
@@ -291,7 +293,21 @@ internal sealed class FlightRecorder
     }
 
     /// <summary>Adds the explosions and destructions up to the last sample, before the flight is saved.</summary>
-    public void Close() => _bytes += _effects.Flush(Flight, Math.Max(0, _lastTime));
+    public void Close()
+    {
+        double end = Math.Max(Math.Max(0, _lastTime), Universe.GetElapsedSeconds() - Flight.StartTime);
+        if (PrimaryDestroyed)
+        {
+            for (int i = 0; i < Flight.Actors.Count; i++)
+            {
+                ReplayActor actor = Flight.Actors[i];
+                if (actor.End == null) Flight.Actors[i] = actor with { End = end };
+            }
+            end = Math.Max(end, _effectEnd);
+        }
+        Flight = Flight with { EndTime = end };
+        _bytes += _effects.Flush(Flight, end);
+    }
 
     /// <summary>
     /// Takes an explosion volume that ExplosionVolumeManager.Spawn made now. The flight gets it at the next
@@ -304,6 +320,8 @@ internal sealed class FlightRecorder
             return;
         _effects.Add(new ReplayExplosion(Universe.GetElapsedSeconds() - Flight.StartTime, template.Id, parent.Id,
             ToV3(positionCcf), ToV3(velocityCcf), Math.Max(0f, Finite(intensity)), Math.Max(0f, Finite(ambientPressurePa)), Math.Max(0, seed)));
+        _effectEnd = Math.Max(_effectEnd, Universe.GetElapsedSeconds() - Flight.StartTime
+            + template.GetScaledLifeSeconds(Math.Clamp(Finite(intensity), 0, 100), Math.Max(0, Finite(ambientPressurePa))));
     }
 
     /// <summary>

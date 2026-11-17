@@ -14,6 +14,7 @@ namespace CineCam.Features.Replay;
 /// </summary>
 internal sealed class ReplayCrew : IDisposable
 {
+    public static bool InAnimationDraw { get; private set; }
     private sealed class Pose
     {
         public KittenRenderable? Renderable;
@@ -125,8 +126,17 @@ internal sealed class ReplayCrew : IDisposable
         double3 angular = kitten.Motion is { } turn ? new double3(turn[3], turn[4], turn[5]) : double3.Zero;
         KittenRenderable drawn = pose.Renderable!;
         drawn.ConditionRung = KittenRenderable.ReadConditionRung(Universe.KittenRoster.Find(actor.Name));
-        drawn.UpdateRenderData(viewport, frameIndex, Math.Min(step, KittenClock.MaxDampingStep), float4x4.Pack(in matrixAsmb2Ego),
-            acceleration, angular, in locomotion, in inputs);
+        bool previous = InAnimationDraw;
+        try
+        {
+            InAnimationDraw = true;
+            drawn.UpdateRenderData(viewport, frameIndex, Math.Min(step, KittenClock.MaxDampingStep), float4x4.Pack(in matrixAsmb2Ego),
+                acceleration, angular, in locomotion, in inputs);
+        }
+        finally
+        {
+            InAnimationDraw = previous;
+        }
         Settle(pose, step);
     }
 
