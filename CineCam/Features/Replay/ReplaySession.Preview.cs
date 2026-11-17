@@ -62,7 +62,7 @@ internal static partial class ReplaySession
         Program.DrawUI = false;
         try
         {
-            if (!OfflineHooks.RequestPicture())
+            if (!OfflineHooks.RequestPicture(CaptureGrab.Swapchain))
                 throw new Refusal("capture_busy", "Wait for the current game screenshot to finish.");
             _preview = new PendingPreview(collector, Stopwatch.GetTimestamp(), visible, completion);
         }

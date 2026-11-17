@@ -16,6 +16,8 @@ internal static class CineCamPaths
 
     public static string RendersFolder => Path.Combine(Root, "renders");
 
+    public static string StillsFolder => Path.Combine(Root, "stills");
+
     // The game saves its own screenshots here (ScreenshotCapture.ScreenshotsFolderPath, which is private).
     public static string ScreenshotsFolder => Path.Combine(Constants.DocumentsFolderPath, "exports", "screenshots");
 

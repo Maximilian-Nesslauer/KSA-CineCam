@@ -1,6 +1,7 @@
 using System.Reflection;
 using Brutal.Logging;
 using CineCam.Core;
+using CineCam.Director;
 using KSA;
 
 namespace CineCam.Features.Takes;
@@ -33,9 +34,12 @@ internal static class OfflineHooks
     public static long PostRenderCount { get; private set; }
 
     // The flag "ui" is the swapchain grab, which copies the image of this frame after the interface
-    // is drawn, and scale 1 keeps the window size. Returns false while another capture runs, because
+    // is drawn, and scale 1 keeps the window size. Without the flag, ScreenshotCapture.Request at scale
+    // 1 takes the CaptureFrame path: ScreenshotCapture.OnRenderGameCapture draws the scene of the main
+    // view through the composite pass into its own 8 bit image, without the interface, the overlays and
+    // the sync flash, and without a renderer rebuild. Returns false while another capture runs, because
     // the game refuses a second request then.
-    public static bool RequestPicture()
+    public static bool RequestPicture(CaptureGrab grab)
     {
         _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
         WaitForIdleCapture();
@@ -43,9 +47,11 @@ internal static class OfflineHooks
             return false;
         Result = PostRenderResult.Unknown;
         _expecting = true;
-        _screenshot(1, "ui");
+        _screenshot(1, grab == CaptureGrab.Clean ? "" : "ui");
         return true;
     }
+
+    public static string GrabName(CaptureGrab grab) => grab == CaptureGrab.Clean ? "clean" : "swapchain";
 
     private static void WaitForIdleCapture()
     {

@@ -1,5 +1,6 @@
 using Brutal.ImGuiApi.Abstractions;
 using Brutal.Logging;
+using CineCam.Features.Look;
 using CineCam.Features.Takes;
 using CineCam.Features.TimeOfDay;
 using KSA;
@@ -23,7 +24,7 @@ internal sealed class CineCamCommands
         var commands = new CineCamCommands();
         terminal.RegisterObject(commands);
         _registered = commands;
-        DefaultCategory.Log.Info("[CineCam] Console commands registered: cinecam_start, cinecam_stop, cinecam_reload, cinecam_sun, cinecam_checkpoint, cinecam_reset, cinecam_pause, cinecam_mark.");
+        DefaultCategory.Log.Info("[CineCam] Console commands registered: cinecam_start, cinecam_stop, cinecam_reload, cinecam_sun, cinecam_checkpoint, cinecam_reset, cinecam_pause, cinecam_mark, cinecam_still.");
         return true;
     }
 
@@ -63,6 +64,18 @@ internal sealed class CineCamCommands
 
     [TerminalAction("cinecam_reset", "ends a running CineCam take, loads the checkpoint save of a take and makes the take ready; optional argument: the name of the take", ArgParseMode.Default)]
     public void Reset(string take = "") => TakeRunner.RequestReset(take);
+
+    [TerminalAction("cinecam_still", "saves one picture of the current view at 2 to 8 times the window size into the CineCam stills folder; optional argument: the scale (0 uses the setting)", ArgParseMode.Default)]
+    public void Still(double scale = 0.0)
+    {
+        if (scale != 0.0 && (scale != Math.Floor(scale) || scale < Core.CineCamSettings.MinStillScale || scale > Core.CineCamSettings.MaxStillScale))
+        {
+            DefaultCategory.Log.Warning($"[CineCam] The scale of a still is a whole number from {Core.CineCamSettings.MinStillScale} to {Core.CineCamSettings.MaxStillScale}.");
+            return;
+        }
+
+        DefaultCategory.Log.Info("[CineCam] " + StillCapture.Request(scale == 0.0 ? null : (int)scale));
+    }
 
     [TerminalAction("cinecam_sun", "moves the game time to the next time the sun at the launch site has this elevation in degrees; optional: set instead of rise (use \"set\")", ArgParseMode.Default)]
     public void Sun(double elevation = 5.0, string phase = "rise")

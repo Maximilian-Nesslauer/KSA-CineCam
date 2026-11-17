@@ -18,7 +18,21 @@ internal static partial class TakeRunner
 {
     private static bool _resetHoldLogged;
 
-    public static void BeforeSimStep()
+    // __0 of the patch, the dtPlayer parameter of Universe.GetJobSimStep.
+    public static void BeforeSimStep(double dtPlayer)
+    {
+        GuardSpeed();
+        try
+        {
+            PlanExactStep(dtPlayer);
+        }
+        catch (Exception ex)
+        {
+            LogHelper.ErrorOnce("sim-step-exact", $"[CineCam] Error in the plan of an exact picture time: {ex}");
+        }
+    }
+
+    private static void GuardSpeed()
     {
         try
         {
@@ -71,14 +85,85 @@ internal static partial class TakeRunner
         }
     }
 
+    // An offline take with exactApsides lands one picture exactly on each apoapsis and periapsis that
+    // the orbit of the vehicle forecasts (Orbit.GetNextApoapsisTime, Orbit.GetNextPeriapsisTime). The
+    // limit must be set here, because Universe.ApplyVehicleSolvers clears it earlier in the frame, and
+    // Universe.GetJobSimStep cuts the step at it (Universe.LimitNextStep). Only the step of a frame that
+    // makes a picture is planned.
+    private static void PlanExactStep(double dtPlayer)
+    {
+        if (_take is not { Offline: { } offline } take)
+            return;
+        offline.LandingTarget = null;
+        offline.PlannedStep = null;
+        if (!take.Take.ExactApsides || take.IsPaused || offline.StepFrame != _frame)
+            return;
+        double regular = dtPlayer * Universe.GetSimulationSpeed() * Universe.GetAchivedSpeedFraction();
+        if (!(regular > 0.0))
+            return;
+
+        double now = Universe.GetElapsedSeconds();
+        (double Time, string Name)? nearest = null;
+        foreach (var target in ApsisTimes(take.Vehicle.Vehicle))
+        {
+            if (target.Time - now > ExactStep.Reached && (nearest == null || target.Time < nearest.Value.Time))
+                nearest = target;
+        }
+
+        if (nearest is not { } next || ExactStep.Next(regular, next.Time - now) is not double step)
+            return;
+        Universe.LimitNextStep(Universe.GetElapsedTime() + step);
+        offline.PlannedStep = step;
+        if (Math.Abs(step - (next.Time - now)) <= ExactStep.Reached)
+        {
+            offline.LandingTarget = next.Time;
+            offline.LandingName = next.Name;
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static List<(double Time, string Name)> ApsisTimes(Vehicle vehicle)
+    {
+        var times = new List<(double, string)>(2);
+        if (vehicle.IsDisposed || vehicle.Situation.HasAnyContact())
+            return times;
+        Orbit orbit = vehicle.Orbit;
+        if (orbit.GetOrbitType() != Orbit.OrbitType.Elliptical)
+            return times;
+        UniverseTime now = Universe.GetElapsedTime();
+        if (orbit.GetNextApoapsisTime(now) is UniverseTime apoapsis)
+            times.Add((apoapsis.Seconds(), "apoapsis"));
+        if (orbit.GetNextPeriapsisTime(now) is UniverseTime periapsis)
+            times.Add((periapsis.Seconds(), "periapsis"));
+        return times;
+    }
+
     // Universe.LimitNextStep cuts the step at the time of a forecast (life support, radiation dose,
     // probe power) without a change of Universe.GetAchivedSpeedFraction, so the slow sim check of the
-    // offline capture does not see it.
+    // offline capture does not see it. A step that CineCam cut for an exact picture time is no warning.
     public static void AfterSimStep(double stepSeconds, double dtPlayer)
     {
         try
         {
-            if (_take is not { Offline: { } offline } take || offline.WarnedStepLimit)
+            if (_take is not { Offline: { } offline } take)
+                return;
+            double? planned = offline.PlannedStep;
+            offline.PlannedStep = null;
+            if (planned is double plan && stepSeconds >= plan * 0.999)
+            {
+                if (offline.LandingTarget is double landing)
+                {
+                    // The step of this frame is applied in the next frame, whose picture shows it.
+                    WriteRow(take, "info", "exactTime", string.Create(CultureInfo.InvariantCulture,
+                        $"picture {offline.FrameNumber + 1} shows the {offline.LandingName} at game time {landing:F3}; the step was {stepSeconds:G6} s"));
+                }
+
+                offline.LandingTarget = null;
+                return;
+            }
+
+            offline.LandingTarget = null;
+            if (offline.WarnedStepLimit)
                 return;
             double expected = dtPlayer * Universe.GetSimulationSpeed() * Universe.GetAchivedSpeedFraction();
             if (!(expected > 0.0) || stepSeconds >= expected * 0.999)

@@ -3,6 +3,7 @@ using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using CineCam.Core;
 using CineCam.Director.Replay;
+using CineCam.Features.Look;
 using CineCam.Features.Replay;
 using KSA;
 
@@ -267,7 +268,13 @@ internal static class ReplayPanel
         Widgets.SameLine();
         if (Widgets.Button("RENDER FROM THIS TIME", renderBlock == null, renderBlock ?? "Renders from the replay time to the end of the take."))
             ReplaySession.StartRender(ReplayRenderRange.FromCurrent);
+        Widgets.SameLine();
+        string? stillBlock = StillCapture.BlockReason;
+        if (Widgets.Button("TAKE STILL", stillBlock == null, stillBlock ?? $"Pauses the replay and saves one picture of this view at {CineCamSettings.StillScale} times the window size into the stills folder. The size is on the Settings page."))
+            StillCapture.Request(null);
         Widgets.Reason(renderBlock ?? "");
+        if (StillCapture.Status.Length > 0)
+            Widgets.Muted(StillCapture.Status);
 
         string text = ReplaySession.RenderStatusText;
         if (text.Length == 0)

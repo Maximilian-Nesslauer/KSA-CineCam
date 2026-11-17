@@ -453,7 +453,7 @@ internal static partial class TakeRunner
         DefaultCategory.Log.Info($"[CineCam] {(dryRun ? "Dry run of take" : "Take")} \"{take.Name}\" started. Site: {siteNote}. {siteText}. Log folder: {(folder.Length == 0 ? "none" : folder)}");
         WriteRow(active, "take", "start", $"take={take.Name}; dryRun={dryRun}; site={siteText}; rule={siteNote}; file={path}{(fromEditor ? " (unsaved copy)" : "")}; hideUi={file.HideUi}; syncFlash={file.SyncFlash}{(dryRun ? "" : $"; run={run}")}{ResetNoteFor(take)}");
         if (offline != null)
-            WriteRow(active, "take", "offline", string.Create(CultureInfo.InvariantCulture, $"fps={offline.Fps}; frames={offline.FramesFolder}"));
+            WriteRow(active, "take", "offline", string.Create(CultureInfo.InvariantCulture, $"fps={offline.Fps}; frames={offline.FramesFolder}; grab={OfflineHooks.GrabName(offline.Grab)}; exactApsides={take.ExactApsides}"));
 
         if (!dryRun && CineCamSettings.ExperimentalReplay && CineCamSettings.RecordWithTake && !ReplaySession.IsRecording)
         {

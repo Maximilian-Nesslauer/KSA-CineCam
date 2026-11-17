@@ -512,7 +512,7 @@ internal sealed class CineCamWindow
         for (int i = 0; i < _problems.Count && i < MaxProblemLines; i++)
         {
             ProblemLine line = _problems[i];
-            if (Widgets.LinkLine(ProblemIds[i], line.Sentence, line.IsError ? Widgets.ErrorColor : Widgets.WarnColor, _problemTips[i]))
+            if (Widgets.LinkLine(ProblemIds[i], line.Sentence, line.IsError ? Widgets.ErrorColor : Widgets.WarnColor, _problemTips[i], warning: true))
                 SelectProblem(line);
         }
 

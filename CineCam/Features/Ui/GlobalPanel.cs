@@ -46,9 +46,12 @@ internal static class GlobalPanel
         Widgets.Section("Video");
         DrawFileOptions(session);
         DrawCapture(session);
+        LookPanel.DrawStill();
         DrawAliasFold(session);
         Widgets.Section("Interface during a take");
         DrawInterface(session);
+        Widgets.Section("Game sound");
+        LookPanel.DrawSettings();
         Widgets.Section("Keys");
         DrawKeys(PlayerKeys);
         Widgets.Section("Free camera");
@@ -319,6 +322,8 @@ internal static class GlobalPanel
 
     private static string _aliasTarget = "";
 
+    private static readonly CaptureGrab[] GrabOptions = [CaptureGrab.Swapchain, CaptureGrab.Clean];
+
     private static void DrawCapture(EditSession session)
     {
         ShotFile? file = session.Document;
@@ -360,6 +365,17 @@ internal static class GlobalPanel
             }
 
             Widgets.Tip("Empty means the folder of the take. A relative path is relative to the folder of the take.");
+
+            CaptureGrab grab = capture.Grab;
+            if (Widgets.Choice("Picture grab", ref grab, GrabOptions, g => g == CaptureGrab.Clean ? "Clean scene" : "Screen (default)",
+                    g => g == CaptureGrab.Clean
+                        ? "Draws the scene of the main view into its own picture, without the interface and the overlays of other mods. The game hides the interface for the frame of each picture."
+                        : "Copies the finished screen image, with everything that is drawn on it, also the overlays of other mods.",
+                    "How the offline capture and the render of a replay take each picture."))
+            {
+                capture.Grab = grab;
+                changed = true;
+            }
             Widgets.Muted("The game saves one numbered picture per frame in the folder frames, with the size of the game window. The game may run slower than real time and makes no sound. Run make-video.cmd in the output folder with ffmpeg to make the video.");
             Widgets.Muted("A take or a dry run from this window uses the mode. A dry run and a preview never save pictures.");
         }
