@@ -61,6 +61,10 @@ python cinecam.py close
 
 `add-key` takes `fixed`, `track`, `chase`, `orbit`, `part-mount` or `path-point` and adds the shot to the selected take of the editor at the replay time. The preview command pauses playback and returns the PNG path in `previewPath`. `render` starts a render of the take of the open replay (`--from-here` starts at the replay time), `render-stop` stops it after the current picture, and the field `render` of the state has its progress and, after the end, its result. Use `--help` for the remaining commands (`status`, `record`, `stop`, `retry-save`, `pause`, `interface`). Any program on this computer that can write to the control folder can send these commands, so leave it off unless you use it.
 
+## Integration API
+
+Other mods subscribe to `CineCam.Api.CineCamEvents` through reflection, see [Integration for other mods](integration.md). The tests of the API, the cue action and the replay feed are in `CineCam.Tests/IntegrationTests.cs`.
+
 ## Maintenance on each game update
 
 The mod patches game methods with Harmony and reads private game members by reflection, so each game update can break it. `GameReflection` resolves the takes targets at start-up, and `ReplayPatches` applies the replay patches. A missing target turns off its feature and logs a warning or an error. On each game update, check every item below in the new decompiled source, then do one test in the game: a quick camera, a take with the default shot file, an offline take, a replay of a short recording, and a sun move. Change `TestedGameVersion` in `Mod.cs`.
@@ -137,6 +141,10 @@ Optional:
 - World events: `Vehicle.Parent` (`IParentBody.Id`, `IParentBody.GetAtmosphereRadius()`), `Vehicle.GetPositionCci()`, `Vehicle.GetVelocityCci()`, `Vehicle.Orbit.GetOrbitType()` (`Orbit.OrbitType.Elliptical`), `PartTree.DockingPorts.Modules` with `DockingPort.Docked`, `PartTree.Parts`. A docking (`DockingPort.Dock`, `Vehicle.MergeFrom`) and an undocking (`DockingPort.Undock`, `Vehicle.Split`) must still move the existing `Part` objects to the vehicle that gets the control, because the take finds that vehicle by a shared part.
 - Save and load: `UncompressedSave.Make(string)` (replaces a save of the same name without a question), `GameSaves.LoadSaveGame(string)` (synchronous, and the sim speed is 1x after it), `GameSaves.SaveFolderPath`, `GameSaves.RefusedInEditor()`, `Program.IsLoaded`, `SaveName` rules (the checkpoint name follows them), `Universe.AutoWarpStop(bool)`, and the file `universe.xml` in the save folder.
 - Paths and settings: `Constants.DocumentsFolderPath` (read at the time of use), `GameSettings.Current.Simulation.MinTargetFrameRate`, `VersionInfo.Current.VersionString`.
+
+### The event API for other mods
+
+`CineCam.Api.CineCamEvents` (see [Integration for other mods](integration.md)) is a public interface. Keep its names, its parameter types and their meaning, or raise `ApiVersion` and say so in the release notes. It has no patch of its own. `Features/ApiFeed.cs` feeds it from hooks that other features own: the live take from the camera prefix of `FixedController.OnFrame` and the take start and end in `TakeRunner`, the replay from the `Program.OnFrameViewports` prefix of `ReplayPatches` (after `ReplayScene.Update`), the render from the `Program.OnFrame` prefix, and the hidden state of the interface (`Program.DrawUI`) once more in the `Program.OnFrame` postfix. When one of these hooks is off, its events do not come. On an update, check that the camera prefix and the `OnFrameViewports` prefix still run before the game draws its interface (`Program.OnDrawUiViewports` and `Program.DrawFps`), because a subscriber draws the change in the same frame. `Mod.Unload` clears the handlers after the take, the replay and the render have ended.
 
 ### Other things to check
 

@@ -45,6 +45,7 @@ Fields of every shot:
 | Field | Meaning |
 | --- | --- |
 | `type` | `orbit`, `crane`, `tripod`, `track`, `chase`, `part` or `path`. The window calls a tripod "Fixed" and a part shot "Part mount" |
+| `name` | Optional. A name that other mods (see [Integration for other mods](integration.md)) and the event log get when the shot starts: 1 to 64 letters, digits and the signs `-`, `_`, `.` and `:` |
 | `duration` | Length in seconds, greater than 0 |
 | `target` | `site` or `vehicle`. A chase, part, path or track shot can also use `separated`, see below |
 | `fov` | Vertical field of view, 1 to 150. Default 40 |
@@ -119,19 +120,25 @@ The speed track starts to write the speed when its first key starts. Before that
 
 ## Actions
 
-Actions. The only action now is `stage`.
+Actions. An action is `stage` or `cue`.
 
 | Field | Meaning |
 | --- | --- |
 | `at` | When the action fires. It is required. A negative delay works for altitude, speed, ground and slow events only |
-| `action` | `stage` |
-| `sequence` | Optional. The number of the sequence that must be the next one when the action fires |
+| `action` | `stage` or `cue` |
+| `sequence` | Optional, for a stage action only. The number of the sequence that must be the next one when the action fires |
+| `name` | Required for a cue: 1 to 64 letters, digits and the signs `-`, `_`, `.` and `:`. A stage action keeps a `name` field as an unknown field |
 
 ```json
 "actions": [
-  { "at": { "event": "altitude:90000" }, "action": "stage", "sequence": 3 }
+  { "at": { "event": "altitude:90000" }, "action": "stage", "sequence": 3 },
+  { "at": { "event": "liftoff" }, "action": "cue", "name": "overlay-in" }
 ]
 ```
+
+A `cue` changes nothing in the flight. It gives its name to other mods at its time, see [Integration for other mods](integration.md), and writes a row of the kind `cue` into the event log. It fires once per run in a live take, a dry run, a replay and a render. A stage action that waits for its sequence does not hold a cue back. A cue whose trigger was not reached when the take ended gets a `warning` row, as a stage action does. An older version of CineCam does not read a file with a cue.
+
+The rest of this section is about the stage action.
 
 A `stage` action sends the staging key of the game for the controlled vehicle. The key fires the next sequence that was not fired yet, in order, and it cannot pick a number. With `sequence` set, the action fires only when that sequence is the next one. If an earlier sequence has not fired yet, the action waits up to 10 seconds of take time for it and then is skipped. If a later sequence is next, or none is left, the action is skipped at once. The log says why. An action that waits holds back the actions after it.
 
@@ -199,7 +206,7 @@ A shot that cuts 2 seconds before the vehicle comes down to 100 m over the groun
 
 ## Take folder and event log
 
-Each take run writes a folder `Documents\My Games\Kitten Space Agency\CineCam\takes\<date>-<time>-<take name>\`. It holds a copy of the shot file and the log `events.csv` with the time of every event, shot, speed key and action.
+Each take run writes a folder `Documents\My Games\Kitten Space Agency\CineCam\takes\<date>-<time>-<take name>\`. It holds a copy of the shot file and the log `events.csv` with the time of every event, shot, speed key, action and cue. The row of a shot with a name has `name=<name>` in its detail.
 
 `scripts/events-to-markers.py` turns the event log into markers for a video editor, so the cuts can follow the flight. It needs Python 3 and nothing else.
 
@@ -214,7 +221,7 @@ It writes `markers.edl` and `markers.csv`. The CSV has the columns `timecode`, `
 | `--fps` | Frame rate of the timeline. Default 60. |
 | `--start-tc` | Start timecode of the timeline. Default `01:00:00:00`. |
 | `--flash-seconds`, `--flash-frames` | Where the white frame is in the video. Default 0. The video clip must start at the start of the timeline. |
-| `--kinds` | The kinds of rows to include, comma separated, or `all`. Default `event,shot,speed,action`. |
+| `--kinds` | The kinds of rows to include, comma separated, or `all`. Default `event,shot,speed,action,cue`. |
 | `--no-pause-shift` | Do not add the length of earlier pauses to the later rows. |
 | `-o` | Output path without extension. |
 
@@ -229,8 +236,8 @@ The columns of `events.csv`:
 | `missionSeconds` | Seconds since the ignition, or 0 before it |
 | `simSpeed` | The sim speed |
 | `frame` | The picture number of an offline capture, empty in real time |
-| `kind` | `take`, `event`, `shot`, `speed`, `action`, `pause`, `marker`, `info` or `warning` |
-| `name` | The event, shot or key |
+| `kind` | `take`, `event`, `shot`, `speed`, `action`, `cue`, `pause`, `marker`, `info` or `warning` |
+| `name` | The event, shot or key, or the name of a cue |
 | `detail` | More text |
 
 ## Example
