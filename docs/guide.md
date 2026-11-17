@@ -155,6 +155,8 @@ On the **Settings** page, **Hide the game interface during a take** hides the ga
 ffmpeg -framerate 30 -start_number 1 -i frames\%06d.png -c:v libx264 -pix_fmt yuv420p -crf 16 video.mp4
 ```
 
+**Game sound.** On the **Settings** page, under **Video**, turn on **Record the game sound of a take**. Each real-time take then saves the game sound as `game-sound.wav` in its take folder: the whole mix as you hear it, after your volume settings, as 32-bit float stereo at the sample rate of the game sound (about 23 MB per minute). The file starts with the take and ends with it, and it runs in real time like a screen recording, so a pause for an edit is in the file as well. The event log gives the take time of the first sample (the row `soundStart`, usually a few milliseconds after the start) and the length of the file (the row `soundEnd`), see [the take folder and event log](shot-file.md#take-folder-and-event-log). Put the file on the timeline at that take time, or at the white frame plus that time. An offline capture, a dry run and a preview record no sound, because the game mixes its sound in real time and an offline capture runs slower than real time. The game plays no sound above 10x, so the file is quiet in those parts of a take.
+
 Add the music in the video editor. A picture that the game does not save is made again with a very small time step, and the take ends when three pictures in a row fail. A take needs free disk space for all pictures. Each run also writes an event log, see [the take folder and event log](shot-file.md#take-folder-and-event-log).
 
 ## Settings and keys
@@ -171,8 +173,10 @@ Open the **Settings** page of the window. A key change is saved at once. A key t
 | Play or pause a replay (`playPauseKey`) | Home | Plays and pauses an open replay. Space cannot do this, because the game moves the free camera up with it |
 | Check the shot file (`reloadKey`) | ScrollLock | Developer mode only. Checks the shot file and logs the result |
 | Keep this window open during a take (`showWindowDuringTake`) | off | Keeps the window on the screen while a take records |
+| Record the game sound of a take (`recordTakeSound`) | off | Saves the game sound of each real-time take as `game-sound.wav` in the take folder |
 | Replay of recorded flights (`experimentalReplay`) | off | Shows the replay |
 | Record the flight with each take (`recordWithTake`) | off | Records the flight while a take runs, for a replay. Needs the replay |
+| Engine sounds in a replay (`replaySound`) | on | Plays the engine sounds of the recorded burning engines in a replay. Needs the replay |
 | Developer mode (`developerMode`) | off | Shows file paths, the file section of the take, the local control and the autotest |
 | `enableLocalControl` | off | Settings file only. See [Local control](development.md#local-control-from-a-terminal-developer-mode) |
 

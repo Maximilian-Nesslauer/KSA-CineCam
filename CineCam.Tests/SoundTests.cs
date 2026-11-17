@@ -69,7 +69,7 @@ static class SoundTests
             }
         });
 
-        check("sound capture: the file holds every pushed block, and a pause leaves blocks out", () =>
+        check("sound capture: the file holds every pushed block", () =>
         {
             string path = Temp("capture.wav");
             try
@@ -84,20 +84,14 @@ static class SoundTests
                 var mixer = new Thread(() =>
                 {
                     for (int i = 0; i < 47; i++)
-                    {
                         capture.Push(block, 2, 1024, stamp + i);
-                        if (i == 20)
-                            capture.Paused = true;
-                        if (i == 30)
-                            capture.Paused = false;
-                    }
                 });
                 mixer.Start();
                 mixer.Join();
                 SoundCaptureResult result = capture.Stop();
                 expect(capture.FirstTimestamp == stamp, "the time of the first block");
                 expect(result.Error == null && result.DroppedFrames == 0, $"no loss ({result.Error})");
-                expect(result.Frames == (47 - 10) * 1024, $"the paused blocks are left out ({result.Frames})");
+                expect(result.Frames == 47 * 1024, $"all frames ({result.Frames})");
                 WavInfo info = WavInfo.Read(path);
                 expect(info.Frames == result.Frames && info.Peak == 0.25f && Near(info.Rms, 0.25, 1e-6), "the samples");
             }

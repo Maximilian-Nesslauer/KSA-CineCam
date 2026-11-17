@@ -46,7 +46,6 @@ public sealed class SoundCapture
     private string? _error;
 
     private volatile bool _accepting = true;
-    private volatile bool _paused;
     private bool _stopped;
 
     /// <param name="ringSeconds">How long the writer thread may stall before blocks are lost.</param>
@@ -70,17 +69,10 @@ public sealed class SoundCapture
     /// <summary>The <see cref="Stopwatch"/> timestamp of the first block, or 0 before it came.</summary>
     public long FirstTimestamp => Volatile.Read(ref _firstTimestamp);
 
-    /// <summary>While paused, the blocks are left out with no silence, as the take clock stops in a pause.</summary>
-    public bool Paused
-    {
-        get => _paused;
-        set => _paused = value;
-    }
-
     /// <summary>Mixer thread. The source holds <paramref name="frames"/> frames of <paramref name="channels"/> interleaved samples.</summary>
     public void Push(ReadOnlySpan<float> source, int channels, int frames, long timestamp)
     {
-        if (!_accepting || _paused || channels < 1 || frames <= 0 || source.Length < frames * channels)
+        if (!_accepting || channels < 1 || frames <= 0 || source.Length < frames * channels)
             return;
         if (_firstTimestamp == 0)
             Volatile.Write(ref _firstTimestamp, timestamp == 0 ? 1 : timestamp);

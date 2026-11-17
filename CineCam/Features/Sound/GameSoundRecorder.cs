@@ -98,12 +98,6 @@ internal static unsafe class GameSoundRecorder
         return null;
     }
 
-    public static void SetPaused(bool paused)
-    {
-        if (Volatile.Read(ref _capture) is { } capture)
-            capture.Paused = paused;
-    }
-
     /// <summary>Takes the DSP out of the mix, ends the writer thread and closes the file. Null when nothing recorded.</summary>
     public static SoundCaptureResult? Stop()
     {

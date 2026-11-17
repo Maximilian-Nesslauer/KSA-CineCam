@@ -47,7 +47,8 @@ internal static partial class TakeRunner
     }
 
     // The mixer delivers the first block shortly after the start. Its take time is where the WAV
-    // file starts on the timeline of the take.
+    // file starts on the timeline of the take. The file then runs in real time like a screen
+    // recording, also through a pause for an edit, whose length the pause rows give.
     private static void TickSound(ActiveTake take)
     {
         if (take.SoundFile == null || take.SoundStartLogged || GameSoundRecorder.FirstSampleSeconds(take.ClockStartSeconds) is not double first)
@@ -57,12 +58,6 @@ internal static partial class TakeRunner
             $"file={GameSoundRecorder.FileName}; firstSampleTakeSeconds={first:F4}"));
         DefaultCategory.Log.Info(FormattableString.Invariant(
             $"[CineCam] The game sound of take \"{take.Take.Name}\" records to {take.SoundFile}. Its first sample is at take time {first:F4} s."));
-    }
-
-    private static void SetSoundPaused(ActiveTake take, bool paused)
-    {
-        if (take.SoundFile != null)
-            GameSoundRecorder.SetPaused(paused);
     }
 
     private static void EndSound(ActiveTake take)
