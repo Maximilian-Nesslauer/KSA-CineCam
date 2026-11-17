@@ -15,6 +15,8 @@ static class SoundTests
 
         string Temp(string name) => Path.Combine(Path.GetTempPath(), "cinecam-sound-" + Guid.NewGuid().ToString("N") + "-" + name);
 
+        SoundThreadingTests.Run(check, expect);
+
         check("sound ring: writes all or nothing and reads across the wrap", () =>
         {
             var ring = new SoundRing(6);
