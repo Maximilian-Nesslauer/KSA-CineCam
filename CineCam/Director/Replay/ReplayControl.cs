@@ -30,12 +30,12 @@ public static class ControlRules
     /// </summary>
     public static (string Code, string Message)? QuitBlock(QuitState state) => state switch
     {
-        { Rendering: true } => ("rendering", "A render writes pictures. Stop it first with render-stop."),
-        { PictureWrite: true } => ("capture_busy", "The last pictures of a render are still written. Try again in a moment."),
-        { Recording: true } => ("recording", "A flight recording runs. Stop it first with stop, so the flight is saved."),
-        { UnsavedFlight: true } => ("unsaved_flight", "A recorded flight is not saved yet. Save it with retry-save first."),
-        { TakeRuns: true } => ("busy", "A take runs. Stop it first, so its event log and its pictures are complete."),
-        { ResetRuns: true } => ("busy", "A reset loads the checkpoint. Wait until it is done."),
+        { Rendering: true } => ("rendering", UiText.MessageText("text.4553aacd9b1f", "A render writes pictures. Stop it first with render-stop.")),
+        { PictureWrite: true } => ("capture_busy", UiText.MessageText("text.7bb91cfa22ac", "The last pictures of a render are still written. Try again in a moment.")),
+        { Recording: true } => ("recording", UiText.MessageText("text.bff0c5e1ebe2", "A flight recording runs. Stop it first with stop, so the flight is saved.")),
+        { UnsavedFlight: true } => ("unsaved_flight", UiText.MessageText("text.b077aa2674a7", "A recorded flight is not saved yet. Save it with retry-save first.")),
+        { TakeRuns: true } => ("busy", UiText.MessageText("text.7b73186bc865", "A take runs. Stop it first, so its event log and its pictures are complete.")),
+        { ResetRuns: true } => ("busy", UiText.MessageText("text.70f20622b31b", "A reset loads the checkpoint. Wait until it is done.")),
         _ => null,
     };
 }

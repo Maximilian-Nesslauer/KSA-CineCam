@@ -28,7 +28,7 @@ public static class PathMath
     {
         int n = points.Count;
         if (n == 0)
-            throw new ArgumentException("a path needs at least one point", nameof(points));
+            throw new ArgumentException(UiText.MessageText("text.894a01808ddf", "a path needs at least one point"), nameof(points));
         if (n == 1)
             return Sample(points[0], shotFov);
 
@@ -77,9 +77,9 @@ public static class PathMath
         {
             double t = points[i].T;
             if (double.IsNaN(t) || t < 0.0 || t > 1.0)
-                return $"point {i + 1} has t {t:G}, which is outside 0 to 1";
+                return UiText.Format("text.fa3000dccc4b", $"point {i + 1} has t {t:G}, which is outside 0 to 1");
             if (i > 0 && !(t > points[i - 1].T))
-                return $"point {i + 1} must have a larger t than point {i}";
+                return UiText.Format("text.b30a7f9f9e95", $"point {i + 1} must have a larger t than point {i}");
         }
 
         return null;

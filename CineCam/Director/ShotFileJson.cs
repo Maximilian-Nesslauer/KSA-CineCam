@@ -26,8 +26,8 @@ public static class ShotFileJson
         }
         catch (JsonException ex)
         {
-            string where = ex.LineNumber.HasValue ? $" (line {ex.LineNumber + 1})" : "";
-            throw new ShotFileException("", $"the text is not valid JSON{where}: {ex.Message}");
+            string where = ex.LineNumber.HasValue ? UiText.Format("", $" (line {ex.LineNumber + 1})") : "";
+            throw new ShotFileException("", UiText.Format("text.bc0dfd14411f", $"the text is not valid JSON{where}: {ex.Message}"));
         }
 
         using (document)
@@ -43,11 +43,11 @@ public static class ShotFileJson
         }
         catch (IOException ex)
         {
-            throw new ShotFileException("", $"cannot read \"{path}\": {ex.Message}");
+            throw new ShotFileException("", UiText.Format("text.5db8f241679b", $"cannot read \"{path}\": {ex.Message}"));
         }
         catch (UnauthorizedAccessException ex)
         {
-            throw new ShotFileException("", $"cannot read \"{path}\": {ex.Message}");
+            throw new ShotFileException("", UiText.Format("text.5db8f241679b", $"cannot read \"{path}\": {ex.Message}"));
         }
 
         return Parse(text);
@@ -66,10 +66,10 @@ public static class ShotFileJson
 
             double? version = obj.OptNum("formatVersion", 1.0, 1e6);
             if (version.HasValue && version.Value != Math.Floor(version.Value))
-                throw new ShotFileException("formatVersion", "expected a whole number from 1");
+                throw new ShotFileException("formatVersion", UiText.MessageText("text.5015ab8d9d3b", "expected a whole number from 1"));
             file.FormatVersion = version.HasValue ? (int)version.Value : 1;
             if (file.FormatVersion > ShotFile.CurrentFormatVersion)
-                _warnings.Add($"formatVersion: the file has format version {file.FormatVersion}, and this version of CineCam knows version {ShotFile.CurrentFormatVersion}. Fields that it does not know are kept, but they have no effect");
+                _warnings.Add(UiText.Format("text.b115f6453b21", $"formatVersion: the file has format version {file.FormatVersion}, and this version of CineCam knows version {ShotFile.CurrentFormatVersion}. Fields that it does not know are kept, but they have no effect"));
 
             file.Site = obj.OptString("site");
             file.Fps = obj.OptNum("fps", 1.0, 1000.0) ?? 60.0;
@@ -84,19 +84,19 @@ public static class ShotFileJson
             if (obj.TryGet("events", out JsonElement events))
             {
                 if (events.ValueKind != JsonValueKind.Object)
-                    throw new ShotFileException("events", "expected an object of alias names");
+                    throw new ShotFileException("events", UiText.MessageText("text.c58d3e6ba72d", "expected an object of alias names"));
                 foreach (JsonProperty property in events.EnumerateObject())
                 {
                     string path = "events." + property.Name;
                     if (property.Value.ValueKind != JsonValueKind.String)
-                        throw new ShotFileException(path, "expected an event name as text, for example \"sequence:3\"");
+                        throw new ShotFileException(path, UiText.MessageText("text.815dc5785b7b", "expected an event name as text, for example \"sequence:3\""));
                     string target = property.Value.GetString()!;
                     if (!EventName.TryParse(target, out EventName parsed, out string error))
                         throw new ShotFileException(path, error);
                     // An alias may keep the name of an event that came after the file was written, so the file means
                     // what it meant before.
                     if (EventName.TryParse(property.Name, out EventName builtIn, out _) && !builtIn.AliasMayShadow)
-                        throw new ShotFileException(path, "an alias must not use the name of a built-in event");
+                        throw new ShotFileException(path, UiText.MessageText("text.9114074e92d0", "an alias must not use the name of a built-in event"));
                     file.Events[property.Name] = parsed.Canonical;
                 }
             }
@@ -104,33 +104,33 @@ public static class ShotFileJson
             bool hasList = obj.Has("takes");
             bool hasTop = obj.Has("camera") || obj.Has("speed");
             if (hasList && hasTop)
-                throw new ShotFileException("takes", "a file has either \"takes\" or \"camera\" and \"speed\" at the top level, not both");
+                throw new ShotFileException("takes", UiText.MessageText("text.c04053af3ce4", "a file has either \"takes\" or \"camera\" and \"speed\" at the top level, not both"));
 
             if (hasList)
             {
                 file.UsesTakeList = true;
                 obj.TryGet("takes", out JsonElement list);
                 if (list.ValueKind != JsonValueKind.Array)
-                    throw new ShotFileException("takes", "expected a list of takes");
+                    throw new ShotFileException("takes", UiText.MessageText("text.e85e8d866929", "expected a list of takes"));
                 int index = 0;
                 foreach (JsonElement item in list.EnumerateArray())
                 {
-                    file.Takes.Add(ReadTake(new Obj(item, $"takes[{index}]"), requireName: true));
+                    file.Takes.Add(ReadTake(new Obj(item, UiText.Format("", $"takes[{index}]")), requireName: true));
                     index++;
                 }
 
                 if (file.Takes.Count == 0)
-                    throw new ShotFileException("takes", "the list has no take");
+                    throw new ShotFileException("takes", UiText.MessageText("text.877b140a6831", "the list has no take"));
 
                 var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (Take take in file.Takes)
                 {
                     if (!names.Add(take.Name))
-                        throw new ShotFileException("takes", $"the take name \"{take.Name}\" is used twice");
+                        throw new ShotFileException("takes", UiText.Format("text.39626608dd89", $"the take name \"{take.Name}\" is used twice"));
                 }
 
                 if (file.Takes.Count(t => t.IsDefault) > 1)
-                    throw new ShotFileException("takes", "more than one take is marked \"default\"");
+                    throw new ShotFileException("takes", UiText.MessageText("text.b3e3149d1d86", "more than one take is marked \"default\""));
                 if (!file.Takes.Any(t => t.IsDefault))
                     file.Takes[0].IsDefault = true;
             }
@@ -158,18 +158,18 @@ public static class ShotFileJson
             if (ShotFile.IsHideUiAtStart(value))
                 return;
             if (!EventName.TryResolve(value, aliases, out _, out string error))
-                throw new ShotFileException(path, error + ", or \"start\"");
+                throw new ShotFileException(path, UiText.Concat(error, UiText.MessageText("text.740edfff9cff", ", or \"start\"")));
         }
 
         private static List<KeepOutBox> ReadKeepOut(JsonElement list, string path)
         {
             if (list.ValueKind != JsonValueKind.Array)
-                throw new ShotFileException(path, "expected a list of boxes, each with \"min\" and \"max\"");
+                throw new ShotFileException(path, UiText.MessageText("text.0aed8e0c3a41", "expected a list of boxes, each with \"min\" and \"max\""));
             var boxes = new List<KeepOutBox>();
             int index = 0;
             foreach (JsonElement item in list.EnumerateArray())
             {
-                var obj = new Obj(item, $"{path}[{index}]");
+                var obj = new Obj(item, UiText.Format("", $"{path}[{index}]"));
                 var box = new KeepOutBox
                 {
                     Min = obj.ReqVec("min"),
@@ -178,7 +178,7 @@ public static class ShotFileJson
                 };
                 obj.RejectUnknown();
                 if (box.Min.X > box.Max.X || box.Min.Y > box.Max.Y || box.Min.Z > box.Max.Z)
-                    throw new ShotFileException(obj.Child("min"), "the minimum corner must not be above the maximum corner on any axis");
+                    throw new ShotFileException(obj.Child("min"), UiText.MessageText("text.b66e766b5c2c", "the minimum corner must not be above the maximum corner on any axis"));
                 boxes.Add(box);
                 index++;
             }
@@ -189,9 +189,9 @@ public static class ShotFileJson
         private static WorldAnchor ReadAnchor(Obj obj)
         {
             string body = obj.OptString("body")
-                ?? throw new ShotFileException(obj.Child("body"), "an anchor needs the id of its body, for example \"Earth\"");
+                ?? throw new ShotFileException(obj.Child("body"), UiText.MessageText("text.e6eda35df951", "an anchor needs the id of its body, for example \"Earth\""));
             if (body.Trim().Length == 0)
-                throw new ShotFileException(obj.Child("body"), "the body id is empty");
+                throw new ShotFileException(obj.Child("body"), UiText.MessageText("text.ff70860ab45c", "the body id is empty"));
             var anchor = new WorldAnchor
             {
                 Body = body.Trim(),
@@ -217,7 +217,7 @@ public static class ShotFileJson
             if (scale.HasValue)
             {
                 if (scale.Value != Math.Floor(scale.Value))
-                    throw new ShotFileException(obj.Child("scale"), "expected a whole number from 1 to 8");
+                    throw new ShotFileException(obj.Child("scale"), UiText.MessageText("text.d2c0b3317412", "expected a whole number from 1 to 8"));
                 capture.Scale = (int)scale.Value;
             }
 
@@ -255,9 +255,9 @@ public static class ShotFileJson
             var take = new Take();
             if (requireName)
             {
-                take.Name = obj.OptString("name") ?? throw new ShotFileException(obj.Child("name"), "a take needs a name");
+                take.Name = obj.OptString("name") ?? throw new ShotFileException(obj.Child("name"), UiText.MessageText("text.3f4c0ad44e13", "a take needs a name"));
                 if (take.Name.Trim().Length == 0)
-                    throw new ShotFileException(obj.Child("name"), "the take name is empty");
+                    throw new ShotFileException(obj.Child("name"), UiText.MessageText("text.755fbc3895c3", "the take name is empty"));
                 take.IsDefault = obj.OptBool("default") ?? false;
                 take.Site = obj.OptString("site");
                 string? hideAt = obj.OptString("hideUiAt");
@@ -292,16 +292,16 @@ public static class ShotFileJson
             take.PauseAt = obj.OptNum("pauseAt", 0.0, Take.MaxPauseAt, minExclusive: true);
 
             if (!obj.TryGet("camera", out JsonElement camera) || camera.ValueKind != JsonValueKind.Array)
-                throw new ShotFileException(obj.Child("camera"), "expected a list of shots");
+                throw new ShotFileException(obj.Child("camera"), UiText.MessageText("text.a2d91b91d49e", "expected a list of shots"));
             int index = 0;
             foreach (JsonElement item in camera.EnumerateArray())
             {
-                take.Shots.Add(ReadShot(new Obj(item, $"{obj.Child("camera")}[{index}]")));
+                take.Shots.Add(ReadShot(new Obj(item, UiText.Format("", $"{obj.Child("camera")}[{index}]"))));
                 index++;
             }
 
             if (take.Shots.Count == 0)
-                throw new ShotFileException(obj.Child("camera"), "the camera track has no shot");
+                throw new ShotFileException(obj.Child("camera"), UiText.MessageText("text.24c062f52c3c", "the camera track has no shot"));
 
             if (obj.TryGet("preRoll", out JsonElement preRoll))
                 take.PreRoll = ReadPreRoll(new Obj(preRoll, obj.Child("preRoll")), _file.Events);
@@ -309,11 +309,11 @@ public static class ShotFileJson
             if (obj.TryGet("speed", out JsonElement speed))
             {
                 if (speed.ValueKind != JsonValueKind.Array)
-                    throw new ShotFileException(obj.Child("speed"), "expected a list of speed keys");
+                    throw new ShotFileException(obj.Child("speed"), UiText.MessageText("text.223f06a2658c", "expected a list of speed keys"));
                 index = 0;
                 foreach (JsonElement item in speed.EnumerateArray())
                 {
-                    take.Speed.Add(ReadSpeedKey(new Obj(item, $"{obj.Child("speed")}[{index}]")));
+                    take.Speed.Add(ReadSpeedKey(new Obj(item, UiText.Format("", $"{obj.Child("speed")}[{index}]"))));
                     index++;
                 }
             }
@@ -321,11 +321,11 @@ public static class ShotFileJson
             if (obj.TryGet("actions", out JsonElement actions))
             {
                 if (actions.ValueKind != JsonValueKind.Array)
-                    throw new ShotFileException(obj.Child("actions"), "expected a list of actions");
+                    throw new ShotFileException(obj.Child("actions"), UiText.MessageText("text.7cb70da0c34b", "expected a list of actions"));
                 index = 0;
                 foreach (JsonElement item in actions.EnumerateArray())
                 {
-                    take.Actions.Add(ReadAction(new Obj(item, $"{obj.Child("actions")}[{index}]")));
+                    take.Actions.Add(ReadAction(new Obj(item, UiText.Format("", $"{obj.Child("actions")}[{index}]"))));
                     index++;
                 }
             }
@@ -339,7 +339,7 @@ public static class ShotFileJson
         {
             var shot = new Shot();
             string typeText = obj.OptString("type")
-                ?? throw new ShotFileException(obj.Child("type"), "a shot needs a type (orbit, crane, tripod, track, chase, part or path)");
+                ?? throw new ShotFileException(obj.Child("type"), UiText.MessageText("text.d223685a5355", "a shot needs a type (orbit, crane, tripod, track, chase, part or path)"));
             shot.Type = Obj.ParseEnum<ShotType>(obj.Child("type"), typeText);
             shot.Target = Shot.DefaultTarget(shot.Type);
             if (obj.TryGet("target", out JsonElement target))
@@ -348,7 +348,7 @@ public static class ShotFileJson
                 if (string.Equals(targetText, "separated", StringComparison.OrdinalIgnoreCase))
                 {
                     if (!Shot.SupportsAim(shot.Type))
-                        throw new ShotFileException(obj.Child("target"), "only a chase, part, path or track shot can follow a separated vehicle");
+                        throw new ShotFileException(obj.Child("target"), UiText.MessageText("text.fd91d86e4f2c", "only a chase, part, path or track shot can follow a separated vehicle"));
                     shot.Subject = ShotSubject.Separated;
                     shot.Target = ShotTarget.Vehicle;
                 }
@@ -432,7 +432,7 @@ public static class ShotFileJson
             {
                 shot.AimOffset = offset.Value;
                 if (shot.Aim != ShotAim.Vehicle)
-                    _warnings.Add($"{obj.Child("aimOffset")}: the aim offset has no effect unless \"aim\" is \"vehicle\"");
+                    _warnings.Add(UiText.Format("text.5e55f9bd850e", $"{obj.Child("aimOffset")}: the aim offset has no effect unless \"aim\" is \"vehicle\""));
             }
 
             SeparatedPick? pick = obj.OptEnum<SeparatedPick>("pick");
@@ -440,7 +440,7 @@ public static class ShotFileJson
             {
                 shot.Pick = pick.Value;
                 if (shot.Subject != ShotSubject.Separated)
-                    _warnings.Add($"{obj.Child("pick")}: the pick has no effect unless \"target\" is \"separated\"");
+                    _warnings.Add(UiText.Format("text.79e5284b0030", $"{obj.Child("pick")}: the pick has no effect unless \"target\" is \"separated\""));
             }
         }
 
@@ -451,7 +451,7 @@ public static class ShotFileJson
                 return;
             shot.FitBy = by.Value;
             if (shot.Fit == null)
-                _warnings.Add($"{obj.Child("fitBy")}: the fit measure has no effect unless \"fit\" is on");
+                _warnings.Add(UiText.Format("text.fd1b375ab3f7", $"{obj.Child("fitBy")}: the fit measure has no effect unless \"fit\" is on"));
         }
 
         // A number is the smallest angle between the view and the sun in degrees. "off" and false turn it off.
@@ -464,16 +464,16 @@ public static class ShotFileJson
                 || (value.ValueKind == JsonValueKind.String && string.Equals(value.GetString(), "off", StringComparison.OrdinalIgnoreCase)))
                 return null;
             if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double angle))
-                throw new ShotFileException(path, "expected the smallest angle to the sun in degrees (for example 30), or \"off\"");
+                throw new ShotFileException(path, UiText.MessageText("text.bc6b8082dab8", "expected the smallest angle to the sun in degrees (for example 30), or \"off\""));
             if (double.IsNaN(angle) || angle <= 0.0 || angle > 90.0)
-                throw new ShotFileException(path, $"the value {angle:G} is out of range (must be greater than 0 and at most 90)");
+                throw new ShotFileException(path, UiText.Format("text.cf7c6098dc06", $"the value {angle:G} is out of range (must be greater than 0 and at most 90)"));
             return angle;
         }
 
         private static PreRoll ReadPreRoll(Obj obj, IReadOnlyDictionary<string, string> aliases)
         {
             string until = obj.OptString("until")
-                ?? throw new ShotFileException(obj.Child("until"), "a pre-roll needs the event that ends it, for example \"liftoff\"");
+                ?? throw new ShotFileException(obj.Child("until"), UiText.MessageText("text.6e8374a71c84", "a pre-roll needs the event that ends it, for example \"liftoff\""));
             if (!EventName.TryResolve(until, aliases, out _, out string error))
                 throw new ShotFileException(obj.Child("until"), error);
             var preRoll = new PreRoll { Until = until.Trim(), Loop = obj.OptBool("loop") ?? true };
@@ -491,9 +491,9 @@ public static class ShotFileJson
                 || (value.ValueKind == JsonValueKind.String && string.Equals(value.GetString(), "off", StringComparison.OrdinalIgnoreCase)))
                 return null;
             if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double fit))
-                throw new ShotFileException(path, "expected a number from 0.05 to 1.5 (the share of the picture height that the vehicle fills), or \"off\"");
+                throw new ShotFileException(path, UiText.MessageText("text.66107494d2da", "expected a number from 0.05 to 1.5 (the share of the picture height that the vehicle fills), or \"off\""));
             if (double.IsNaN(fit) || fit < 0.05 || fit > 1.5)
-                throw new ShotFileException(path, $"the value {fit:G} is out of range (must be at least 0.05 and at most 1.5)");
+                throw new ShotFileException(path, UiText.Format("text.fb9f84a52944", $"the value {fit:G} is out of range (must be at least 0.05 and at most 1.5)"));
             return fit;
         }
 
@@ -501,11 +501,11 @@ public static class ShotFileJson
         {
             string listPath = owner.Child("points");
             if (!owner.TryGet("points", out JsonElement list) || list.ValueKind != JsonValueKind.Array)
-                throw new ShotFileException(listPath, "expected a list of path points");
+                throw new ShotFileException(listPath, UiText.MessageText("text.3b27f49fac61", "expected a list of path points"));
             int index = 0;
             foreach (JsonElement item in list.EnumerateArray())
             {
-                var obj = new Obj(item, $"{listPath}[{index}]");
+                var obj = new Obj(item, UiText.Format("", $"{listPath}[{index}]"));
                 var point = new PathPoint
                 {
                     T = obj.OptNum("t", 0.0, 1.0) ?? 0.0,
@@ -520,7 +520,7 @@ public static class ShotFileJson
             }
 
             if (shot.Points.Count == 0)
-                throw new ShotFileException(listPath, "a path needs at least one point");
+                throw new ShotFileException(listPath, UiText.MessageText("text.894a01808ddf", "a path needs at least one point"));
             string? problem = PathMath.CheckTimes(shot.Points);
             if (problem != null)
                 throw new ShotFileException(listPath, problem);
@@ -542,10 +542,10 @@ public static class ShotFileJson
         private TakeAction ReadAction(Obj obj)
         {
             string kindText = obj.OptString("action")
-                ?? throw new ShotFileException(obj.Child("action"), "an action needs a kind (stage or cue)");
+                ?? throw new ShotFileException(obj.Child("action"), UiText.MessageText("text.799ad5992e7f", "an action needs a kind (stage or cue)"));
             var action = new TakeAction { Kind = Obj.ParseEnum<ActionKind>(obj.Child("action"), kindText) };
             if (!obj.Has("at"))
-                throw new ShotFileException(obj.Child("at"), "an action needs a trigger: a take time or an event");
+                throw new ShotFileException(obj.Child("at"), UiText.MessageText("text.6dccc2cd9dbb", "an action needs a trigger: a take time or an event"));
             action.At = ReadTrigger(obj, "at");
 
             // A stage action leaves "name" to the unknown fields, which are kept, so an older file reads as before.
@@ -556,9 +556,9 @@ public static class ShotFileJson
             if (sequence.HasValue)
             {
                 if (action.Kind != ActionKind.Stage)
-                    throw new ShotFileException(obj.Child("sequence"), "only a stage action has a sequence number");
+                    throw new ShotFileException(obj.Child("sequence"), UiText.MessageText("text.a01a32dba458", "only a stage action has a sequence number"));
                 if (sequence.Value != Math.Floor(sequence.Value))
-                    throw new ShotFileException(obj.Child("sequence"), "expected a whole number from 1");
+                    throw new ShotFileException(obj.Child("sequence"), UiText.MessageText("text.5015ab8d9d3b", "expected a whole number from 1"));
                 action.Sequence = (int)sequence.Value;
             }
 
@@ -569,9 +569,9 @@ public static class ShotFileJson
         private static string ReadCueName(Obj obj)
         {
             string name = obj.OptString("name")
-                ?? throw new ShotFileException(obj.Child("name"), "a cue needs a name, " + TakeAction.NameRule);
+                ?? throw new ShotFileException(obj.Child("name"), UiText.Concat(UiText.MessageText("text.c67be58ca8c2", "a cue needs a name, "), TakeAction.NameRule));
             if (!TakeAction.IsValidName(name))
-                throw new ShotFileException(obj.Child("name"), "expected " + TakeAction.NameRule);
+                throw new ShotFileException(obj.Child("name"), UiText.Concat("expected ", TakeAction.NameRule));
             return name;
         }
 
@@ -583,7 +583,7 @@ public static class ShotFileJson
                 return "";
             if (value.ValueKind == JsonValueKind.String && TakeAction.IsValidName(value.GetString()))
                 return obj.OptString("name")!;
-            _warnings.Add($"{obj.Child("name")}: this is not used as the shot name, because a shot name has {TakeAction.NameRule}. The field is kept as it is");
+            _warnings.Add(UiText.Format("text.56b105fb81f1", $"{obj.Child("name")}: this is not used as the shot name, because a shot name has {TakeAction.NameRule}. The field is kept as it is"));
             return "";
         }
 
@@ -600,7 +600,7 @@ public static class ShotFileJson
                         return new Transition();
                     if (string.Equals(text, "blend", StringComparison.OrdinalIgnoreCase))
                         return new Transition { Kind = TransitionKind.Blend, Seconds = Transition.DefaultSeconds };
-                    throw new ShotFileException(path, $"unknown transition \"{text}\" (cut or blend)");
+                    throw new ShotFileException(path, UiText.Format("text.0eb406eac9a4", $"unknown transition \"{text}\" (cut or blend)"));
                 case JsonValueKind.Number:
                     return BlendOf(path, value.GetDouble());
                 case JsonValueKind.Object:
@@ -611,14 +611,14 @@ public static class ShotFileJson
                         return new Transition();
                     return BlendOf(inner.Child("seconds"), inner.OptNum("seconds", 0.0, 3600.0, minExclusive: true) ?? Transition.DefaultSeconds);
                 default:
-                    throw new ShotFileException(path, "expected \"cut\", a number of blend seconds, or an object with \"type\" and \"seconds\"");
+                    throw new ShotFileException(path, UiText.MessageText("text.b53051e5d62b", "expected \"cut\", a number of blend seconds, or an object with \"type\" and \"seconds\""));
             }
         }
 
         private static Transition BlendOf(string path, double seconds)
         {
             if (!(seconds > 0.0) || seconds > 3600.0)
-                throw new ShotFileException(path, "the blend length must be greater than 0 and at most 3600 seconds");
+                throw new ShotFileException(path, UiText.MessageText("text.e9f8c01f92c3", "the blend length must be greater than 0 and at most 3600 seconds"));
             return new Transition { Kind = TransitionKind.Blend, Seconds = seconds };
         }
 
@@ -630,24 +630,24 @@ public static class ShotFileJson
             if (value.ValueKind == JsonValueKind.Number)
                 return TimeTrigger(path, value.GetDouble());
             if (value.ValueKind != JsonValueKind.Object)
-                throw new ShotFileException(path, "expected a take time in seconds, or an object with \"event\" or \"time\"");
+                throw new ShotFileException(path, UiText.MessageText("text.01f3d07f9b77", "expected a take time in seconds, or an object with \"event\" or \"time\""));
 
             var obj = new Obj(value, path);
             double? time = obj.OptNum("time", 0.0, 1e7);
             string? eventName = obj.OptString("event");
             if (time.HasValue && eventName != null)
-                throw new ShotFileException(path, "use either \"time\" or \"event\", not both");
+                throw new ShotFileException(path, UiText.MessageText("text.05652cac4d16", "use either \"time\" or \"event\", not both"));
             if (time.HasValue)
                 return Finish(obj, Trigger.AtTime(time.Value));
             if (eventName == null)
-                throw new ShotFileException(path, "expected \"event\" or \"time\"");
+                throw new ShotFileException(path, UiText.MessageText("text.41579babfdf0", "expected \"event\" or \"time\""));
 
             if (!EventName.TryResolve(eventName, _file.Events, out EventName resolved, out string error))
                 throw new ShotFileException(obj.Child("event"), error);
             double delay = obj.OptNum("delay", -3600.0, 3600.0) ?? 0.0;
             if (delay < 0.0 && !resolved.IsPredictable)
             {
-                _warnings.Add($"{obj.Child("delay")}: a delay below 0 works only for altitude, speed, ground, slow, q and maxq events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0");
+                _warnings.Add(UiText.Format("text.d290a4d019c3", $"{obj.Child("delay")}: a delay below 0 works only for altitude, speed, ground, slow, q and maxq events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0"));
                 delay = 0.0;
             }
 
@@ -663,7 +663,7 @@ public static class ShotFileJson
         private static Trigger TimeTrigger(string path, double time)
         {
             if (time < 0.0 || double.IsNaN(time) || double.IsInfinity(time))
-                throw new ShotFileException(path, "a take time is 0 or more");
+                throw new ShotFileException(path, UiText.MessageText("text.394fb3560bd5", "a take time is 0 or more"));
             return Trigger.AtTime(time);
         }
     }
@@ -679,12 +679,12 @@ public static class ShotFileJson
         public Obj(JsonElement element, string path)
         {
             if (element.ValueKind != JsonValueKind.Object)
-                throw new ShotFileException(path, "expected an object");
+                throw new ShotFileException(path, UiText.MessageText("text.63aa3b57aef1", "expected an object"));
             _element = element;
             Path = path;
         }
 
-        public string Child(string name) => Path.Length == 0 ? name : Path + "." + name;
+        public string Child(string name) => Path.Length == 0 ? name : UiText.Concat(UiText.Concat(Path, "."), name);
 
         public bool Has(string name) => _element.TryGetProperty(name, out JsonElement v) && v.ValueKind != JsonValueKind.Null;
 
@@ -718,14 +718,14 @@ public static class ShotFileJson
             foreach (JsonProperty property in _element.EnumerateObject())
             {
                 if (!_used.Contains(property.Name))
-                    throw new ShotFileException(Child(property.Name), "unknown field");
+                    throw new ShotFileException(Child(property.Name), UiText.MessageText("text.b118d94a36a2", "unknown field"));
             }
         }
 
         public static string AsString(string path, JsonElement value) =>
             value.ValueKind == JsonValueKind.String
                 ? value.GetString()!
-                : throw new ShotFileException(path, "expected text");
+                : throw new ShotFileException(path, UiText.MessageText("text.3b187d73ec74", "expected text"));
 
         public string? OptString(string name) =>
             TryGet(name, out JsonElement v) ? AsString(Child(name), v) : null;
@@ -738,7 +738,7 @@ public static class ShotFileJson
             {
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
-                _ => throw new ShotFileException(Child(name), "expected true or false"),
+                _ => throw new ShotFileException(Child(name), UiText.MessageText("text.9e23e45c5cb3", "expected true or false")),
             };
         }
 
@@ -748,19 +748,19 @@ public static class ShotFileJson
                 return null;
             string path = Child(name);
             if (v.ValueKind != JsonValueKind.Number || !v.TryGetDouble(out double number))
-                throw new ShotFileException(path, "expected a number");
+                throw new ShotFileException(path, UiText.MessageText("text.326baa00937a", "expected a number"));
             bool tooLow = minExclusive ? number <= min : number < min;
             if (double.IsNaN(number) || double.IsInfinity(number) || tooLow || number > max)
             {
-                string low = minExclusive ? $"greater than {min:G}" : $"at least {min:G}";
-                throw new ShotFileException(path, $"the value {number:G} is out of range (must be {low} and at most {max:G})");
+                string low = minExclusive ? UiText.Format("text.da018a40d08c", $"greater than {min:G}") : UiText.Format("text.40af0ae95060", $"at least {min:G}");
+                throw new ShotFileException(path, UiText.Format("text.2f363e19f1fb", $"the value {number:G} is out of range (must be {low} and at most {max:G})"));
             }
 
             return number;
         }
 
         public double ReqNum(string name, double min, double max, bool minExclusive = false) =>
-            OptNum(name, min, max, minExclusive) ?? throw new ShotFileException(Child(name), "this field is required");
+            OptNum(name, min, max, minExclusive) ?? throw new ShotFileException(Child(name), UiText.MessageText("text.7d4dd646b1f8", "this field is required"));
 
         public V3? OptVec(string name)
         {
@@ -768,14 +768,14 @@ public static class ShotFileJson
                 return null;
             string path = Child(name);
             if (v.ValueKind != JsonValueKind.Array || v.GetArrayLength() != 3)
-                throw new ShotFileException(path, "expected a vector of three numbers, for example [0, 1, 2]");
+                throw new ShotFileException(path, UiText.MessageText("text.b51a96b57b7c", "expected a vector of three numbers, for example [0, 1, 2]"));
             var parts = new double[3];
             int i = 0;
             foreach (JsonElement item in v.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Number || !item.TryGetDouble(out double d)
                     || double.IsNaN(d) || double.IsInfinity(d) || Math.Abs(d) > 1e9)
-                    throw new ShotFileException($"{path}[{i}]", "expected a number between -1e9 and 1e9");
+                    throw new ShotFileException(UiText.Format("", $"{path}[{i}]"), UiText.MessageText("text.102dd982b5d8", "expected a number between -1e9 and 1e9"));
                 parts[i++] = d;
             }
 
@@ -783,7 +783,7 @@ public static class ShotFileJson
         }
 
         public V3 ReqVec(string name) =>
-            OptVec(name) ?? throw new ShotFileException(Child(name), "this field is required");
+            OptVec(name) ?? throw new ShotFileException(Child(name), UiText.MessageText("text.7d4dd646b1f8", "this field is required"));
 
         public T? OptEnum<T>(string name) where T : struct, Enum =>
             TryGet(name, out JsonElement v) ? ParseEnum<T>(Child(name), AsString(Child(name), v)) : null;
@@ -796,8 +796,8 @@ public static class ShotFileJson
                     return Enum.Parse<T>(candidate);
             }
 
-            string known = string.Join(", ", Enum.GetNames<T>().Select(n => char.ToLowerInvariant(n[0]) + n[1..]));
-            throw new ShotFileException(path, $"unknown value \"{text}\" (known: {known})");
+            string known = UiText.Join(", ", Enum.GetNames<T>().Select(n => char.ToLowerInvariant(n[0]) + n[1..]));
+            throw new ShotFileException(path, UiText.Format("text.a6f41c991c6e", $"unknown value \"{text}\" (known: {known})"));
         }
     }
 
@@ -880,7 +880,7 @@ public static class ShotFileJson
 
         WriteExtras(json, file.Extras);
         json.EndObject();
-        return json.ToString() + "\n";
+        return UiText.Concat(json.ToString(), "\n");
     }
 
     public static void Save(ShotFile file, string path) =>
@@ -891,8 +891,8 @@ public static class ShotFileJson
         json.Key("keepOut").BeginArray();
         foreach (KeepOutBox box in boxes)
         {
-            string name = box.Name.Length > 0 ? $", \"name\": {JsonOut.Quote(box.Name)}" : "";
-            json.Item().Raw($"{{ \"min\": {VecText(box.Min)}, \"max\": {VecText(box.Max)}{name} }}");
+            string name = box.Name.Length > 0 ? UiText.Format("", $", \"name\": {JsonOut.Quote(box.Name)}") : "";
+            json.Item().Raw(UiText.Format("", $"{{ \"min\": {VecText(box.Min)}, \"max\": {VecText(box.Max)}{name} }}"));
         }
 
         json.EndArray();
@@ -961,7 +961,7 @@ public static class ShotFileJson
         if (take.PreRoll is { } preRoll)
         {
             string loop = preRoll.Loop ? "" : ", \"loop\": false";
-            json.Key("preRoll").Raw($"{{ \"until\": {JsonOut.Quote(preRoll.Until)}{loop} }}");
+            json.Key("preRoll").Raw(UiText.Format("", $"{{ \"until\": {JsonOut.Quote(preRoll.Until)}{loop} }}"));
         }
 
         json.Key("camera").BeginArray();
@@ -1067,9 +1067,9 @@ public static class ShotFileJson
                 json.Key("points").BeginArray();
                 foreach (PathPoint point in shot.Points)
                 {
-                    string fov = point.Fov.HasValue ? $", \"fov\": {Number(point.Fov.Value)}" : "";
-                    string roll = point.Roll.HasValue ? $", \"roll\": {Number(point.Roll.Value)}" : "";
-                    json.Item().Raw($"{{ \"t\": {Number(point.T)}, \"position\": {VecText(point.Position)}, \"lookAt\": {VecText(point.LookAt)}{fov}{roll} }}");
+                    string fov = point.Fov.HasValue ? UiText.Format("", $", \"fov\": {Number(point.Fov.Value)}") : "";
+                    string roll = point.Roll.HasValue ? UiText.Format("", $", \"roll\": {Number(point.Roll.Value)}") : "";
+                    json.Item().Raw(UiText.Format("", $"{{ \"t\": {Number(point.T)}, \"position\": {VecText(point.Position)}, \"lookAt\": {VecText(point.LookAt)}{fov}{roll} }}"));
                 }
 
                 json.EndArray();
@@ -1100,7 +1100,7 @@ public static class ShotFileJson
         }
 
         if (shot.Transition.Kind == TransitionKind.Blend)
-            json.Key("transition").Raw($"{{ \"type\": \"blend\", \"seconds\": {Number(shot.Transition.Seconds)} }}");
+            json.Key("transition").Raw(UiText.Format("", $"{{ \"type\": \"blend\", \"seconds\": {Number(shot.Transition.Seconds)} }}"));
         WriteTrigger(json, shot.At);
         WriteExtras(json, shot.Extras, shot.Name.Length > 0 ? "name" : null);
     }
@@ -1121,8 +1121,8 @@ public static class ShotFileJson
                 json.Key("at").Num(trigger.Time);
                 break;
             case TriggerKind.Event:
-                string delay = trigger.Delay != 0.0 ? $", \"delay\": {Number(trigger.Delay)}" : "";
-                json.Key("at").Raw($"{{ \"event\": {JsonOut.Quote(trigger.Event)}{delay} }}");
+                string delay = trigger.Delay != 0.0 ? UiText.Format("", $", \"delay\": {Number(trigger.Delay)}") : "";
+                json.Key("at").Raw(UiText.Format("", $"{{ \"event\": {JsonOut.Quote(trigger.Event)}{delay} }}"));
                 break;
         }
     }
@@ -1138,9 +1138,9 @@ public static class ShotFileJson
         }
     }
 
-    private static string VecText(V3 v) => $"[{Number(v.X)}, {Number(v.Y)}, {Number(v.Z)}]";
+    private static string VecText(V3 v) => UiText.Format("", $"[{Number(v.X)}, {Number(v.Y)}, {Number(v.Z)}]");
 
-    private static string Lower(string text) => char.ToLowerInvariant(text[0]) + text[1..];
+    private static string Lower(string text) => UiText.Concat(char.ToLowerInvariant(text[0]), text[1..]);
 
     private static string EaseText(Ease ease) => Lower(ease.ToString());
 
@@ -1204,7 +1204,7 @@ public static class ShotFileJson
 
         public JsonOut Bool(bool value) => Raw(value ? "true" : "false");
 
-        public JsonOut Vec(V3 value) => Raw($"[{Number(value.X)}, {Number(value.Y)}, {Number(value.Z)}]");
+        public JsonOut Vec(V3 value) => Raw(UiText.Format("", $"[{Number(value.X)}, {Number(value.Y)}, {Number(value.Z)}]"));
 
         public JsonOut Raw(string value)
         {

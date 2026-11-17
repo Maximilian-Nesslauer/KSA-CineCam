@@ -61,7 +61,7 @@ public static partial class ReplayBuild
     /// <summary>The revision number of a build for a narrow column, or the whole text when it has another form.</summary>
     public static string Short(string? build) =>
         TryParse(build, out Numbers numbers)
-            ? numbers.Revision.ToString(CultureInfo.InvariantCulture) + (numbers.Suffix.Length > 0 ? "-" + numbers.Suffix : "")
+            ? UiText.Concat(numbers.Revision.ToString(CultureInfo.InvariantCulture), (numbers.Suffix.Length > 0 ? UiText.Concat("-", numbers.Suffix) : ""))
             : string.IsNullOrWhiteSpace(build) ? "-" : build.Trim();
 
     /// <summary>
@@ -74,26 +74,24 @@ public static partial class ReplayBuild
             ReplayBuildAge.Same => null,
             ReplayBuildAge.Older when olderConfirmed => null,
             ReplayBuildAge.Older => ("older_game_build",
-                $"This recording is from KSA {Name(recorded)}, an older build than {current}. Confirm to open it."),
+                UiText.Format("text.9088e46890d2", $"This recording is from KSA {Name(recorded)}, an older build than {current}. Confirm to open it.")),
             ReplayBuildAge.Newer => ("game_version_mismatch",
-                $"This recording is from KSA {Name(recorded)}, a later build than {current}. Update the game to open it."),
+                UiText.Format("text.bfc5d8073b6d", $"This recording is from KSA {Name(recorded)}, a later build than {current}. Update the game to open it.")),
             _ => ("game_version_mismatch",
-                $"This recording is from KSA {Name(recorded)}, and the order of that build and {current} is not known, so it does not open."),
+                UiText.Format("text.200938a61450", $"This recording is from KSA {Name(recorded)}, and the order of that build and {current} is not known, so it does not open.")),
         };
 
     /// <summary>The text that the confirm of an older recording shows.</summary>
     public static string OlderWarning(string? recorded, string current) =>
-        $"This recording is from KSA {Name(recorded)}, and this game is {current}. The replay builds the vehicles from the parts of this build, "
-        + "so a part that changed can look different, and a part whose modules changed shows without its recorded state. "
-        + "The terrain and the star system are those of this build.";
+        UiText.Concat(UiText.Concat(UiText.Format("text.22e5886e9ce3", $"This recording is from KSA {Name(recorded)}, and this game is {current}. The replay builds the vehicles from the parts of this build, "), UiText.MessageText("text.17081fe29c2d", "so a part that changed can look different, and a part whose modules changed shows without its recorded state. ")), UiText.MessageText("text.cc9e6f599b3b", "The terrain and the star system are those of this build."));
 
     /// <summary>The line of the replay block that names both builds.</summary>
     public static string BuildLine(string? recorded, string current) =>
         Compare(recorded, current) == ReplayBuildAge.Same
-            ? $"Recorded on KSA {Name(recorded)}, the build of this game."
-            : $"Recorded on KSA {Name(recorded)}. This game is {current}.";
+            ? UiText.Format("text.61e20397a605", $"Recorded on KSA {Name(recorded)}, the build of this game.")
+            : UiText.Format("text.686392591aef", $"Recorded on KSA {Name(recorded)}. This game is {current}.");
 
-    private static string Name(string? build) => string.IsNullOrWhiteSpace(build) ? "(unknown build)" : build.Trim();
+    private static string Name(string? build) => string.IsNullOrWhiteSpace(build) ? UiText.MessageText("text.f16599b08b8d", "(unknown build)") : build.Trim();
 }
 
 /// <summary>
@@ -120,12 +118,12 @@ public sealed class ReplayFitReport
     {
         var parts = new List<string>();
         if (PartStateLeftOut > 0)
-            parts.Add($"{PartStateLeftOut} of {Segments} vehicle segments show their parts without the recorded state (panels, legs, gimbals, heat, lights), because the part modules differ from the recording");
+            parts.Add(UiText.Format("text.c66462816309", $"{PartStateLeftOut} of {Segments} vehicle segments show their parts without the recorded state (panels, legs, gimbals, heat, lights), because the part modules differ from the recording"));
         if (ExhaustLeftOut > 0)
-            parts.Add($"{ExhaustLeftOut} of {Segments} vehicle segments show no engine plumes, because their engines differ from the recording");
+            parts.Add(UiText.Format("text.6bfb61332584", $"{ExhaustLeftOut} of {Segments} vehicle segments show no engine plumes, because their engines differ from the recording"));
         if (ConnectorsDropped > 0)
-            parts.Add($"{ConnectorsDropped} part connections to connectors that the parts no longer have were dropped");
-        return parts.Count == 0 ? "" : string.Join(". ", parts) + ".";
+            parts.Add(UiText.Format("text.b1a8569fb19e", $"{ConnectorsDropped} part connections to connectors that the parts no longer have were dropped"));
+        return parts.Count == 0 ? "" : UiText.Concat(UiText.Join(". ", parts), ".");
     }
 }
 
@@ -142,16 +140,16 @@ public static class ReplayPartLayout
     public static string? Mismatch(ReplaySegment segment, IReadOnlyList<string> kinds, uint key)
     {
         if (segment.Channels is not { } channels)
-            return "the segment has no part channels";
+            return UiText.MessageText("text.4f17961f3264", "the segment has no part channels");
         if (channels.Count != kinds.Count)
-            return $"the recording has {channels.Count} part channels and the parts of this build give {kinds.Count}";
+            return UiText.Format("text.aa7d997f0c05", $"the recording has {channels.Count} part channels and the parts of this build give {kinds.Count}");
         for (int i = 0; i < channels.Count; i++)
         {
             if (!string.Equals(channels[i].Kind, kinds[i], StringComparison.Ordinal))
-                return $"part channel {i + 1} is \"{channels[i].Kind}\" in the recording and \"{kinds[i]}\" with the parts of this build";
+                return UiText.Format("text.ebdb6236abb6", $"part channel {i + 1} is \"{channels[i].Kind}\" in the recording and \"{kinds[i]}\" with the parts of this build");
         }
         if (segment.PartKey is uint recorded && recorded != key)
-            return "the parts that own the part channels differ from the recording";
+            return UiText.MessageText("text.9e62a3eefcb3", "the parts that own the part channels differ from the recording");
         return null;
     }
 

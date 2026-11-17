@@ -27,16 +27,16 @@ internal static class ReplayOverlay
 
     #region Recording strip
 
-    private const string OpenLabel = "OPEN CINECAM";
-    private const string StopLabel = "STOP RECORDING";
-    private const string HideLabel = "HIDE";
+    private static readonly string OpenLabel = UiText.MessageText("text.bb0d56a0e21f", "OPEN CINECAM");
+    private static readonly string StopLabel = UiText.MessageText("text.3a93055fe99f", "STOP RECORDING");
+    private static readonly string HideLabel = UiText.MessageText("text.0c944fca9b62", "HIDE");
 
     // The strip sits below the stock clock and sim speed panel.
     private static void DrawRecording()
     {
         ImGuiViewportPtr viewport = ImGui.GetMainViewport();
         float scale = ImGuiHelper.InterfaceScale;
-        string time = FormattableString.Invariant($"{ReplaySession.RecordingSeconds:F1} s");
+        string time = UiText.Format("", $"{ReplaySession.RecordingSeconds:F1} s");
 
         ImGui.SetNextWindowPos(new float2(viewport.WorkPos.X + viewport.WorkSize.X * 0.5f, viewport.WorkPos.Y + 76f * scale),
             ImGuiCond.None, new float2(0.5f, 0f));
@@ -46,9 +46,9 @@ internal static class ReplayOverlay
             float gap = ImGui.GetStyle().ItemSpacing.X;
             float buttonHeight = ConsoleWidgets.ButtonHeight;
             float dot = DockStyle.FontSize(false) * 0.5f;
-            float head = dot + gap + DockStyle.TextWidth("RECORDING", false) + gap + DockStyle.TextWidth(time, false);
-            float buttons = ConsoleWidgets.ButtonWidth(OpenLabel.AsSpan()) + ConsoleWidgets.ButtonWidth(StopLabel.AsSpan())
-                + ConsoleWidgets.ButtonWidth(HideLabel.AsSpan()) + gap * 2f;
+            float head = dot + gap + DockStyle.TextWidth(UiText.MessageText("text.ac0a7f145139", "RECORDING"), false) + gap + DockStyle.TextWidth(time, false);
+            float buttons = ConsoleWidgets.ButtonWidth(UiText.Visible(OpenLabel).AsSpan()) + ConsoleWidgets.ButtonWidth(UiText.Visible(StopLabel).AsSpan())
+                + ConsoleWidgets.ButtonWidth(UiText.Visible(HideLabel).AsSpan()) + gap * 2f;
             float pad = ConsoleStyle.ContentPaddingPx;
             bool oneRow = head + gap * 2f + buttons + pad * 2f <= viewport.WorkSize.X - 16f * scale;
 
@@ -63,20 +63,20 @@ internal static class ReplayOverlay
             {
                 float textY = mid - ImGui.GetFontSize() * 0.5f;
                 float x = at.X + dot + gap;
-                draw.AddText(new float2(x, textY), DockStyle.Ink(ConsoleStyle.DangerU32), "RECORDING");
-                x += ImGui.CalcTextSize("RECORDING").X + gap;
-                draw.AddText(new float2(x, textY), DockStyle.Ink(ConsoleStyle.TextPrimaryU32), time);
+                draw.AddText(new float2(x, textY), DockStyle.Ink(ConsoleStyle.DangerU32), UiText.Render(UiText.MessageText("text.ac0a7f145139", "RECORDING")));
+                x += ImGui.CalcTextSize(UiText.Render(UiText.MessageText("text.ac0a7f145139", "RECORDING"))).X + gap;
+                draw.AddText(new float2(x, textY), DockStyle.Ink(ConsoleStyle.TextPrimaryU32), UiText.Render(time));
             }
             finally { ConsoleStyle.PopFont(); }
 
             if (oneRow) ImGui.SameLine(0f, gap * 2f);
-            if (DockStyle.Button(OpenLabel, tip: "Opens the CineCam window. The recording goes on."))
+            if (DockStyle.Button(OpenLabel, tip: UiText.MessageText("text.9165d39c4808", "Opens the CineCam window. The recording goes on.")))
                 CineCamWindow.Instance.Open();
             if (oneRow) ImGui.SameLine();
             if (DockStyle.Button(StopLabel, kind: DockStyle.Kind.Danger))
                 ReplaySession.StopRecording();
             if (oneRow) ImGui.SameLine();
-            if (DockStyle.Button(HideLabel, tip: "Hides this strip. The recording goes on."))
+            if (DockStyle.Button(HideLabel, tip: UiText.MessageText("text.32d596aaab38", "Hides this strip. The recording goes on.")))
                 _stripHidden = true;
         }
         finally { DockStyle.EndPanel(); }

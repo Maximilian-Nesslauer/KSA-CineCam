@@ -52,10 +52,10 @@ public static class ReplayLegacy
                 try
                 {
                     if (new FileInfo(path).Length > MaxBytes)
-                        throw new InvalidDataException("the file is too large");
+                        throw new InvalidDataException(UiText.MessageText("text.f7d3aa11f5c0", "the file is too large"));
                     Document? document = JsonSerializer.Deserialize<Document>(File.ReadAllText(path), Json);
                     if (document is not { Version: 1, Project: { } project })
-                        throw new InvalidDataException("the version is not supported");
+                        throw new InvalidDataException(UiText.MessageText("text.bf4a717cbab8", "the version is not supported"));
                     if (string.Equals(name, MainProject, StringComparison.OrdinalIgnoreCase))
                         mainFile = true;
                     projects.Add(new ReplayLegacyProject(name,
@@ -64,7 +64,7 @@ public static class ReplayLegacy
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
                 {
-                    notes.Add($"The old replay project \"{name}\" could not be read: {ex.Message}");
+                    notes.Add(UiText.Format("text.8cafd50b5221", $"The old replay project \"{name}\" could not be read: {ex.Message}"));
                 }
             }
         }

@@ -24,46 +24,89 @@ public static class ProblemText
 
     private static readonly Dictionary<string, string> FieldWords = new(StringComparer.Ordinal)
     {
-        ["duration"] = "length",
-        ["at"] = "start",
-        ["event"] = "start event",
-        ["time"] = "start time",
-        ["delay"] = "delay",
-        ["transition"] = "blend",
-        ["seconds"] = "blend length",
-        ["ramp"] = "ramp",
-        ["to"] = "target",
-        ["fov"] = "field of view",
-        ["fit"] = "fit",
-        ["fitBy"] = "fit measure",
-        ["avoidSun"] = "sun angle",
-        ["aimOffset"] = "aim offset",
-        ["lookAt"] = "look point",
-        ["startDeg"] = "start angle",
-        ["degPerSec"] = "turn speed",
-        ["keepOut"] = "keep-out boxes",
-        ["keepSize"] = "keep size",
-        ["preRoll"] = "pre-roll",
-        ["until"] = "end event",
-        ["loop"] = "loop",
-        ["autoStartDelay"] = "start delay",
-        ["pauseAt"] = "pause time",
-        ["hideUiAt"] = "hide event",
-        ["syncFlash"] = "white frame",
-        ["fps"] = "frames per second",
-        ["points"] = "path",
-        ["t"] = "point share",
-        ["sequence"] = "sequence",
-        ["checkpoint"] = "checkpoint",
-        ["name"] = "name",
-        ["camera"] = "camera track",
-        ["speed"] = "speed track",
-        ["actions"] = "action track",
+        ["type"] = UiText.MessageText("problem.field.type", "type"),
+        ["frame"] = UiText.MessageText("problem.field.frame", "frame"),
+        ["up"] = UiText.MessageText("problem.field.up", "up direction"),
+        ["subject"] = UiText.MessageText("problem.field.subject", "followed vehicle"),
+        ["pick"] = UiText.MessageText("problem.field.pick", "vehicle selection"),
+        ["aim"] = UiText.MessageText("problem.field.aim", "aim"),
+        ["position"] = UiText.MessageText("problem.field.position", "position"),
+        ["offset"] = UiText.MessageText("problem.field.offset", "offset"),
+        ["center"] = UiText.MessageText("problem.field.center", "center"),
+        ["radius"] = UiText.MessageText("problem.field.radius", "radius"),
+        ["height"] = UiText.MessageText("problem.field.height", "height"),
+        ["from"] = UiText.MessageText("problem.field.from", "start height"),
+        ["azimuth"] = UiText.MessageText("problem.field.azimuth", "azimuth"),
+        ["roll"] = UiText.MessageText("problem.field.roll", "roll"),
+        ["smoothing"] = UiText.MessageText("problem.field.smoothing", "smoothing"),
+        ["ease"] = UiText.MessageText("problem.field.ease", "ease"),
+        ["part"] = UiText.MessageText("problem.field.part", "part"),
+        ["kind"] = UiText.MessageText("problem.field.kind", "action type"),
+        ["music"] = UiText.MessageText("problem.field.music", "music"),
+        ["effects"] = UiText.MessageText("problem.field.effects", "sound effects"),
+        ["exposure"] = UiText.MessageText("problem.field.exposure", "exposure"),
+        ["cloudAmbient"] = UiText.MessageText("problem.field.cloudAmbient", "cloud ambient light"),
+        ["cloudShadows"] = UiText.MessageText("problem.field.cloudShadows", "cloud shadows"),
+        ["reflections"] = UiText.MessageText("problem.field.reflections", "reflections"),
+        ["grab"] = UiText.MessageText("problem.field.grab", "picture source"),
+        ["mode"] = UiText.MessageText("problem.field.mode", "capture mode"),
+        ["scale"] = UiText.MessageText("problem.field.scale", "scale"),
+        ["folder"] = UiText.MessageText("problem.field.folder", "output folder"),
+        ["hideUi"] = UiText.MessageText("problem.field.hideUi", "hide interface"),
+        ["min"] = UiText.MessageText("problem.field.min", "minimum corner"),
+        ["max"] = UiText.MessageText("problem.field.max", "maximum corner"),
+        ["body"] = UiText.MessageText("problem.field.body", "body"),
+        ["latitude"] = UiText.MessageText("problem.field.latitude", "latitude"),
+        ["longitude"] = UiText.MessageText("problem.field.longitude", "longitude"),
+        ["altitude"] = UiText.MessageText("problem.field.altitude", "altitude"),
+        ["anchor"] = UiText.MessageText("problem.field.anchor", "anchor"),
+        ["site"] = UiText.MessageText("problem.field.site", "site"),
+        ["default"] = UiText.MessageText("problem.field.default", "default take"),
+        ["capture"] = UiText.MessageText("problem.field.capture", "capture"),
+        ["look"] = UiText.MessageText("problem.field.look", "picture settings"),
+        ["sound"] = UiText.MessageText("problem.field.sound", "sound"),
+        ["exactApsides"] = UiText.MessageText("problem.field.exactApsides", "exact apsides"),
+
+        ["duration"] = UiText.MessageText("text.0f82aca66af9", "length"),
+        ["at"] = UiText.MessageText("text.cced28c6dc3f", "start"),
+        ["event"] = UiText.MessageText("text.f2048544f2a9", "start event"),
+        ["time"] = UiText.MessageText("text.59dd27a0dded", "start time"),
+        [UiText.MessageText("text.6e16db102267", "delay")] = UiText.MessageText("text.6e16db102267", "delay"),
+        ["transition"] = UiText.MessageText("text.727c1e414b34", "blend"),
+        ["seconds"] = UiText.MessageText("text.53ba966b3549", "blend length"),
+        [UiText.MessageText("text.f7d9f5a90479", "ramp")] = UiText.MessageText("text.f7d9f5a90479", "ramp"),
+        ["to"] = UiText.MessageText("text.34a04005bcaf", "target"),
+        ["fov"] = UiText.MessageText("text.9388e97798cb", "field of view"),
+        [UiText.MessageText("text.da4270e3735a", "fit")] = UiText.MessageText("text.da4270e3735a", "fit"),
+        ["fitBy"] = UiText.MessageText("text.5adcab33b52a", "fit measure"),
+        ["avoidSun"] = UiText.MessageText("text.178365d268da", "sun angle"),
+        ["aimOffset"] = UiText.MessageText("text.b078aa3a5f0a", "aim offset"),
+        ["lookAt"] = UiText.MessageText("text.a037c3e141eb", "look point"),
+        ["startDeg"] = UiText.MessageText("text.889cee3c26eb", "start angle"),
+        ["degPerSec"] = UiText.MessageText("text.4d028be14fa5", "turn speed"),
+        ["keepOut"] = UiText.MessageText("text.921b98371d1f", "keep-out boxes"),
+        ["keepSize"] = UiText.MessageText("text.caa41a9ab2cd", "keep size"),
+        ["preRoll"] = UiText.MessageText("text.3f535ac3d4cf", "pre-roll"),
+        ["until"] = UiText.MessageText("text.da63b54bd2b9", "end event"),
+        [UiText.MessageText("text.254637f72efc", "loop")] = UiText.MessageText("text.254637f72efc", "loop"),
+        ["autoStartDelay"] = UiText.MessageText("text.f23feabd21ca", "start delay"),
+        ["pauseAt"] = UiText.MessageText("text.dc81593392c8", "pause time"),
+        ["hideUiAt"] = UiText.MessageText("text.94c14430304f", "hide event"),
+        ["syncFlash"] = UiText.MessageText("text.18a477196ee6", "white frame"),
+        ["fps"] = UiText.MessageText("text.7a76e3ef2445", "frames per second"),
+        ["points"] = UiText.MessageText("problem.field.points", "path"),
+        ["t"] = UiText.MessageText("text.7d3453f1d82f", "point share"),
+        [UiText.MessageText("text.bf37c7c20871", "sequence")] = UiText.MessageText("text.bf37c7c20871", "sequence"),
+        [UiText.MessageText("text.47320987f9a4", "checkpoint")] = UiText.MessageText("text.47320987f9a4", "checkpoint"),
+        [UiText.MessageText("text.82a3537ff0db", "name")] = UiText.MessageText("text.82a3537ff0db", "name"),
+        ["camera"] = UiText.MessageText("text.77d5d30555ba", "camera track"),
+        ["speed"] = UiText.MessageText("text.077521466f18", "speed track"),
+        ["actions"] = UiText.MessageText("text.06ae403e5d81", "action track"),
     };
 
     private static readonly HashSet<string> SecondFields = new(StringComparer.Ordinal)
     {
-        "duration", "time", "delay", "seconds", "ramp", "autoStartDelay", "smoothing", "pauseAt",
+        "duration", "time", UiText.MessageText("text.6e16db102267", "delay"), "seconds", UiText.MessageText("text.f7d9f5a90479", "ramp"), "autoStartDelay", "smoothing", "pauseAt",
     };
 
     private static readonly Dictionary<string, string> FieldUnits = new(StringComparer.Ordinal)
@@ -88,17 +131,17 @@ public static class ProblemText
         Match named = TakeName.Match(rest);
         if (named.Success)
         {
-            take = IndexOf(takeNames, named.Groups["name"].Value);
-            rest = rest[named.Length..];
+            take = IndexOf(takeNames, named.Groups[UiText.MessageText("text.82a3537ff0db", "name")].Value);
+            rest = UiText.Fragment(rest, rest[named.Length..]);
         }
 
         Match indexed = TakeIndex.Match(rest);
         if (indexed.Success && int.TryParse(indexed.Groups["i"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int i))
         {
             take = i;
-            rest = rest[indexed.Length..];
+            rest = UiText.Fragment(rest, rest[indexed.Length..]);
             if (rest.StartsWith(": ", StringComparison.Ordinal))
-                rest = rest[2..];
+                rest = UiText.Fragment(rest, rest[2..]);
         }
 
         if (!SplitPath(rest, out string path, out string message))
@@ -115,7 +158,7 @@ public static class ProblemText
         Match itemMatch = Indexed.Match(segments[0]);
         if (itemMatch.Success && int.TryParse(itemMatch.Groups["i"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n))
         {
-            ProblemItem kind = itemMatch.Groups["name"].Value switch
+            ProblemItem kind = itemMatch.Groups[UiText.MessageText("text.82a3537ff0db", "name")].Value switch
             {
                 "camera" => ProblemItem.Shot,
                 "speed" => ProblemItem.SpeedKey,
@@ -133,14 +176,14 @@ public static class ProblemText
         string field = FieldText(segments, first, out string key);
         string itemLabel = item switch
         {
-            ProblemItem.Shot => $"shot {itemIndex + 1}",
-            ProblemItem.SpeedKey => $"speed key {itemIndex + 1}",
-            ProblemItem.Action => $"action {itemIndex + 1}",
+            ProblemItem.Shot => UiText.Format("text.393c3e6752d4", $"shot {itemIndex + 1}"),
+            ProblemItem.SpeedKey => UiText.Format("text.aae56731752a", $"speed key {itemIndex + 1}"),
+            ProblemItem.Action => UiText.Format("text.7b05fad10713", $"action {itemIndex + 1}"),
             _ => "",
         };
         string prefix = take >= 0 ? TakeLabel(take, takeNames, selectedTake, alone: itemLabel.Length == 0) : "";
         if (itemLabel.Length > 0)
-            prefix = prefix.Length == 0 ? Capital(itemLabel) : prefix + ", " + itemLabel;
+            prefix = prefix.Length == 0 ? Capital(itemLabel) : UiText.Concat(UiText.Concat(prefix, ", "), itemLabel);
 
         string body = Body(field, key, message);
         return new ProblemLine(Sentence(prefix, body), raw ?? "", isError, take, item, itemIndex);
@@ -172,7 +215,7 @@ public static class ProblemText
         }
 
         path = text[..colon];
-        message = text[(colon + 2)..];
+        message = UiText.Fragment(text, text[(colon + 2)..]);
         return true;
     }
 
@@ -187,9 +230,9 @@ public static class ProblemText
             Match m = Indexed.Match(segment);
             if (m.Success && int.TryParse(m.Groups["i"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int index))
             {
-                string name = m.Groups["name"].Value;
+                string name = m.Groups[UiText.MessageText("text.82a3537ff0db", "name")].Value;
                 key = name;
-                words.Add(name == "points" ? $"point {index + 1}" : $"{Words(name)} {index + 1}");
+                words.Add(name == "points" ? UiText.Format("text.339e3e7f9fe8", $"point {index + 1}") : UiText.Format("", $"{Words(name)} {index + 1}"));
                 continue;
             }
 
@@ -200,7 +243,7 @@ public static class ProblemText
             words.Add(Words(segment));
         }
 
-        return string.Join(", ", words);
+        return UiText.Join(", ", words);
     }
 
     private static string Words(string key)
@@ -221,22 +264,22 @@ public static class ProblemText
     private static string Body(string field, string key, string message)
     {
         string unit = SecondFields.Contains(key) ? " s" : FieldUnits.TryGetValue(key, out string? u) ? u : "";
-        string subject = field.Length == 0 ? "the value" : "the " + field;
+        string subject = field.Length == 0 ? UiText.MessageText("text.eb69abcc54d8", "the value") : UiText.Concat(UiText.MessageText("text.6e5ce6afa65b", "the "), field);
         Match range = OutOfRange.Match(message);
         if (range.Success)
         {
-            string low = range.Groups["kind"].Value == "greater than" ? "above" : "at least";
-            return $"{subject} must be {low} {range.Groups["min"].Value}{unit} and at most {range.Groups["max"].Value}{unit}";
+            string low = range.Groups["kind"].Value == "greater than" ? UiText.MessageText("text.88c7f08d0be5", "above") : UiText.MessageText("text.e9213756a2e6", "at least");
+            return UiText.Format("text.6295ac00f149", $"{subject} must be {low} {range.Groups["min"].Value}{unit} and at most {range.Groups["max"].Value}{unit}");
         }
 
         return message switch
         {
-            "this field is required" => $"{subject} is missing",
-            "expected a number" => $"{subject} must be a number",
-            "expected text" => $"{subject} must be a text",
-            "expected true or false" => $"{subject} must be on or off",
-            "unknown field" => $"the field \"{field}\" is not known",
-            _ => field.Length == 0 ? message : $"{subject}: {message}",
+            "this field is required" => UiText.Format("text.574c66dbc6f4", $"{subject} is missing"),
+            "expected a number" => UiText.Format("text.6176acdbdb05", $"{subject} must be a number"),
+            "expected text" => UiText.Format("text.faa4c1fec3e2", $"{subject} must be a text"),
+            "expected true or false" => UiText.Format("text.0e9708657553", $"{subject} must be on or off"),
+            "unknown field" => UiText.Format("text.4f92be615fa8", $"the field \"{field}\" is not known"),
+            _ => field.Length == 0 ? message : UiText.Format("", $"{subject}: {message}"),
         };
     }
 
@@ -245,7 +288,7 @@ public static class ProblemText
         if (take == selectedTake && !alone)
             return "";
         string name = take < takeNames.Count ? takeNames[take] : (take + 1).ToString(CultureInfo.InvariantCulture);
-        return take == selectedTake ? "This take" : $"Take \"{name}\"";
+        return take == selectedTake ? UiText.MessageText("text.edeb95ba450f", "This take") : UiText.Format("text.a67859ff2f31", $"Take \"{name}\"");
     }
 
     private static int IndexOf(IReadOnlyList<string> names, string name)
@@ -261,11 +304,11 @@ public static class ProblemText
 
     private static string Sentence(string prefix, string body)
     {
-        string text = prefix.Length == 0 ? Capital(body) : prefix + ": " + body;
-        text = text.TrimEnd();
-        return text.EndsWith('.') || text.EndsWith('?') || text.EndsWith('!') ? text : text + ".";
+        string text = prefix.Length == 0 ? Capital(body) : UiText.Concat(UiText.Concat(prefix, ": "), body);
+        text = UiText.TrimEnd(text);
+        return text.EndsWith('.') || text.EndsWith('?') || text.EndsWith('!') ? text : UiText.Concat(text, ".");
     }
 
     private static string Capital(string text) =>
-        text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+        UiText.Capital(text);
 }

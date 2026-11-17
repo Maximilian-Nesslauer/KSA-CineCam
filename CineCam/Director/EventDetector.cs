@@ -225,12 +225,12 @@ public sealed class EventDetector
             if (sample.EngineOn)
             {
                 _engineOnSince = takeTime;
-                CountIgnition(found, takeTime, "already on at the start");
+                CountIgnition(found, takeTime, UiText.MessageText("text.51de4d008e70", "already on at the start"));
             }
 
             _groundAltitude = sample.Altitude;
             if (!sample.Contact)
-                Add(found, "liftoff", takeTime, "already flying at the start");
+                Add(found, "liftoff", takeTime, UiText.MessageText("text.f06b2b90809e", "already flying at the start"));
             _airSince = takeTime;
             _body = sample.Body;
             _radialSign = RadialSign(sample.RadialSpeed);
@@ -252,7 +252,7 @@ public sealed class EventDetector
             }
             else if (sample.EngineOn && sample.FreshEngines > 0 && takeTime - _lastIgnition >= IgnitionGroupSeconds)
             {
-                CountIgnition(found, takeTime, "another engine lit while the engines ran");
+                CountIgnition(found, takeTime, UiText.MessageText("text.e53e2a96516f", "another engine lit while the engines ran"));
             }
 
             if (!sample.EngineOn && _wasEngineOn && takeTime - _engineOnSince >= MinBurnSeconds)
@@ -287,8 +287,8 @@ public sealed class EventDetector
                 {
                     int from = Math.Min(_lastSequence + 1, fired);
                     for (int n = from; n <= Math.Min(fired, from + 999); n++)
-                        Add(found, "sequence:" + n.ToString(CultureInfo.InvariantCulture), takeTime,
-                            n == fired && sample.ActiveSequence < fired ? "fired; its parts left the vehicle at once" : "");
+                        Add(found, UiText.Concat("sequence:", n.ToString(CultureInfo.InvariantCulture)), takeTime,
+                            n == fired && sample.ActiveSequence < fired ? UiText.MessageText("text.a150a438cc6b", "fired; its parts left the vehicle at once") : "");
                     _lastSequence = Math.Max(_lastSequence, fired);
                 }
             }
@@ -298,7 +298,7 @@ public sealed class EventDetector
                 int first = _lastSequence + 1;
                 int last = Math.Min(sample.ActiveSequence, first + 999);
                 for (int n = first; n <= last; n++)
-                    Add(found, "sequence:" + n.ToString(CultureInfo.InvariantCulture), takeTime, "");
+                    Add(found, UiText.Concat("sequence:", n.ToString(CultureInfo.InvariantCulture)), takeTime, "");
             }
 
             UpdateSoi(found, takeTime, sample);
@@ -420,13 +420,13 @@ public sealed class EventDetector
         {
             _probeFailures++;
             Add(found, EventName.Counted("probe-failed", _probeFailures), takeTime,
-                string.Create(CultureInfo.InvariantCulture, $"failed probe cores {_failedProbes} to {sample.ProbesFailed}"));
+                UiText.Format("text.b1976078e491", $"failed probe cores {_failedProbes} to {sample.ProbesFailed}"));
         }
 
         _failedProbes = sample.ProbesFailed;
 
         if (Warn(_power, (int)sample.ProbePower, takeTime))
-            Add(found, EventName.Counted("power-low", _power.Count), takeTime, sample.ProbePower == PowerWarning.Out ? "out of power" : "low");
+            Add(found, EventName.Counted("power-low", _power.Count), takeTime, sample.ProbePower == PowerWarning.Out ? UiText.MessageText("text.f06a21e7fb12", "out of power") : UiText.MessageText("text.6c1ff09db3a7", "low"));
         if (Warn(_lifeSupport, (int)sample.LifeSupport, takeTime))
             Add(found, EventName.Counted("life-support-low", _lifeSupport.Count), takeTime, EventText.Words(sample.LifeSupport.ToString()));
 
@@ -434,7 +434,7 @@ public sealed class EventDetector
         {
             _incapacitations++;
             Add(found, EventName.Counted("incapacitated", _incapacitations), takeTime,
-                string.Create(CultureInfo.InvariantCulture, $"kittens incapacitated {_incapacitated} to {sample.Incapacitated}"));
+                UiText.Format("text.ce91fbe71a64", $"kittens incapacitated {_incapacitated} to {sample.Incapacitated}"));
         }
 
         _incapacitated = sample.Incapacitated;
@@ -454,7 +454,7 @@ public sealed class EventDetector
             _gimbalArmed = false;
             _gimbalLimits++;
             Add(found, EventName.Counted("gimbal-limit", _gimbalLimits), takeTime,
-                string.Create(CultureInfo.InvariantCulture, $"deflection {sample.GimbalLimit * 100.0:F0} percent of the limit"));
+                UiText.Format("text.335e0f8d3664", $"deflection {sample.GimbalLimit * 100.0:F0} percent of the limit"));
         }
     }
 
@@ -510,8 +510,7 @@ public sealed class EventDetector
         {
             _maxQs++;
             _predictions.Remove(next);
-            Add(found, next, time, string.Create(CultureInfo.InvariantCulture,
-                $"peak {pascals / 1000.0:F2} kPa, found {takeTime - time:F1} s later"));
+            Add(found, next, time, UiText.Format("text.12590f0abb89", $"peak {pascals / 1000.0:F2} kPa, found {takeTime - time:F1} s later"));
             return;
         }
 
@@ -533,7 +532,7 @@ public sealed class EventDetector
         if (_body != null && !string.Equals(_body, sample.Body, StringComparison.Ordinal))
         {
             _soiChanges++;
-            Add(found, EventName.Counted("soi", _soiChanges), takeTime, $"from {_body} to {sample.Body}");
+            Add(found, EventName.Counted("soi", _soiChanges), takeTime, UiText.Format("text.7b833f8425b7", $"from {_body} to {sample.Body}"));
             _radialSign = 0;
         }
 
@@ -570,7 +569,7 @@ public sealed class EventDetector
     {
         int before = _docked;
         _docked = sample.DockedPorts;
-        string detail = string.Create(CultureInfo.InvariantCulture, $"docked ports {before} to {sample.DockedPorts}");
+        string detail = UiText.Format("text.2976533afa4f", $"docked ports {before} to {sample.DockedPorts}");
         if (sample.DockedPorts > before)
         {
             _dockings++;

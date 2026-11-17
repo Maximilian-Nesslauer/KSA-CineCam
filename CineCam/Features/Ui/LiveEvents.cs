@@ -67,7 +67,7 @@ internal sealed class LiveEvents
             List<EventName> watched = take != null && file != null
                 ? EventDetector.Watched(take, file.Events)
                 : new List<EventName>();
-            string key = string.Join("|", watched.Where(w => w.IsPredictable).Select(w => w.Canonical).Distinct().OrderBy(n => n, StringComparer.Ordinal));
+            string key = UiText.Join("|", watched.Where(w => w.IsPredictable).Select(w => w.Canonical).Distinct().OrderBy(n => n, StringComparer.Ordinal));
             if (_detector == null || key != _watchKey)
             {
                 _watchKey = key;

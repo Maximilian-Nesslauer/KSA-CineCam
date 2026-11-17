@@ -16,13 +16,13 @@ public static class CheckpointFile
             Take? take = file.FindTake(takeName);
             if (take == null)
             {
-                error = $"the file has no take \"{takeName}\"";
+                error = UiText.Format("text.d2b628d8f209", $"the file has no take \"{takeName}\"");
                 return false;
             }
 
             take.Checkpoint = saveName;
-            File.Copy(path, path + ".bak", overwrite: true);
-            string temp = path + ".tmp";
+            File.Copy(path, UiText.Concat(path, ".bak"), overwrite: true);
+            string temp = UiText.Concat(path, ".tmp");
             File.WriteAllText(temp, ShotFileJson.Write(file), new UTF8Encoding(false));
             File.Move(temp, path, overwrite: true);
             return true;

@@ -81,10 +81,10 @@ internal static class DockStyle
         {
             float size = ImGui.GetFontSize();
             float y = small ? top + (labelSize - size) * 0.8f : top;
-            float width = ImGui.CalcTextSize(text).X;
+            float width = ImGui.CalcTextSize(UiText.Render(text)).X;
             ImDrawListPtr draw = ImGui.GetWindowDrawList();
             draw.PushClipRect(new float2(x, pos.Y), new float2(limit, pos.Y + height), true);
-            draw.AddText(new float2(x, y), Ink(color), text);
+            draw.AddText(new float2(x, y), Ink(color), UiText.Render(text));
             draw.PopClipRect();
             return Math.Min(x + width, limit);
         }
@@ -113,7 +113,7 @@ internal static class DockStyle
     public static float TextWidth(string text, bool small)
     {
         PushFont(small);
-        try { return ImGui.CalcTextSize(text).X; }
+        try { return ImGui.CalcTextSize(UiText.Render(text)).X; }
         finally { ConsoleStyle.PopFont(); }
     }
 
@@ -121,7 +121,7 @@ internal static class DockStyle
     public static void Text(string text, in float4 ink)
     {
         ImGui.PushStyleColor(ImGuiCol.Text, in ink);
-        try { ImGui.Text(text.AsSpan()); }
+        try { ImGui.Text(UiText.Render(text).AsSpan()); }
         finally { ImGui.PopStyleColor(); }
     }
 
@@ -139,7 +139,7 @@ internal static class DockStyle
     // BeginDisabled blocks the click and lowers the style alpha, which the kit applies to its ink.
     public static bool Button(string label, bool enabled = true, string? tip = null, Kind kind = Kind.Plain, string? id = null)
     {
-        ReadOnlySpan<char> text = label.AsSpan();
+        ReadOnlySpan<char> text = UiText.Visible(label).AsSpan();
         ReadOnlySpan<char> key = (id ?? label).AsSpan();
         bool clicked;
         ImGui.BeginDisabled(!enabled);
@@ -196,7 +196,7 @@ internal static class DockStyle
             ConsoleStyle.PushValueFont();
             ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextLabel);
             ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35.0f);
-            try { ImGui.Text(text.AsSpan()); }
+            try { ImGui.Text(UiText.Render(text).AsSpan()); }
             finally
             {
                 ImGui.PopTextWrapPos();

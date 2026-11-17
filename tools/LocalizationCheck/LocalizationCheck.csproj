@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Game>../../../../refs/game</Game>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../CineCam/CineCam.csproj" />
+    <PackageReference Include="StarMap.API" Version="0.5.2" />
+    <Reference Include="KSA" HintPath="$(Game)/KSA.dll" Private="false" />
+    <Reference Include="Brutal.Core" HintPath="$(Game)/Brutal.Core.dll" Private="false" />
+    <Reference Include="Brutal.ImGui" HintPath="$(Game)/Brutal.ImGui.dll" Private="false" />
+    <Reference Include="Brutal.ImGui.Abstractions" HintPath="$(Game)/Brutal.ImGui.Abstractions.dll" Private="false" />
+    <Reference Include="Brutal.Numerics" HintPath="$(Game)/Brutal.Numerics.dll" Private="false" />
+    <None Update="mod.toml" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+</Project>

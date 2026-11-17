@@ -53,17 +53,16 @@ internal static class Widgets
         _lastRowHovered = false;
     }
 
-    public static string Escape(string text) => text.Replace("%", "%%");
+    public static string Escape(string text) => UiText.Render(text).Replace("%", "%%");
 
     private static string Visible(string label)
     {
-        int cut = label.IndexOf("##", StringComparison.Ordinal);
-        return cut < 0 ? label : label[..cut];
+        return UiText.Visible(label);
     }
 
     // The kit builds its ids in a buffer of 128 chars, so a long label gets a short id.
     private static string IdOf(string label) =>
-        label.Length <= 96 ? label : label[..64] + "#" + label.GetHashCode().ToString("x8", System.Globalization.CultureInfo.InvariantCulture);
+        label.Length <= 96 ? label : UiText.Concat(UiText.Concat(label[..64], "#"), label.GetHashCode().ToString("x8", System.Globalization.CultureInfo.InvariantCulture));
 
     #region Text
 
@@ -84,7 +83,7 @@ internal static class Widgets
         }
 
         ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + Math.Max(1f, ConsoleStyle.ContentAvailWidth()));
-        ImGui.Text(text.AsSpan());
+        ImGui.Text(UiText.Render(text).AsSpan());
         ImGui.PopTextWrapPos();
     }
 
@@ -95,12 +94,12 @@ internal static class Widgets
         _afterRow = false;
         _sameLine = false;
         float avail = Math.Max(1f, ConsoleStyle.ContentAvailWidth());
-        float gap = ImGui.CalcTextSize("  ").X;
+        float gap = ImGui.CalcTextSize(UiText.Render("  ")).X;
         float used = 0f;
         ImGui.PushStyleColor(ImGuiCol.Text, in MutedColor);
         for (int i = 0; i < steps.Count; i++)
         {
-            float w = ImGui.CalcTextSize(steps[i]).X;
+            float w = ImGui.CalcTextSize(UiText.Render(steps[i])).X;
             if (i > 0 && used + gap + w <= avail)
             {
                 ImGui.SameLine(0f, gap);
@@ -108,7 +107,7 @@ internal static class Widgets
             }
             else
                 used = w;
-            ImGui.Text(steps[i].AsSpan());
+            ImGui.Text(UiText.Render(steps[i]).AsSpan());
         }
 
         ImGui.PopStyleColor();
@@ -117,9 +116,9 @@ internal static class Widgets
     public static void Label(string text, float4 color)
     {
         _afterRow = false;
-        Place(ImGui.CalcTextSize(text).X);
+        Place(ImGui.CalcTextSize(UiText.Render(text)).X);
         ImGui.PushStyleColor(ImGuiCol.Text, in color);
-        ImGui.Text(text.AsSpan());
+        ImGui.Text(UiText.Render(text).AsSpan());
         ImGui.PopStyleColor();
     }
 
@@ -147,14 +146,14 @@ internal static class Widgets
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         ConsoleStyle.PushValueFont();
         float y = at.Y + (h - ImGui.GetFontSize()) * 0.5f;
-        string name = key.ToUpperInvariant();
-        float nameW = ImGui.CalcTextSize(name).X;
+        string name = UiText.Upper(key);
+        float nameW = ImGui.CalcTextSize(UiText.Render(name)).X;
         float room = Math.Max(0f, width - nameW - ConsoleWidgets.ReadoutColumnGapPx);
         string shown = Fit(value, room);
-        float valueW = ImGui.CalcTextSize(shown).X;
-        dl.AddText(new float2(at.X, y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), name);
+        float valueW = ImGui.CalcTextSize(UiText.Render(shown)).X;
+        dl.AddText(new float2(at.X, y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), UiText.Render(name));
         float4 ink = color ?? ConsoleStyle.TextPrimary;
-        dl.AddText(new float2(at.X + width - valueW, y), ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in ink)), shown);
+        dl.AddText(new float2(at.X + width - valueW, y), ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in ink)), UiText.Render(shown));
         ConsoleStyle.PopFont();
         ImGui.Dummy(new float2(width, h));
         _afterRow = true;
@@ -166,21 +165,22 @@ internal static class Widgets
     // Measures in the font that is pushed now.
     private static string Fit(string text, float room)
     {
-        if (ImGui.CalcTextSize(text).X <= room)
+        text = UiText.Render(text);
+        if (ImGui.CalcTextSize(UiText.Render(text)).X <= room)
             return text;
         const string Dots = "...";
-        float dots = ImGui.CalcTextSize(Dots).X;
+        float dots = ImGui.CalcTextSize(UiText.Render(Dots)).X;
         int low = 0, high = text.Length;
         while (low < high)
         {
             int mid = (low + high + 1) / 2;
-            if (ImGui.CalcTextSize(text.AsSpan(0, mid)).X + dots <= room)
+            if (ImGui.CalcTextSize(UiText.Render(text).AsSpan()).X + dots <= room)
                 low = mid;
             else
                 high = mid - 1;
         }
 
-        return low == 0 ? "" : text[..low].TrimEnd() + Dots;
+        return low == 0 ? "" : UiText.Concat(text[..low].TrimEnd(), Dots);
     }
 
     // FitWords measures in the font that is pushed now, and a first word that does not fit is cut in
@@ -189,12 +189,13 @@ internal static class Widgets
 
     public static string FitWords(string text, float room)
     {
-        float width = ImGui.CalcTextSize(text).X;
+        text = UiText.Render(text);
+        float width = ImGui.CalcTextSize(UiText.Render(text)).X;
         if (width <= room)
             return text;
         if (FitCache.TryGetValue((text, room, width), out string? cached))
             return cached;
-        string shown = Editing.StatusText.FitWords(text, room, static t => ImGui.CalcTextSize(t).X);
+        string shown = Editing.StatusText.FitWords(text, room, static t => ImGui.CalcTextSize(UiText.Render(t)).X);
         if (shown.Length == 0)
             shown = Fit(text, room);
         if (FitCache.Count >= 64)
@@ -227,14 +228,14 @@ internal static class Widgets
             uint ink = ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in color));
             float icon = warning ? WarningIcon(ImGui.GetWindowDrawList(), at, h, ink) : 0f;
             shown = FitWords(text, Math.Max(0f, width - icon));
-            ImGui.GetWindowDrawList().AddText(new float2(at.X + icon, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, shown);
+            ImGui.GetWindowDrawList().AddText(new float2(at.X + icon, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, UiText.Render(shown));
         }
         finally { ConsoleStyle.PopFont(); }
 
         ImGui.Dummy(new float2(width, h));
         string full = shown != text ? text : "";
         if (!string.IsNullOrEmpty(tip))
-            full = full.Length > 0 ? full + "\n\n" + tip : tip;
+            full = full.Length > 0 ? UiText.Concat(UiText.Concat(full, "\n\n"), tip) : tip;
         if (full.Length > 0 && Hovering(at, at + new float2(width, h)))
             ShowTip(full);
     }
@@ -247,7 +248,7 @@ internal static class Widgets
         float width = Math.Max(1f, ConsoleStyle.ContentAvailWidth());
         float h = ConsoleStyle.FrameHeightPx;
         float2 at = ImGui.GetCursorScreenPos();
-        bool clicked = ImGui.InvisibleButton(("##link-" + id).AsSpan(), new float2(width, h));
+        bool clicked = ImGui.InvisibleButton((UiText.Concat("##link-", id)).AsSpan(), new float2(width, h));
         bool hovered = ImGui.IsItemHovered();
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         if (hovered)
@@ -260,13 +261,13 @@ internal static class Widgets
             uint ink = ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in color));
             float icon = warning ? WarningIcon(dl, at + new float2(inset, 0f), h, ink) : 0f;
             shown = FitWords(text, Math.Max(0f, width - inset * 2f - icon));
-            dl.AddText(new float2(at.X + inset + icon, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, shown);
+            dl.AddText(new float2(at.X + inset + icon, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, UiText.Render(shown));
         }
         finally { ConsoleStyle.PopFont(); }
 
         string full = shown != text ? text : "";
         if (!string.IsNullOrEmpty(tip))
-            full = full.Length > 0 ? full + "\n\n" + tip : tip;
+            full = full.Length > 0 ? UiText.Concat(UiText.Concat(full, "\n\n"), tip) : tip;
         if (hovered && full.Length > 0)
             ShowTip(full);
         return clicked;
@@ -278,7 +279,7 @@ internal static class Widgets
     {
         float size = ImGui.GetFontSize() * 0.8f;
         ConsoleStyle.DrawWarningTriangle(dl, new float2(at.X + size * 0.5f, at.Y + h * 0.5f), size, ink);
-        return size + ImGui.CalcTextSize(" ").X;
+        return size + ImGui.CalcTextSize(UiText.Render(" ")).X;
     }
 
     #endregion
@@ -311,7 +312,7 @@ internal static class Widgets
             ConsoleStyle.PushValueFont();
             ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextLabel);
             ImGui.PushTextWrapPos(ImGui.GetFontSize() * TipLines);
-            ImGui.Text(text.AsSpan());
+            ImGui.Text(UiText.Render(text).AsSpan());
             ImGui.PopTextWrapPos();
             ImGui.PopStyleColor();
             ConsoleStyle.PopFont();
@@ -337,13 +338,13 @@ internal static class Widgets
         float used = controlWidth > 0f ? Math.Min(controlWidth, ConsoleWidgets.RowControlWidth) : ConsoleWidgets.RowControlWidth;
         ConsoleStyle.PushLabelFont();
         bool above = text.Length > 0
-            && ImGui.CalcTextSize(text).X > ConsoleStyle.ContentAvailWidth() - used - ConsoleWidgets.MinControlGapPx - ConsoleWidgets.RowLabelInsetPx * 2f;
+            && ImGui.CalcTextSize(UiText.Render(text)).X > ConsoleStyle.ContentAvailWidth() - used - ConsoleWidgets.MinControlGapPx - ConsoleWidgets.RowLabelInsetPx * 2f;
         if (above)
         {
             ImGui.SetCursorScreenPos(ImGui.GetCursorScreenPos() + new float2(ConsoleWidgets.RowLabelInsetPx, 0f));
             ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextLabel);
             ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + Math.Max(1f, ConsoleStyle.ContentAvailWidth()));
-            ImGui.Text(text.AsSpan());
+            ImGui.Text(UiText.Render(text).AsSpan());
             ImGui.PopTextWrapPos();
             ImGui.PopStyleColor();
             text = "";
@@ -359,7 +360,7 @@ internal static class Widgets
         string shown = Fit(text, room);
         float y = at.Y + (ConsoleStyle.FrameHeightPx - ImGui.GetFontSize()) * 0.5f;
         if (shown.Length > 0)
-            ImGui.GetWindowDrawList().AddText(new float2(left, y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32), shown);
+            ImGui.GetWindowDrawList().AddText(new float2(left, y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32), UiText.Render(shown));
         ConsoleStyle.PopFont();
         _rowLabelCut = shown != text ? text : null;
     }
@@ -369,7 +370,7 @@ internal static class Widgets
         bool hovered = ConsoleWidgets.RowHovered;
         string text = _rowLabelCut ?? "";
         if (!string.IsNullOrEmpty(tip))
-            text = text.Length > 0 ? text + "\n\n" + tip : tip;
+            text = text.Length > 0 ? UiText.Concat(UiText.Concat(text, "\n\n"), tip) : tip;
         if (hovered && text.Length > 0)
             ShowTip(text);
         ConsoleWidgets.EndRow();
@@ -421,7 +422,7 @@ internal static class Widgets
     {
         _afterRow = false;
         string shown = Visible(label);
-        Place(ConsoleWidgets.ButtonWidth(shown.AsSpan()));
+        Place(ConsoleWidgets.ButtonWidth(UiText.Visible(shown).AsSpan()));
         ReadOnlySpan<char> id = IdOf(label).AsSpan();
         ImGui.BeginDisabled(!enabled);
         bool clicked = tone switch
@@ -439,10 +440,10 @@ internal static class Widgets
     public static bool ButtonRow(string label, string verb, bool enabled = true, string? tip = null, Tone tone = Tone.Plain)
     {
         string verbText = Visible(verb);
-        float w = ConsoleWidgets.ButtonWidth(verbText.AsSpan());
+        float w = ConsoleWidgets.ButtonWidth(UiText.Visible(verbText).AsSpan());
         BeginRow(label, w);
         RowRight(w);
-        string id = verb.Contains("##", StringComparison.Ordinal) ? verb : verb + "##" + label;
+        string id = verb.Contains("##", StringComparison.Ordinal) ? verb : UiText.Concat(UiText.Concat(verb, "##"), label);
         bool clicked = Button(id, enabled, null, tone);
         EndRow(tip);
         return clicked;
@@ -463,10 +464,10 @@ internal static class Widgets
     {
         float gap = ConsoleWidgets.CheckboxStateGapPx;
         ConsoleStyle.PushLabelFont();
-        float labelW = label.Length > 0 ? ImGui.CalcTextSize(label).X + gap : 0f;
+        float labelW = label.Length > 0 ? ImGui.CalcTextSize(UiText.Render(label)).X + gap : 0f;
         ConsoleStyle.PopFont();
         ConsoleStyle.PushValueFont();
-        float stateW = ImGui.CalcTextSize("OFF").X;
+        float stateW = ImGui.CalcTextSize(UiText.Render(UiText.MessageText("text.38cca6bea010", "OFF"))).X;
         ConsoleStyle.PopFont();
         return labelW + ConsoleStyle.FrameHeightPx * TrackW + gap + stateW;
     }
@@ -480,17 +481,17 @@ internal static class Widgets
         float gap = ConsoleWidgets.CheckboxStateGapPx;
         float2 pos = ImGui.GetCursorScreenPos();
         ConsoleStyle.PushLabelFont();
-        float labelW = text.Length > 0 ? ImGui.CalcTextSize(text).X + gap : 0f;
+        float labelW = text.Length > 0 ? ImGui.CalcTextSize(UiText.Render(text)).X + gap : 0f;
         ConsoleStyle.PopFont();
         ConsoleStyle.PushValueFont();
-        float stateW = ImGui.CalcTextSize("OFF").X;
+        float stateW = ImGui.CalcTextSize(UiText.Render(UiText.MessageText("text.38cca6bea010", "OFF"))).X;
         ConsoleStyle.PopFont();
         var track = new float2(h * TrackW, h * TrackH);
         var size = new float2(labelW + track.X + gap + stateW, h);
         Place(size.X);
         pos = ImGui.GetCursorScreenPos();
 
-        bool hit = ImGui.InvisibleButton(("##switch-" + IdOf(label)).AsSpan(), size);
+        bool hit = ImGui.InvisibleButton((UiText.Concat("##switch-", IdOf(label))).AsSpan(), size);
         bool live = ImGui.GetStyle().Alpha >= 1f;
         bool hovered = ImGui.IsItemHovered() && live;
         if (hit)
@@ -500,7 +501,7 @@ internal static class Widgets
         if (text.Length > 0)
         {
             ConsoleStyle.PushLabelFont();
-            dl.AddText(pos + new float2(0f, (h - ImGui.GetFontSize()) * 0.5f), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32), text);
+            dl.AddText(pos + new float2(0f, (h - ImGui.GetFontSize()) * 0.5f), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32), UiText.Render(text));
             ConsoleStyle.PopFont();
         }
 
@@ -515,11 +516,11 @@ internal static class Widgets
         uint knobInk = on ? ConsoleStyle.TextPrimaryU32 : hovered ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32;
         dl.AddRectFilled(kMin, kMin + knob, ConsoleStyle.ApplyAlpha(knobInk), ConsoleStyle.FrameRoundingPx * 0.5f);
 
-        string state = on ? "ON" : "OFF";
+        string state = on ? UiText.MessageText("text.e8a01133b135", "ON") : UiText.MessageText("text.38cca6bea010", "OFF");
         ConsoleStyle.PushValueFont();
-        float w = ImGui.CalcTextSize(state).X;
+        float w = ImGui.CalcTextSize(UiText.Render(state)).X;
         uint stateInk = !on ? (hovered ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32) : (hovered ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32);
-        dl.AddText(new float2(tMax.X + gap + (stateW - w), pos.Y + (h - ImGui.GetFontSize()) * 0.5f), ConsoleStyle.ApplyAlpha(stateInk), state);
+        dl.AddText(new float2(tMax.X + gap + (stateW - w), pos.Y + (h - ImGui.GetFontSize()) * 0.5f), ConsoleStyle.ApplyAlpha(stateInk), UiText.Render(state));
         ConsoleStyle.PopFont();
 
         Tip(tip);
@@ -542,7 +543,7 @@ internal static class Widgets
             _afterRow = false;
             float w = inline < 0f ? Math.Max(1f, ImGui.GetContentRegionAvail().X + inline) : inline;
             PushWell(w);
-            dragged = ImGui.DragFloat(label.AsSpan(), ref f, speed, (float)min, (float)max, format.AsSpan(), ImGuiSliderFlags.AlwaysClamp);
+            dragged = ImGui.DragFloat(UiText.Control(label).AsSpan(), ref f, speed, (float)min, (float)max, format.AsSpan(), ImGuiSliderFlags.AlwaysClamp);
             PopWell();
             Tip(tip);
         }
@@ -550,7 +551,7 @@ internal static class Widgets
         {
             BeginRow(label);
             PushWell(ConsoleWidgets.RowControlWidth);
-            dragged = ImGui.DragFloat(("##" + IdOf(label)).AsSpan(), ref f, speed, (float)min, (float)max, format.AsSpan(), ImGuiSliderFlags.AlwaysClamp);
+            dragged = ImGui.DragFloat(UiText.Control((UiText.Concat("##", IdOf(label)))).AsSpan(), ref f, speed, (float)min, (float)max, format.AsSpan(), ImGuiSliderFlags.AlwaysClamp);
             PopWell();
             EndRow(tip);
         }
@@ -590,7 +591,7 @@ internal static class Widgets
         ImGui.PushStyleColor(ImGuiCol.FrameBgActive, in ConsoleStyle.Transparent);
         ImGui.PushStyleColor(ImGuiCol.Border, in ConsoleStyle.Transparent);
         ImGui.SetNextItemWidth(full);
-        bool dragged = ImGui.DragFloat3(("##" + IdOf(label)).AsSpan(), ref v, speed, 0f, 0f, "%.2f".AsSpan());
+        bool dragged = ImGui.DragFloat3((UiText.Concat("##", IdOf(label))).AsSpan(), ref v, speed, 0f, 0f, "%.2f".AsSpan());
         ImGui.PopStyleColor(4);
         EndRow(tip);
         if (!dragged)
@@ -613,7 +614,7 @@ internal static class Widgets
         string shown = Fit(preview, room);
         ConsoleStyle.PopFont();
         bool open = ConsoleWidgets.BeginComboControl(IdOf(label).AsSpan(), shown.AsSpan(), pending: false);
-        _comboTip = shown != preview && !string.IsNullOrEmpty(tip) ? preview + "\n\n" + tip : shown != preview ? preview : tip;
+        _comboTip = shown != preview && !string.IsNullOrEmpty(tip) ? UiText.Concat(UiText.Concat(preview, "\n\n"), tip) : shown != preview ? preview : tip;
         if (!open)
         {
             EndRow(_comboTip);
@@ -635,7 +636,7 @@ internal static class Widgets
     public static bool Enum<T>(string label, ref T value, IReadOnlyList<T>? options = null, string? tip = null) where T : struct, Enum
     {
         bool changed = false;
-        if (!BeginComboRow(label, value.ToString(), tip))
+        if (!BeginComboRow(label, UiText.EnumValue(value), tip))
             return false;
         try
         {
@@ -645,7 +646,7 @@ internal static class Widgets
                 ImGui.PushID(item.ToString().AsSpan());
                 try
                 {
-                    if (ImGui.Selectable(item.ToString().AsSpan(), EqualityComparer<T>.Default.Equals(item, value)))
+                    if (ImGui.Selectable(UiText.Control(UiText.EnumValue(item)).AsSpan(), EqualityComparer<T>.Default.Equals(item, value)))
                     {
                         value = item;
                         changed = true;
@@ -676,7 +677,7 @@ internal static class Widgets
                 ImGui.PushID(i);
                 try
                 {
-                    if (ImGui.Selectable(name(item).AsSpan(), EqualityComparer<T>.Default.Equals(item, value)))
+                    if (ImGui.Selectable(UiText.Control(name(item)).AsSpan(), EqualityComparer<T>.Default.Equals(item, value)))
                     {
                         value = item;
                         changed = true;
@@ -718,8 +719,8 @@ internal static class Widgets
             float fontSize = ImGui.GetFontSize();
             for (int i = 0; i < tabs.Count; i++)
             {
-                string text = tabs[i].ToUpperInvariant();
-                float w = ImGui.CalcTextSize(text).X + pad * 2f;
+                string text = UiText.Upper(tabs[i]);
+                float w = ImGui.CalcTextSize(UiText.Render(text)).X + pad * 2f;
                 if (i > 0 && x + w > right)
                 {
                     dl.AddLine(new float2(origin.X, y + h), new float2(right, y + h), ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
@@ -730,7 +731,7 @@ internal static class Widgets
                 var pos = new float2(x, y);
                 var size = new float2(w, h);
                 ImGui.SetCursorScreenPos(pos);
-                if (ImGui.InvisibleButton((id + "##tab" + i).AsSpan(), size))
+                if (ImGui.InvisibleButton((UiText.Concat(UiText.Concat(id, "##tab"), i)).AsSpan(), size))
                     clicked = i;
                 bool hovered = windowHovered && ImGui.IsMouseHoveringRect(in pos, pos + size);
                 bool isActive = i == active;
@@ -745,7 +746,7 @@ internal static class Widgets
                 }
 
                 uint ink = isActive ? ConsoleStyle.TextPrimaryU32 : hovered ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32;
-                dl.AddText(pos + new float2(pad, (h - fontSize) * 0.5f), ConsoleStyle.ApplyAlpha(ink), text);
+                dl.AddText(pos + new float2(pad, (h - fontSize) * 0.5f), ConsoleStyle.ApplyAlpha(ink), UiText.Render(text));
                 if (hovered && tips != null && i < tips.Count && !string.IsNullOrEmpty(tips[i]))
                     ShowTip(tips[i]!);
                 x += w;
@@ -769,7 +770,7 @@ internal static class Widgets
         float2 at = ImGui.GetCursorScreenPos();
         float width = ConsoleStyle.ContentAvailWidth();
         float h = ConsoleStyle.FrameHeightPx;
-        int clicked = ConsoleWidgets.Segmented(id.AsSpan(), segments.AsSpan(), active);
+        int clicked = ConsoleWidgets.Segmented(id.AsSpan(), segments.Select(UiText.Render).ToArray().AsSpan(), active);
         if (tips != null && segments.Length > 0)
         {
             float one = width / segments.Length;
@@ -795,7 +796,7 @@ internal static class Widgets
         float2 at = ImGui.GetCursorScreenPos();
         float width = Math.Max(1f, ConsoleStyle.ContentAvailWidth());
         float h = ConsoleStyle.FrameHeightPx;
-        if (ImGui.InvisibleButton(("##fold-" + id).AsSpan(), new float2(width, h)))
+        if (ImGui.InvisibleButton((UiText.Concat("##fold-", id)).AsSpan(), new float2(width, h)))
         {
             open = !open;
             Folds[id] = open;
@@ -814,10 +815,10 @@ internal static class Widgets
             dl.AddTriangleFilled(c + new float2(-caret * 0.3f, -caret * 0.5f), c + new float2(caret * 0.4f, 0f), c + new float2(-caret * 0.3f, caret * 0.5f), ink);
 
         ConsoleStyle.PushLabelFont();
-        string text = title.ToUpperInvariant();
+        string text = UiText.Upper(title);
         float textX = at.X + caret * 2f + ConsoleWidgets.RowLabelInsetPx;
-        dl.AddText(new float2(textX, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, text);
-        float lineFrom = textX + ImGui.CalcTextSize(text).X + ConsoleWidgets.RegionHeaderRuleGapPx;
+        dl.AddText(new float2(textX, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, UiText.Render(text));
+        float lineFrom = textX + ImGui.CalcTextSize(UiText.Render(text)).X + ConsoleWidgets.RegionHeaderRuleGapPx;
         ConsoleStyle.PopFont();
         if (at.X + width > lineFrom)
             dl.AddLine(new float2(lineFrom, at.Y + h * 0.5f), new float2(at.X + width, at.Y + h * 0.5f), ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
@@ -837,7 +838,7 @@ internal static class Widgets
         float h = ImGui.GetFontSize();
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         for (int c = 0; c < heads.Count && c < columns.Count; c++)
-            dl.AddText(new float2(at.X + columns[c], at.Y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), heads[c].ToUpperInvariant());
+            dl.AddText(new float2(at.X + columns[c], at.Y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), UiText.Render(UiText.Upper(heads[c])));
         ConsoleStyle.PopFont();
         ImGui.Dummy(new float2(width, h));
     }
@@ -851,7 +852,7 @@ internal static class Widgets
         float2 at = ImGui.GetCursorScreenPos();
         float width = Math.Max(1f, ConsoleStyle.ContentAvailWidth());
         float h = ConsoleStyle.FrameHeightPx;
-        bool clicked = ImGui.InvisibleButton(("##list-" + id).AsSpan(), new float2(width, h));
+        bool clicked = ImGui.InvisibleButton((UiText.Concat("##list-", id)).AsSpan(), new float2(width, h));
         bool hovered = ImGui.IsItemHovered();
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         if (selected)
@@ -873,7 +874,7 @@ internal static class Widgets
             uint ink = active ? ConsoleStyle.PositiveU32
                 : c == mutedColumn ? ConsoleStyle.TextMutedU32
                 : selected ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32;
-            dl.AddText(new float2(at.X + columns[c], y), ConsoleStyle.ApplyAlpha(ink), shown);
+            dl.AddText(new float2(at.X + columns[c], y), ConsoleStyle.ApplyAlpha(ink), UiText.Render(shown));
         }
 
         ConsoleStyle.PopFont();
@@ -885,7 +886,7 @@ internal static class Widgets
     #region Event names
 
     // The stored text of a trigger stays canonical. These helpers only change what the player reads.
-    public static string EventName(string name) => name.Length == 0 ? "(no event)" : EventDisplay.Name(name);
+    public static string EventName(string name) => name.Length == 0 ? UiText.MessageText("text.8dd598d338e0", "(no event)") : EventDisplay.Name(name);
 
     public static string TriggerText(Trigger trigger, int index)
     {
@@ -893,7 +894,7 @@ internal static class Widgets
             return Editing.ViewText.TriggerText(trigger, index);
         if (trigger.Delay == 0.0)
             return EventName(trigger.Event);
-        return EventName(trigger.Event) + (trigger.Delay > 0.0 ? " +" : " -") + Editing.ViewText.Seconds(Math.Abs(trigger.Delay));
+        return UiText.Concat(UiText.Concat(EventName(trigger.Event), (trigger.Delay > 0.0 ? " +" : " -")), Editing.ViewText.Seconds(Math.Abs(trigger.Delay)));
     }
 
     public static string DescribeTrigger(Trigger trigger)
@@ -901,8 +902,8 @@ internal static class Widgets
         if (trigger.Kind != TriggerKind.Event)
             return Editing.ShotEdit.Describe(trigger);
         string delay = trigger.Delay == 0.0 ? ""
-            : (trigger.Delay > 0.0 ? " +" : " ") + trigger.Delay.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " s";
-        return "on " + EventName(trigger.Event) + delay;
+            : UiText.Concat(UiText.Concat((trigger.Delay > 0.0 ? " +" : " "), trigger.Delay.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)), " s");
+        return UiText.Concat(UiText.Concat(UiText.MessageText("text.0816446dcc92", "on "), EventName(trigger.Event)), delay);
     }
 
     // Only a text that starts with an event name changes.
@@ -912,7 +913,7 @@ internal static class Widgets
         string head = end < 0 ? text : text[..end];
         if (head.Length == 0 || !Director.EventName.TryResolve(head, aliases, out _, out _))
             return text;
-        return EventDisplay.Name(head) + (end < 0 ? "" : text[end..]);
+        return UiText.Concat(EventDisplay.Name(head), (end < 0 ? "" : text[end..]));
     }
 
     #endregion
@@ -936,7 +937,7 @@ internal static class Widgets
 
         BeginRow(label);
         PushWell(ConsoleWidgets.RowControlWidth);
-        bool changed = ImGui.InputText(("##" + IdOf(key)).AsSpan(), buffer);
+        bool changed = ImGui.InputText((UiText.Concat("##", IdOf(key))).AsSpan(), buffer);
         bool active = ImGui.IsItemActive();
         PopWell();
         EndRow(tip);

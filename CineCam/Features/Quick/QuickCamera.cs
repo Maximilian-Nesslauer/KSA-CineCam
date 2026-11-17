@@ -52,7 +52,7 @@ internal static class QuickCamera
 
     public static void RequestStart(QuickMode mode)
     {
-        if (TakeRunner.Refused("quick camera", CineCamPatches.CameraBlock))
+        if (TakeRunner.Refused(UiText.MessageText("text.c2328efa1ee0", "quick camera"), CineCamPatches.CameraBlock))
             return;
         _startRequest = mode;
         _stopRequested = false;
@@ -76,20 +76,20 @@ internal static class QuickCamera
         if (CineCamPatches.CameraBlock is { } unsupported)
             return unsupported;
         if (!Program.IsLoaded)
-            return "Load a flight first.";
+            return UiText.MessageText("text.a4d4cc4968fe", "Load a flight first.");
         if (Program.Editor != null)
-            return "The quick camera does not work in the vehicle editor.";
+            return UiText.MessageText("text.5298cecc3cb4", "The quick camera does not work in the vehicle editor.");
         if (TakeRunner.Current is { } take)
-            return take.Preview != null ? "A shot preview runs. Stop it first." : "A take runs. Stop it first.";
+            return take.Preview != null ? UiText.MessageText("text.b9c0169acb13", "A shot preview runs. Stop it first.") : UiText.MessageText("text.1fcc30f7d576", "A take runs. Stop it first.");
         if (TakeRunner.Reset.IsActive)
-            return "A reset runs. Wait until it is done.";
+            return UiText.MessageText("text.61c27e958661", "A reset runs. Wait until it is done.");
         if (ReplaySession.IsPlayingBack)
-            return "A replay is open. Close it first.";
+            return UiText.MessageText("text.7674b73028c8", "A replay is open. Close it first.");
         Vehicle? vehicle = Program.ControlledVehicle;
         if (vehicle == null || vehicle.IsDisposed)
-            return "Select a vehicle in flight.";
+            return UiText.MessageText("text.d2d6a7832312", "Select a vehicle in flight.");
         if (vehicle.Parent is not Celestial)
-            return "The vehicle must be near a planet or a moon.";
+            return UiText.MessageText("text.90a040e5aafb", "The vehicle must be near a planet or a moon.");
         if (mode == QuickMode.GroundTracker)
         {
             // The tracker stays where the mode started, so a running tracker can always stay on.
@@ -104,11 +104,11 @@ internal static class QuickCamera
     public static string? SlowMotionBlock()
     {
         if (_session == null)
-            return "Start a quick camera first.";
+            return UiText.MessageText("text.55b5278502b9", "Start a quick camera first.");
         if (Universe.IsAutoWarpActive)
-            return "An automatic time warp runs. The quick camera does not change the speed then.";
+            return UiText.MessageText("text.398799eecac7", "An automatic time warp runs. The quick camera does not change the speed then.");
         if (SunWarp.IsRunning)
-            return "The game time moves to a sun elevation. Wait until it is done.";
+            return UiText.MessageText("text.1f91b0c1e717", "The game time moves to a sun elevation. Wait until it is done.");
         return null;
     }
 
@@ -127,7 +127,7 @@ internal static class QuickCamera
         }
         catch (Exception ex)
         {
-            Fail("a request", ex);
+            Fail(UiText.MessageText("text.af0bf2a562da", "a request"), ex);
         }
     }
 
@@ -148,7 +148,7 @@ internal static class QuickCamera
         }
         catch (Exception ex)
         {
-            Fail("the quick camera", ex);
+            Fail(UiText.MessageText("text.a84ea2c564dd", "the quick camera"), ex);
         }
 
         return true;
@@ -161,11 +161,11 @@ internal static class QuickCamera
             return;
         try
         {
-            Stop("the camera mode changed");
+            Stop(UiText.MessageText("text.e863a5208a80", "the camera mode changed"));
         }
         catch (Exception ex)
         {
-            Fail("the guard", ex);
+            Fail(UiText.MessageText("text.6890c388dc69", "the guard"), ex);
         }
     }
 
@@ -178,7 +178,7 @@ internal static class QuickCamera
         if (_stopRequested)
         {
             _stopRequested = false;
-            Stop("stopped by the player");
+            Stop(UiText.MessageText("text.09d5f0796eec", "stopped by the player"));
         }
 
         if (_startRequest is QuickMode mode)
@@ -229,12 +229,12 @@ internal static class QuickCamera
         {
             // A mode change keeps the rig, so the stop gives back the camera from before the first mode.
             running.Begin(mode);
-            Status = $"{Describe(mode)} on.";
+            Status = UiText.Format("text.dded112742f6", $"{Describe(mode)} on.");
             return;
         }
 
         if (_session != null)
-            Stop("the controlled vehicle changed");
+            Stop(UiText.MessageText("text.193b5f8ff630", "the controlled vehicle changed"));
 
         var session = new Session(new QuickScene(vehicle), new CameraRig(), _frame,
             SaveLoadWatch.Available ? SaveLoadWatch.Completed : -1);
@@ -246,11 +246,11 @@ internal static class QuickCamera
         }
         catch (Exception ex)
         {
-            Fail("the start", ex);
+            Fail(UiText.MessageText("text.9e7751dd1f7c", "the start"), ex);
             return;
         }
 
-        Status = $"{Describe(mode)} on.";
+        Status = UiText.Format("text.dded112742f6", $"{Describe(mode)} on.");
         DefaultCategory.Log.Info($"[CineCam] Quick camera {mode} started on {vehicle.Id}.");
     }
 
@@ -283,7 +283,7 @@ internal static class QuickCamera
             DefaultCategory.Log.Error($"[CineCam] The camera could not be given back: {ex.Message}");
         }
 
-        Status = $"Quick camera off: {reason}.";
+        Status = UiText.Format("text.acc90e7e5bd5", $"Quick camera off: {reason}.");
         DefaultCategory.Log.Info($"[CineCam] Quick camera {session.Mode} ended: {reason}.");
     }
 
@@ -296,7 +296,7 @@ internal static class QuickCamera
         _speedRequest = null;
         try
         {
-            Stop("the mod unloaded");
+            Stop(UiText.MessageText("text.980de862a114", "the mod unloaded"));
         }
         catch (Exception ex)
         {
@@ -332,7 +332,7 @@ internal static class QuickCamera
         LogHelper.ErrorOnce("quick:" + where, $"[CineCam] Error in {where}: {ex}");
         try
         {
-            Stop($"error in {where}: {ex.Message}");
+            Stop(UiText.Format("text.e8173d3ce3c5", $"error in {where}: {ex.Message}"));
         }
         catch (Exception inner)
         {
@@ -343,11 +343,11 @@ internal static class QuickCamera
 
     public static string Describe(QuickMode mode) => mode switch
     {
-        QuickMode.Flyby => "Flyby",
-        QuickMode.Chase => "Chase",
-        QuickMode.Orbit => "Orbit",
+        QuickMode.Flyby => UiText.MessageText("text.6c435a230c44", "Flyby"),
+        QuickMode.Chase => UiText.MessageText("text.1ae6e6416a7a", "Chase"),
+        QuickMode.Orbit => UiText.MessageText("text.29ac7e56b3b4", "Orbit"),
         QuickMode.Onboard => "Onboard",
-        QuickMode.GroundTracker => "Ground tracker",
+        QuickMode.GroundTracker => UiText.MessageText("text.339f3250d9a4", "Ground tracker"),
         _ => mode.ToString(),
     };
 
@@ -414,31 +414,31 @@ internal static class QuickCamera
         Vehicle? current = Program.ControlledVehicle;
         if (current == null || current.IsDisposed || session.Scene.Vehicle.IsDisposed)
         {
-            Stop("the vehicle is gone");
+            Stop(UiText.MessageText("text.70737feb0431", "the vehicle is gone"));
             return false;
         }
 
         if (!ReferenceEquals(current, session.Scene.Vehicle))
         {
-            Stop("the controlled vehicle changed");
+            Stop(UiText.MessageText("text.193b5f8ff630", "the controlled vehicle changed"));
             return false;
         }
 
         if (Program.Editor != null)
         {
-            Stop("the vehicle editor opened");
+            Stop(UiText.MessageText("text.9222210e1e74", "the vehicle editor opened"));
             return false;
         }
 
         if (session.SaveLoads >= 0 && SaveLoadWatch.Available && SaveLoadWatch.Completed != session.SaveLoads)
         {
-            Stop("a save was loaded");
+            Stop(UiText.MessageText("text.c1d3b68bb8fa", "a save was loaded"));
             return false;
         }
 
         if (session.Scene.Body is not Celestial body)
         {
-            Stop("the vehicle is not near a planet or a moon");
+            Stop(UiText.MessageText("text.d7c48a25cd8e", "the vehicle is not near a planet or a moon"));
             return false;
         }
 
@@ -449,7 +449,7 @@ internal static class QuickCamera
             session.FlybyPending = true;
             if (session.Mode == QuickMode.GroundTracker)
             {
-                Stop($"the vehicle left the sphere of influence for {body.Id}");
+                Stop(UiText.Format("text.6c62d50ed401", $"the vehicle left the sphere of influence for {body.Id}"));
                 return false;
             }
         }
@@ -569,7 +569,7 @@ internal static class QuickCamera
         V3 camera = session.Scene.FromCcf(body, session.PointCcf);
         if ((world.Centre - camera).Length > QuickMath.TrackerMaxRange)
         {
-            Stop(FormattableString.Invariant($"the vehicle is more than {QuickMath.TrackerMaxRange / 1000.0:F0} km from the ground tracker"));
+            Stop(UiText.Format("text.ff9c043b6a5e", $"the vehicle is more than {QuickMath.TrackerMaxRange / 1000.0:F0} km from the ground tracker"));
             return null;
         }
 

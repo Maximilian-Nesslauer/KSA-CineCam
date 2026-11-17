@@ -118,7 +118,7 @@ internal sealed class SiteFrame
         how = "";
         if (vehicle.Parent is not Celestial body)
         {
-            how = "the vehicle does not orbit a body with a surface";
+            how = UiText.MessageText("text.a1c4ea408c13", "the vehicle does not orbit a body with a surface");
             return null;
         }
 
@@ -135,11 +135,11 @@ internal sealed class SiteFrame
         {
             if (body.GetLocation(wantedId) is LandmarkReference named)
             {
-                how = $"Landmark \"{named.Key}\" named by the shot file";
+                how = UiText.Format("text.96ce1cf1b233", $"Landmark \"{named.Key}\" named by the shot file");
                 return new SiteFrame(body, named);
             }
 
-            how = $"the shot file names the site \"{wantedId}\", but {body.Id} has no such Landmark";
+            how = UiText.Format("text.ea9a27777075", $"the shot file names the site \"{wantedId}\", but {body.Id} has no such Landmark");
             return null;
         }
 
@@ -150,24 +150,24 @@ internal sealed class SiteFrame
                 : Universe.CurrentSystem?.Get(anchor.Body) as Celestial;
             if (anchorBody == null)
             {
-                how = $"the take has an anchor on \"{anchor.Body}\", but the system has no such body";
+                how = UiText.Format("text.552562f03284", $"the take has an anchor on \"{anchor.Body}\", but the system has no such body");
                 return null;
             }
 
-            how = $"anchor of the take on {anchorBody.Id} at {AnchorText(anchor)}";
+            how = UiText.Format("text.e35d6b0b7b1a", $"anchor of the take on {anchorBody.Id} at {AnchorText(anchor)}");
             return new SiteFrame(anchorBody, anchor, "anchor");
         }
 
         LandmarkReference? nearest = Nearest(body, positionCcf.Normalized(), out double distance);
         if (nearest != null)
         {
-            how = FormattableString.Invariant($"Landmark \"{nearest.Key}\" nearest to the vehicle ({distance:F0} m)");
+            how = UiText.Format("text.ee8229ff48cf", $"Landmark \"{nearest.Key}\" nearest to the vehicle ({distance:F0} m)");
             return new SiteFrame(body, nearest);
         }
 
         V3 direction = new(positionCcf.X, positionCcf.Y, positionCcf.Z);
         WorldAnchor ground = WorldAnchor.FromDirection(body.Id, direction, 0.0);
-        how = FormattableString.Invariant($"no Landmark within {NearestLimitMeters:F0} m, so the ground under the vehicle on {body.Id} at {AnchorText(ground)}");
+        how = UiText.Format("text.0283b8252c30", $"no Landmark within {NearestLimitMeters:F0} m, so the ground under the vehicle on {body.Id} at {AnchorText(ground)}");
         return new SiteFrame(body, ground, "ground");
     }
 
@@ -204,8 +204,7 @@ internal sealed class SiteFrame
         return null;
     }
 
-    private static string AnchorText(WorldAnchor anchor) => string.Create(CultureInfo.InvariantCulture,
-        $"latitude {anchor.Latitude:F5}, longitude {anchor.Longitude:F5}, {anchor.Altitude:F1} m above the terrain");
+    private static string AnchorText(WorldAnchor anchor) => UiText.Format("text.85c2bc04f908", $"latitude {anchor.Latitude:F5}, longitude {anchor.Longitude:F5}, {anchor.Altitude:F1} m above the terrain");
 
     private static double3 ToDouble3(V3 v) => new(v.X, v.Y, v.Z);
 }

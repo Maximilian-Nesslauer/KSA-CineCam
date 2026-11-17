@@ -165,7 +165,7 @@ public sealed class ReplayChannelWriter
         foreach (string kind in kinds)
         {
             if (!ReplayChannelKind.IsKnown(kind) && !ReplayChannelKind.IsChute(kind))
-                throw new ArgumentException($"Unknown channel kind {kind}.", nameof(kinds));
+                throw new ArgumentException(UiText.Format("text.c9527c90447e", $"Unknown channel kind {kind}."), nameof(kinds));
         }
         Channels = kinds.Select(kind => new ReplayChannel(kind, new List<double>(), new List<float>())).ToList();
         _lastTick = new float[kinds.Count];
@@ -181,7 +181,7 @@ public sealed class ReplayChannelWriter
     public long Prepare(double time, ReadOnlySpan<float> values)
     {
         if (values.Length != Channels.Count)
-            throw new ArgumentException("The number of values differs from the number of channels.", nameof(values));
+            throw new ArgumentException(UiText.MessageText("text.e34cf850faf3", "The number of values differs from the number of channels."), nameof(values));
         _pending.Clear();
         double stored = Math.Round(time, 4);
         float[] tick = _pendingTick;

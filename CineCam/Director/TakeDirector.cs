@@ -240,7 +240,7 @@ public sealed class TakeDirector
         if (subject.Name.Length == 0)
         {
             if (_fallbackReported.Add(index))
-                reports.Add(new DirectorReport("target", $"camera[{index}]: no vehicle has separated yet, so the shot follows the controlled vehicle"));
+                reports.Add(new DirectorReport(UiText.MessageText("text.34a04005bcaf", "target"), $"camera[{index}]: no vehicle has separated yet, so the shot follows the controlled vehicle"));
             return;
         }
 
@@ -248,7 +248,7 @@ public sealed class TakeDirector
             return;
         _pickReported[index] = subject.Name;
         string pick = shot.Pick == SeparatedPick.Nearest ? "nearest" : "newest";
-        reports.Add(new DirectorReport("target", string.Create(System.Globalization.CultureInfo.InvariantCulture,
+        reports.Add(new DirectorReport(UiText.MessageText("text.34a04005bcaf", "target"), string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"camera[{index}]: the shot follows the separated vehicle \"{subject.Name}\" ({pick}, {subject.Distance:F0} m from the controlled vehicle, {subject.Height:F1} m long)")));
     }
 

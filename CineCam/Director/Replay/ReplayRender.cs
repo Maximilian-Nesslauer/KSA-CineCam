@@ -21,9 +21,9 @@ public sealed class ReplayRenderJob
     public ReplayRenderJob(double start, double end, double fps)
     {
         if (!double.IsFinite(fps) || fps <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(fps), "The pictures per second must be above 0.");
+            throw new ArgumentOutOfRangeException(nameof(fps), UiText.MessageText("text.4b52d70c9410", "The pictures per second must be above 0."));
         if (!double.IsFinite(start) || !double.IsFinite(end) || end < start)
-            throw new ArgumentOutOfRangeException(nameof(end), "The end of a render must not be before its start.");
+            throw new ArgumentOutOfRangeException(nameof(end), UiText.MessageText("text.7c9f287fafc3", "The end of a render must not be before its start."));
         Start = start;
         End = end;
         Fps = fps;
@@ -49,20 +49,20 @@ public sealed class ReplayRenderJob
         reason = "";
         if (!double.IsFinite(fps) || fps <= 0.0)
         {
-            reason = "The pictures per second must be above 0.";
+            reason = UiText.MessageText("text.4b52d70c9410", "The pictures per second must be above 0.");
             return false;
         }
 
         if (!double.IsFinite(duration) || duration <= 0.0)
         {
-            reason = "The take has no time on this recording.";
+            reason = UiText.MessageText("text.62af5545b2f7", "The take has no time on this recording.");
             return false;
         }
 
         double start = range == ReplayRenderRange.FromCurrent && double.IsFinite(current) ? Math.Clamp(current, 0.0, duration) : 0.0;
         if (duration - start < 0.5 / fps)
         {
-            reason = "The replay is at the end of the take. Move it back or render the whole take.";
+            reason = UiText.MessageText("text.ff860f04e5df", "The replay is at the end of the take. Move it back or render the whole take.");
             return false;
         }
 
@@ -102,8 +102,8 @@ public readonly record struct ReplayRenderProgress(int Done, int Total, double E
 
     public string Text()
     {
-        string left = SecondsLeft is double seconds ? $", about {Span(seconds)} left" : "";
-        return string.Create(CultureInfo.InvariantCulture, $"picture {Done} of {Total} ({Math.Floor(Percent):0}%){left}");
+        string left = SecondsLeft is double seconds ? UiText.Format("text.8b4198a5ce14", $", about {Span(seconds)} left") : "";
+        return UiText.Format("text.40e61519a650", $"picture {Done} of {Total} ({Math.Floor(Percent):0}%){left}");
     }
 
     public static bool PassedTenth(int before, int after, int total) =>
@@ -115,10 +115,10 @@ public readonly record struct ReplayRenderProgress(int Done, int Total, double E
             return "?";
         long total = (long)Math.Round(seconds);
         if (total < 60)
-            return string.Create(CultureInfo.InvariantCulture, $"{total} s");
+            return UiText.Format("", $"{total} s");
         if (total < 3600)
-            return string.Create(CultureInfo.InvariantCulture, $"{total / 60} min {total % 60:00} s");
-        return string.Create(CultureInfo.InvariantCulture, $"{total / 3600} h {total / 60 % 60:00} min");
+            return UiText.Format("text.66884b7a5a6e", $"{total / 60} min {total % 60:00} s");
+        return UiText.Format("text.bafc5734b0d6", $"{total / 3600} h {total / 60 % 60:00} min");
     }
 }
 
@@ -145,7 +145,7 @@ public static class ReplayRenderLog
         (long)Math.Min(Math.Max(pictures, 0) * (double)Math.Max(width, 0) * Math.Max(height, 0) * BytesPerPixel, long.MaxValue);
 
     public static string FolderName(string recordingId, string takeName) =>
-        TakeFolders.SafeName(recordingId) + "-" + TakeFolders.SafeName(takeName);
+        UiText.Concat(UiText.Concat(TakeFolders.SafeName(recordingId), "-"), TakeFolders.SafeName(takeName));
 
     /// <summary>An event at the end of the take has no picture of its own, so it goes on the last picture.</summary>
     /// <param name="details">The recorded details of the events by canonical name, see <see cref="ReplayEvent.Detail"/>.</param>
@@ -160,8 +160,7 @@ public static class ReplayRenderLog
             double video = Math.Max(time - job.Start, 0.0);
             int picture = Math.Min(ReplayRenderJob.PictureAt(video, job.Fps), job.Total);
             rows.Add(new ReplayRenderRow(video, time, picture, "event", name,
-                string.Create(CultureInfo.InvariantCulture, $"takeSeconds={time:F3}")
-                + (details != null && details.TryGetValue(name, out string? detail) ? "; " + detail : "")));
+                UiText.Concat(UiText.Format("", $"takeSeconds={time:F3}"), (details != null && details.TryGetValue(name, out string? detail) ? UiText.Concat("; ", detail) : ""))));
         }
 
         return rows;
@@ -180,10 +179,10 @@ public static class ReplayRenderLog
             double video = Math.Max(item.TakeSeconds - job.Start, 0.0);
             int picture = Math.Min(ReplayRenderJob.PictureAt(video, job.Fps), job.Total);
             string detail = item.Kind == FeedKind.Cue
-                ? string.Create(CultureInfo.InvariantCulture, $"actions[{item.Index}]; takeSeconds={item.TakeSeconds:F3}")
-                : string.Create(CultureInfo.InvariantCulture, $"takeSeconds={item.TakeSeconds:F3}");
+                ? UiText.Format("", $"actions[{item.Index}]; takeSeconds={item.TakeSeconds:F3}")
+                : UiText.Format("", $"takeSeconds={item.TakeSeconds:F3}");
             if (item.Kind != FeedKind.Cue && details != null && details.TryGetValue(item.Name, out string? recorded))
-                detail += "; " + recorded;
+                detail = UiText.Concat(detail, UiText.Concat("; ", recorded));
             rows.Add(new ReplayRenderRow(video, item.TakeSeconds, picture, item.Kind == FeedKind.Cue ? "cue" : "event", item.Name, detail));
         }
 
@@ -214,8 +213,8 @@ public static class ReplayRenderLog
             if (key < 0 || key >= take.Speed.Count)
                 continue;
             SpeedKey speed = take.Speed[key];
-            rows.Add(new ReplayRenderRow(video, time, picture, "speed", $"speed[{key}]",
-                string.Create(CultureInfo.InvariantCulture, $"to={speed.To}; ramp={speed.Ramp}")));
+            rows.Add(new ReplayRenderRow(video, time, picture, "speed", UiText.Format("", $"speed[{key}]"),
+                UiText.Format("", $"to={speed.To}; ramp={speed.Ramp}")));
         }
 
         return rows;
@@ -225,9 +224,9 @@ public static class ReplayRenderLog
     private static ReplayRenderRow ShotRow(Take take, int index, double video, double time, int picture, string note)
     {
         Shot shot = take.Shots[index];
-        string name = shot.Name.Length > 0 ? "; name=" + shot.Name : "";
-        return new ReplayRenderRow(video, time, picture, "shot", $"camera[{index}]",
-            string.Create(CultureInfo.InvariantCulture, $"type={shot.Type}; duration={shot.Duration}; fov={shot.Fov}{name}{note}"));
+        string name = shot.Name.Length > 0 ? UiText.Concat("; name=", shot.Name) : "";
+        return new ReplayRenderRow(video, time, picture, "shot", UiText.Format("", $"camera[{index}]"),
+            UiText.Format("", $"type={shot.Type}; duration={shot.Duration}; fov={shot.Fov}{name}{note}"));
     }
 
     /// <summary>

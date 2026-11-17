@@ -44,7 +44,7 @@ internal static partial class TakeRunner
     // A null take name uses the default take of the file.
     public static void RequestCheckpoint(string? takeName)
     {
-        if (Refused("checkpoint", CineCamPatches.FrameBlock))
+        if (Refused(UiText.MessageText("text.47320987f9a4", "checkpoint"), CineCamPatches.FrameBlock))
             return;
         if (ReplaySession.CheckpointBlock(reset: false) is { Length: > 0 } block)
         {
@@ -97,7 +97,7 @@ internal static partial class TakeRunner
         catch (Exception ex)
         {
             LogHelper.ErrorOnce("checkpoint", $"[CineCam] Error in the checkpoint code: {ex}");
-            CancelReset("an error, see the log");
+            CancelReset(UiText.MessageText("text.6c0dc760e83d", "an error, see the log"));
         }
 
         _ready.Update(Flow.Phase, _take != null);
@@ -352,7 +352,7 @@ internal static partial class TakeRunner
         _resetRequested = false;
         _resetTake = null;
         if (Flow.IsActive)
-            CancelReset("the mod unloaded");
+            CancelReset(UiText.MessageText("text.980de862a114", "the mod unloaded"));
         ReleaseSimHold();
         _resetOldVehicle = null;
         _resetNewVehicle = null;

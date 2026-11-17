@@ -76,7 +76,7 @@ public static class ReplayTimeline
     {
         double scale = Math.Max(Math.Max(Math.Abs(q.X), Math.Abs(q.Y)), Math.Max(Math.Abs(q.Z), Math.Abs(q.W)));
         if (!double.IsFinite(scale) || scale < 1e-150)
-            throw new InvalidDataException("Replay rotation is invalid.");
+            throw new InvalidDataException(UiText.MessageText("text.d6761004b6c1", "Replay rotation is invalid."));
         double x = q.X / scale, y = q.Y / scale, z = q.Z / scale, w = q.W / scale;
         double length = Math.Sqrt(x * x + y * y + z * z + w * w);
         return new(x / length, y / length, z / length, w / length);

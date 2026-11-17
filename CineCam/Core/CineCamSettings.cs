@@ -63,6 +63,12 @@ internal static class CineCamSettings
     // Plays the engine sounds of the recorded flight in a replay.
     public static bool ReplaySound { get; private set; } = true;
 
+    public static void SetLanguage(UiLanguage language)
+    {
+        UiText.Language = language;
+        Save();
+    }
+
     // Empty when the last write succeeded.
     public static string SaveError { get; private set; } = "";
 
@@ -89,6 +95,7 @@ internal static class CineCamSettings
         StillScale = 4;
         RecordTakeSound = false;
         ReplaySound = true;
+        UiText.Language = UiLanguage.Auto;
         LoadError = "";
         SaveError = "";
         string path = CineCamPaths.SettingsFile;
@@ -123,10 +130,14 @@ internal static class CineCamSettings
             StillScale = ReadInt(document.RootElement, "stillScale", StillScale, MinStillScale, MaxStillScale);
             RecordTakeSound = ReadBool(document.RootElement, "recordTakeSound", RecordTakeSound);
             ReplaySound = ReadBool(document.RootElement, "replaySound", ReplaySound);
+            if (document.RootElement.TryGetProperty("language", out JsonElement language)
+                && language.ValueKind == JsonValueKind.String
+                && Enum.TryParse(language.GetString(), true, out UiLanguage choice) && Enum.IsDefined(choice))
+                UiText.Language = choice;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            LoadError = $"The settings file {path} could not be read ({ex.Message}). The default keys are used, and changes are not saved until the file is correct.";
+            LoadError = UiText.Format("text.a1677d1a77e2", $"The settings file {path} could not be read ({ex.Message}). The default keys are used, and changes are not saved until the file is correct.");
             DefaultCategory.Log.Warning("[CineCam] " + LoadError);
         }
     }
@@ -233,7 +244,7 @@ internal static class CineCamSettings
     {
         if (LoadError.Length > 0)
         {
-            SaveError = "The change is not saved, because the settings file could not be read. Correct the file or delete it, then use Read the settings file again.";
+            SaveError = UiText.MessageText("text.d747e4b62c23", "The change is not saved, because the settings file could not be read. Correct the file or delete it, then use Read the settings file again.");
             return false;
         }
 
@@ -249,7 +260,7 @@ internal static class CineCamSettings
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            SaveError = $"The settings file could not be written: {ex.Message}";
+            SaveError = UiText.Format("text.500c6ee17640", $"The settings file could not be written: {ex.Message}");
             DefaultCategory.Log.Warning("[CineCam] " + SaveError);
             return false;
         }
@@ -263,6 +274,9 @@ internal static class CineCamSettings
 
     private static string Text() => $$"""
 {
+  // Auto follows the operating system UI culture. Supported choices are Auto, English and German.
+  "language": "{{UiText.Language}}",
+
   // Starts a take, or stops the running take, and closes a replay. Use a key name of the GLFW
   // key list, for example "Pause", "Home" or "KpEnter". Use a key that the game does not use,
   // because the game also does its own action for the key. An empty text turns the key off.

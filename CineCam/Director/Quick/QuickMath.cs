@@ -169,7 +169,7 @@ public static class QuickMath
     /// <summary>The reason why the ground tracker cannot start, or null when it can.</summary>
     public static string? TrackerBlock(double altitude) =>
         altitude > TrackerMaxRange
-            ? $"The vehicle is higher than {TrackerMaxRange / 1000.0:F0} km, too far for a camera on the ground."
+            ? UiText.Format("text.574e89662787", $"The vehicle is higher than {TrackerMaxRange / 1000.0:F0} km, too far for a camera on the ground.")
             : null;
 
     public static V3 KeepAbove(V3 point, V3 bodyCentre, double minRadius)

@@ -10,7 +10,7 @@ public static class CheckpointName
 
     public const string Prefix = "CineCam";
 
-    public const string RuleText = "a save name has letters, digits, spaces, \"-\" and \"_\" only, at most 64 characters, and no space at its start or end";
+    public static readonly string RuleText = UiText.MessageText("text.38e18dc8e343", "a save name has letters, digits, spaces, \"-\" and \"_\" only, at most 64 characters, and no space at its start or end");
 
     private static readonly string[] DeviceNames =
     {

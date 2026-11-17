@@ -102,11 +102,11 @@ internal sealed class FlightRecorder
     public string? Capture()
     {
         if (!ReferenceEquals(Universe.CurrentSystem, _system) || Program.Editor != null)
-            return "The active scene changed.";
+            return UiText.MessageText("text.934f4de68b7c", "The active scene changed.");
         if (_ticks >= ReplaySampling.SamplesPerActor)
-            return "The recording reached its length limit.";
+            return UiText.MessageText("text.8cdd4214be74", "The recording reached its length limit.");
         if (ReplaySampling.SizeReached(_bytes))
-            return "The recording reached its file size limit.";
+            return UiText.MessageText("text.cf8ca4731465", "The recording reached its file size limit.");
         FollowControlled();
         if (_primary.Vehicle.IsDisposed)
             FollowSurvivor();
@@ -114,12 +114,12 @@ internal sealed class FlightRecorder
         if (Lost(followed))
         {
             AddDestroyedEvents();
-            return "The recorded vehicle was lost or changed its parent body.";
+            return UiText.MessageText("text.def0b2da6485", "The recorded vehicle was lost or changed its parent body.");
         }
 
         double time = Universe.GetElapsedSeconds() - Flight.StartTime;
         if (time < _lastTime && _splits.Count == 0)
-            return time < _lastTime - 1e-9 ? "The game clock moved backwards." : null;
+            return time < _lastTime - 1e-9 ? UiText.MessageText("text.3c9bd086e91a", "The game clock moved backwards.") : null;
         if (time <= _lastTime && _splits.Count == 0)
             return null;
         if (time <= _lastTime)
@@ -132,7 +132,7 @@ internal sealed class FlightRecorder
         // Only a change of the followed vehicle can need a slot that is not free, because the slot
         // rule keeps one free for it. Without the followed vehicle the recording has no subject.
         if (!_actors.ContainsKey(followed) && Flight.Actors.Count + _splits.Count + (_splits.Any(split => ReferenceEquals(split.Child, followed)) ? 0 : 1) > ReplaySampling.ActorLimit)
-            return "The recording reached its vehicle limit.";
+            return UiText.MessageText("text.519f7e4d0519", "The recording reached its vehicle limit.");
 
         // A split or a changed part count starts a new segment at once, so the segment starts
         // where the vehicle changed. Other samples wait for the next step of the sampling grid.
@@ -185,7 +185,7 @@ internal sealed class FlightRecorder
         }
 
         if (!ReplaySampling.TickFits(_bytes, tickBytes))
-            return "The recording reached its file size limit.";
+            return UiText.MessageText("text.cf8ca4731465", "The recording reached its file size limit.");
 
         IReadOnlyList<DetectedEvent> markers = _events.Update(time, vehicleSample);
         _pendingMarks = 0;
@@ -236,9 +236,9 @@ internal sealed class FlightRecorder
         {
             AddEvent(marker);
             if (marker.Name.StartsWith("ignition", StringComparison.Ordinal))
-                Flight.Markers.Add(new ReplayMarker(time, "Ignition" + marker.Name["ignition".Length..]));
+                Flight.Markers.Add(new ReplayMarker(time, UiText.Concat(UiText.MessageText("text.ae1c32802c31", "Ignition"), marker.Name["ignition".Length..])));
             else if (marker.Name == "liftoff")
-                Flight.Markers.Add(new ReplayMarker(time, "Lift-off"));
+                Flight.Markers.Add(new ReplayMarker(time, UiText.MessageText("text.cf343cf67ee7", "Lift-off")));
         }
 
         _lastTime = time;
@@ -456,7 +456,7 @@ internal sealed class FlightRecorder
         _splits.AddRange(kept);
         if (_skipped == 0)
         {
-            _note = "Some debris is not recorded, because the recording keeps its vehicle slots for the followed vehicle and its stages.";
+            _note = UiText.MessageText("text.5b7e279bc238", "Some debris is not recorded, because the recording keeps its vehicle slots for the followed vehicle and its stages.");
             DefaultCategory.Log.Info($"[CineCam] The recording skips {skipped} new vehicles, because it keeps its {ReplaySampling.ActorLimit} vehicle slots for the followed vehicle and its stages. Later skips are not logged.");
         }
         _skipped += skipped;
@@ -536,7 +536,7 @@ internal sealed class FlightRecorder
             {
                 if (!_kittenLimitLogged)
                 {
-                    _note ??= "A kitten on EVA is not recorded, because the recording has no free vehicle slot for it.";
+                    _note ??= UiText.MessageText("text.c083a45dec91", "A kitten on EVA is not recorded, because the recording has no free vehicle slot for it.");
                     DefaultCategory.Log.Info($"[CineCam] The recording skips the kitten {kitten.Id} on EVA, because it keeps its vehicle slots for the followed vehicle and its stages, or it has {ReplaySampling.KittenLimit} kittens. Later skips are not logged.");
                 }
                 _kittenLimitLogged = true;
@@ -689,10 +689,10 @@ internal static class ReplayParts
         using var text = new StringReader(definition);
         using var xml = XmlReader.Create(text, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
         if (Serializer.Value.Deserialize(xml) is not PartTreeData data || data.Root == null)
-            throw new InvalidDataException("The recorded vehicle has no part tree.");
+            throw new InvalidDataException(UiText.MessageText("text.f4e02a772c56", "The recorded vehicle has no part tree."));
         data.Root.OnDataLoad(KSA.Mod.Empty);
         if (data.Root.FindMissingParts() is { } missing)
-            throw new InvalidDataException($"Install the recorded vehicle parts: {missing}");
+            throw new InvalidDataException(UiText.Format("text.f3f8352f326c", $"Install the recorded vehicle parts: {missing}"));
         droppedConnectors = data.Root.DropStaleConnectors();
         return PartTree.Deserialize(data);
     }

@@ -84,7 +84,7 @@ public sealed class ResetFlow
         _readyCount = 0;
         Phase = ResetPhase.Requested;
         Outcome = "";
-        return $"Reset of take \"{takeName}\" to the checkpoint \"{saveName}\" requested.";
+        return UiText.Format("text.a8506a046f62", $"Reset of take \"{takeName}\" to the checkpoint \"{saveName}\" requested.");
     }
 
     public ResetStep Step(ResetInput input)
@@ -95,21 +95,21 @@ public sealed class ResetFlow
                 if (input.TakeRunning)
                 {
                     Enter(ResetPhase.EndingTake, input.Now);
-                    return new ResetStep(ResetAction.EndTake, "Reset: the running take ends first.");
+                    return new ResetStep(ResetAction.EndTake, UiText.MessageText("text.03205a6b2683", "Reset: the running take ends first."));
                 }
 
                 Enter(ResetPhase.Loading, input.Now);
-                return new ResetStep(ResetAction.LoadSave, $"Reset: loading the save \"{SaveName}\".");
+                return new ResetStep(ResetAction.LoadSave, UiText.Format("text.87a03f8ae71c", $"Reset: loading the save \"{SaveName}\"."));
 
             case ResetPhase.EndingTake:
                 if (!input.TakeRunning)
                 {
                     Enter(ResetPhase.Loading, input.Now);
-                    return new ResetStep(ResetAction.LoadSave, $"Reset: the take ended, loading the save \"{SaveName}\".");
+                    return new ResetStep(ResetAction.LoadSave, UiText.Format("text.c2e2ca283c9b", $"Reset: the take ended, loading the save \"{SaveName}\"."));
                 }
 
                 if (input.Now - _phaseStart > EndTimeoutSeconds)
-                    return Fail("the running take did not end");
+                    return Fail(UiText.MessageText("text.1df402967a54", "the running take did not end"));
                 return ResetStep.Nothing;
 
             case ResetPhase.WaitingVehicle:
@@ -117,17 +117,17 @@ public sealed class ResetFlow
                 if (_readyCount >= ReadyFrames)
                     return VehicleIsReady(input.Now);
                 if (input.Now - _phaseStart > VehicleTimeoutSeconds)
-                    return Fail($"the vehicle was not ready {VehicleTimeoutSeconds:0} s after the load");
+                    return Fail(UiText.Format("text.eae913eee564", $"the vehicle was not ready {VehicleTimeoutSeconds:0} s after the load"));
                 return ResetStep.Nothing;
 
             case ResetPhase.Countdown:
                 if (!input.VehicleReady)
-                    return Fail("the controlled vehicle changed before the take started");
+                    return Fail(UiText.MessageText("text.da3da91a788b", "the controlled vehicle changed before the take started"));
                 if (input.Now - _phaseStart >= Delay)
                 {
                     Phase = ResetPhase.Done;
-                    Outcome = $"Take \"{TakeName}\" started after the reset.";
-                    return new ResetStep(ResetAction.StartTake, "Reset: the delay is over, the take starts.");
+                    Outcome = UiText.Format("text.9410a77812ef", $"Take \"{TakeName}\" started after the reset.");
+                    return new ResetStep(ResetAction.StartTake, UiText.MessageText("text.07e542282f01", "Reset: the delay is over, the take starts."));
                 }
 
                 return ResetStep.Nothing;
@@ -143,16 +143,16 @@ public sealed class ResetFlow
         if (Phase != ResetPhase.Loading)
             return "";
         if (!completed)
-            return Fail("the game did not load the save (see the lines above in the log)").Message;
+            return Fail(UiText.MessageText("text.84e195da7aca", "the game did not load the save (see the lines above in the log)")).Message;
         Enter(ResetPhase.WaitingVehicle, now);
-        return $"Reset: the save \"{SaveName}\" is loaded, waiting for the vehicle.";
+        return UiText.Format("text.63cc34029942", $"Reset: the save \"{SaveName}\" is loaded, waiting for the vehicle.");
     }
 
     public string StartFailed(string reason)
     {
         if (Phase != ResetPhase.Done)
             return "";
-        return Fail("the take did not start after the reset (" + reason + ")").Message;
+        return Fail(UiText.Concat(UiText.Concat(UiText.MessageText("text.0eb72c023980", "the take did not start after the reset ("), reason), ")")).Message;
     }
 
     public string Cancel(string reason)
@@ -160,7 +160,7 @@ public sealed class ResetFlow
         if (!IsActive)
             return "";
         Phase = ResetPhase.Cancelled;
-        Outcome = "Reset cancelled: " + reason + ".";
+        Outcome = UiText.Concat(UiText.Concat(UiText.MessageText("text.d8a00cbfbd80", "Reset cancelled: "), reason), ".");
         return Outcome;
     }
 
@@ -169,19 +169,19 @@ public sealed class ResetFlow
         if (!AutoStart)
         {
             Phase = ResetPhase.Done;
-            Outcome = "Ready. Start the take when you want.";
-            return new ResetStep(ResetAction.None, $"Reset: the vehicle is ready. The take \"{TakeName}\" waits for the player.");
+            Outcome = UiText.MessageText("text.1847b172683a", "Ready. Start the take when you want.");
+            return new ResetStep(ResetAction.None, UiText.Format("text.bfbf05839f8c", $"Reset: the vehicle is ready. The take \"{TakeName}\" waits for the player."));
         }
 
         Enter(ResetPhase.Countdown, now);
         return new ResetStep(ResetAction.None,
-            string.Create(CultureInfo.InvariantCulture, $"Reset: the vehicle is ready. The take \"{TakeName}\" starts in {Delay:0.##} s."));
+            UiText.Format("text.19fdd6a59f7b", $"Reset: the vehicle is ready. The take \"{TakeName}\" starts in {Delay:0.##} s."));
     }
 
     private ResetStep Fail(string reason)
     {
         Phase = ResetPhase.Failed;
-        Outcome = "Reset failed: " + reason + ".";
+        Outcome = UiText.Concat(UiText.Concat(UiText.MessageText("text.c9346576c9ad", "Reset failed: "), reason), ".");
         return new ResetStep(ResetAction.None, Outcome);
     }
 

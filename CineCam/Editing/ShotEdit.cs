@@ -123,7 +123,7 @@ public static class ShotEdit
         if (kind == ActionKind.Cue)
         {
             action.Sequence = null;
-            action.Extras.Remove("name");
+            action.Extras.Remove(UiText.MessageText("text.82a3537ff0db", "name"));
             if (action.Name.Length == 0)
                 action.Name = "cue";
         }
@@ -137,7 +137,7 @@ public static class ShotEdit
     public static void SetName(Shot shot, string name)
     {
         shot.Name = name.Trim();
-        shot.Extras.Remove("name");
+        shot.Extras.Remove(UiText.MessageText("text.82a3537ff0db", "name"));
     }
 
     public static SpeedKey NewSpeedKey() => new() { To = 1.0, Ramp = 1.0, Ease = Ease.InOut };
@@ -354,7 +354,7 @@ public static class ShotEdit
             return wanted;
         for (int n = 2; ; n++)
         {
-            string candidate = wanted + "-" + n.ToString(CultureInfo.InvariantCulture);
+            string candidate = UiText.Concat(UiText.Concat(wanted, "-"), n.ToString(CultureInfo.InvariantCulture));
             if (!used.Contains(candidate))
                 return candidate;
         }
@@ -365,26 +365,26 @@ public static class ShotEdit
         switch (trigger.Kind)
         {
             case TriggerKind.Time:
-                return "at " + Num(trigger.Time) + " s";
+                return UiText.Concat(UiText.Concat(UiText.MessageText("text.c6841a08f37d", "at "), Num(trigger.Time)), " s");
             case TriggerKind.Event:
-                string delay = trigger.Delay == 0.0 ? "" : (trigger.Delay > 0.0 ? " +" : " ") + Num(trigger.Delay) + " s";
-                return "on " + trigger.Event + delay;
+                string delay = trigger.Delay == 0.0 ? "" : UiText.Concat(UiText.Concat((trigger.Delay > 0.0 ? " +" : " "), Num(trigger.Delay)), " s");
+                return UiText.Concat(UiText.Concat(UiText.MessageText("text.0816446dcc92", "on "), trigger.Event), delay);
             default:
-                return "after the one before";
+                return UiText.MessageText("text.1d5e86a12889", "after the one before");
         }
     }
 
     public static string Describe(int index, Shot shot) =>
-        $"{index + 1}  {shot.Type.ToString().ToLowerInvariant()}  {Num(shot.Duration)} s  {Describe(shot.At)}";
+        UiText.Format("text.09cf129c3a09", $"{index + 1}  {shot.Type.ToString().ToLowerInvariant()}  {Num(shot.Duration)} s  {Describe(shot.At)}");
 
     public static string Describe(int index, SpeedKey key) =>
-        $"{index + 1}  to {Num(key.To)}x  ramp {Num(key.Ramp)} s  {Describe(key.At)}";
+        UiText.Format("text.7c706ab9c09c", $"{index + 1}  to {Num(key.To)}x  ramp {Num(key.Ramp)} s  {Describe(key.At)}");
 
     public static string Describe(int index, TakeAction action)
     {
-        string number = action.Kind == ActionKind.Cue ? $" {action.Name}"
-            : action.Sequence.HasValue ? $" sequence {action.Sequence.Value}" : "";
-        return $"{index + 1}  {action.Kind.ToString().ToLowerInvariant()}{number}  {Describe(action.At)}";
+        string number = action.Kind == ActionKind.Cue ? UiText.Format("", $" {action.Name}")
+            : action.Sequence.HasValue ? UiText.Format("text.e72637ea182f", $" sequence {action.Sequence.Value}") : "";
+        return UiText.Format("", $"{index + 1}  {action.Kind.ToString().ToLowerInvariant()}{number}  {Describe(action.At)}");
     }
 
     private static string Num(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);

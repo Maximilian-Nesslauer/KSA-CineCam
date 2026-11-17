@@ -42,13 +42,13 @@ internal static unsafe class GameSoundRecorder
         Stop();
         FmodSystem system = GameAudio.System;
         if (system.IsNull())
-            return "the game sound system is not ready";
+            return UiText.MessageText("text.dfd1722783d3", "the game sound system is not ready");
         Result result = system.TryGetSoftwareFormat(out sampleRate, out _, out _);
         if (result != Result.Ok)
-            return $"the sound format could not be read ({result})";
+            return UiText.Format("text.aecfd2e2a832", $"the sound format could not be read ({result})");
         result = system.TryGetMasterChannelGroup(out ChannelGroup master);
         if (result != Result.Ok)
-            return $"the master channel group could not be read ({result})";
+            return UiText.Format("text.aa9f41ae0d64", $"the master channel group could not be read ({result})");
 
         SoundCapture capture;
         try
@@ -57,7 +57,7 @@ internal static unsafe class GameSoundRecorder
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            return $"the file could not be made: {ex.Message}";
+            return UiText.Format("text.166ff01d50e2", $"the file could not be made: {ex.Message}");
         }
 
         DspDescription description = default;
@@ -77,7 +77,7 @@ internal static unsafe class GameSoundRecorder
         {
             capture.Stop();
             TryDelete(path);
-            return $"the sound capture could not be made ({result})";
+            return UiText.Format("text.90ecd68036f5", $"the sound capture could not be made ({result})");
         }
 
         Volatile.Write(ref _capture, capture);
@@ -88,7 +88,7 @@ internal static unsafe class GameSoundRecorder
             dsp.TryRelease();
             capture.Stop();
             TryDelete(path);
-            return $"the sound capture could not be added to the mix ({result})";
+            return UiText.Format("text.8a6a586ee171", $"the sound capture could not be added to the mix ({result})");
         }
 
         dsp.TrySetActive(true);

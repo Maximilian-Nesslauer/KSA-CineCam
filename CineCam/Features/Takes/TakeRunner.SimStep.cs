@@ -175,8 +175,7 @@ internal static partial class TakeRunner
             if (!(expected > 0.0) || stepSeconds >= expected * 0.999)
                 return;
             offline.WarnedStepLimit = true;
-            string text = string.Create(CultureInfo.InvariantCulture,
-                $"The game made a sim step of {stepSeconds:G4} s instead of {expected:G4} s, because a forecast of the game (life support, radiation dose or probe power) ends there. The video has a short step at this picture.");
+            string text = UiText.Format("text.262c56e9fe4c", $"The game made a sim step of {stepSeconds:G4} s instead of {expected:G4} s, because a forecast of the game (life support, radiation dose or probe power) ends there. The video has a short step at this picture.");
             DefaultCategory.Log.Warning($"[CineCam] {text}");
             WriteRow(take, "warning", "simStepLimit", text);
         }

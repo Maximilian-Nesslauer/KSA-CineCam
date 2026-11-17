@@ -93,23 +93,23 @@ internal static partial class ReplaySession
 
     /// <summary>One line about the render for the window, or an empty text.</summary>
     public static string RenderStatusText => _render is { } run
-        ? $"Rendering {run.Progress.Text()}."
+        ? UiText.Format("status.rendering", $"Rendering {run.Progress.Text()}.")
         : _lastRender?.Result ?? "";
 
-    private const string TakeInvalidText = "Fix the problems of the take to render it.";
+    private static readonly string TakeInvalidText = UiText.MessageText("text.ce687ea30dd3", "Fix the problems of the take to render it.");
 
     // The replay can still play the last good plan of a take with errors, and the plan can lag one
     // resolve behind an edit, so the errors of the editor block the render on their own. The window
     // and the control bridge both use this rule.
     /// <summary>Why a render cannot start now, or null. The start checks more, such as the disk space and the output folder.</summary>
     public static string? RenderBlockReason =>
-        Scene == null ? "Open a replay first."
-        : IsRendering ? "A render runs."
-        : _strayCapture != null ? "Wait for the last render to end."
-        : !OfflineHooks.Available ? "This game build does not support the capture of pictures."
-        : CineCamWindow.EditorSession is not { Document: not null, Take: not null } ? "The editor has no take. Make one on the Editor page."
+        Scene == null ? UiText.MessageText("text.8f3cd85721ea", "Open a replay first.")
+        : IsRendering ? UiText.MessageText("text.c07fcb0ae3ea", "A render runs.")
+        : _strayCapture != null ? UiText.MessageText("text.fe6b8c257796", "Wait for the last render to end.")
+        : !OfflineHooks.Available ? UiText.MessageText("text.8ccd246616d6", "This game build does not support the capture of pictures.")
+        : CineCamWindow.EditorSession is not { Document: not null, Take: not null } ? UiText.MessageText("text.70ee0b527edc", "The editor has no take. Make one on the Editor page.")
         : Plan?.Take == null || _takeName == null || Scene.Player.Problem.Length > 0
-            ? (_takeProblem.Length > 0 ? $"{_takeProblem} Fix the take to render it." : "The replay plays no take.")
+            ? (_takeProblem.Length > 0 ? UiText.Format("text.77947cd5eb5a", $"{_takeProblem} Fix the take to render it.") : UiText.MessageText("text.124ffea30baa", "The replay plays no take."))
         : !CineCamWindow.EditorSession.Validation.IsValid ? TakeInvalidText
         : null;
 
@@ -120,51 +120,51 @@ internal static partial class ReplaySession
     public static void StopRender()
     {
         if (_render is { } run)
-            run.StopReason ??= "stopped by the player";
+            run.StopReason ??= UiText.MessageText("text.09d5f0796eec", "stopped by the player");
     }
 
     private static ReplayRenderRange RenderRange(string? name) => name?.Trim().ToLowerInvariant() switch
     {
         null or "" or "whole" => ReplayRenderRange.Whole,
         "current" => ReplayRenderRange.FromCurrent,
-        _ => throw new Refusal("invalid_argument", "Choose the range \"whole\" or \"current\"."),
+        _ => throw new Refusal("invalid_argument", UiText.MessageText("text.bdff13f04be5", "Choose the range \"whole\" or \"current\".")),
     };
 
     private static string RequestRenderStop()
     {
         if (_render is not { } run)
-            throw new Refusal("not_rendering", "No render runs.");
-        run.StopReason ??= "stopped by the player";
-        return "The render stops after the current picture.";
+            throw new Refusal("not_rendering", UiText.MessageText("text.f7dce19b3c62", "No render runs."));
+        run.StopReason ??= UiText.MessageText("text.09d5f0796eec", "stopped by the player");
+        return UiText.MessageText("text.8640bbb95cda", "The render stops after the current picture.");
     }
 
     private static string BeginRender(ReplayScene scene, ReplayRenderRange range)
     {
         if (!OfflineHooks.Available)
-            throw new Refusal("render_unavailable", "This game build does not support the capture of pictures, see the log at the start of the game.");
+            throw new Refusal("render_unavailable", UiText.MessageText("text.becfff7f1cea", "This game build does not support the capture of pictures, see the log at the start of the game."));
         if (Program.Instance?.IsScreenshotCaptureActive != false)
-            throw new Refusal("capture_busy", "Wait for the current game screenshot to finish.");
+            throw new Refusal("capture_busy", UiText.MessageText("text.bffd32c59546", "Wait for the current game screenshot to finish."));
         if (GameMenuOpen)
-            throw new Refusal("menu_open", "Close the game menu before the render.");
+            throw new Refusal("menu_open", UiText.MessageText("text.d2ba51704812", "Close the game menu before the render."));
         if (_strayCapture != null)
-            throw new Refusal("capture_busy", "Wait for the last render to end.");
+            throw new Refusal("capture_busy", UiText.MessageText("text.fe6b8c257796", "Wait for the last render to end."));
 
         EditSession session = CineCamWindow.EditorSession;
         if (session.Document == null || session.Take == null)
-            throw new Refusal("no_take", "The editor has no take. Make one on the Editor page.");
+            throw new Refusal("no_take", UiText.MessageText("text.70ee0b527edc", "The editor has no take. Make one on the Editor page."));
         try
         {
             session.CopyForRun();
         }
         catch (ShotFileException ex)
         {
-            throw new Refusal("take_errors", $"The take has errors, so it does not render: {ex.Message}");
+            throw new Refusal("take_errors", UiText.Format("text.7d34c8c5c0e7", $"The take has errors, so it does not render: {ex.Message}"));
         }
 
         SyncTake(scene, true);
         ReplayTakePlan plan = scene.Player.Plan;
         if (plan.Take is not { } take || plan.File is not { } file || scene.Player.Problem.Length > 0 || _takeName == null)
-            throw new Refusal("take_errors", _takeProblem.Length > 0 ? _takeProblem : "The replay plays no take.");
+            throw new Refusal("take_errors", _takeProblem.Length > 0 ? _takeProblem : UiText.MessageText("text.124ffea30baa", "The replay plays no take."));
         if (RenderBlockReason is { } block)
             throw new Refusal(block == TakeInvalidText ? "take_errors" : "render_blocked", block);
 
@@ -179,7 +179,7 @@ internal static partial class ReplaySession
         string frames = Path.Combine(output, OfflineOutput.FramesFolderName);
         string diskNote = CheckRenderDisk(output, job.Total);
         if (Directory.Exists(frames) && Directory.EnumerateFiles(frames, "*.png").Any())
-            throw new Refusal("output_not_empty", $"The folder {frames} has pictures already. Choose another output folder.");
+            throw new Refusal("output_not_empty", UiText.Format("text.2a74ec768729", $"The folder {frames} has pictures already. Choose another output folder."));
 
         EventLogCsv? log = null;
         RenderRun run;
@@ -206,7 +206,7 @@ internal static partial class ReplaySession
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             log?.Dispose();
-            throw new Refusal("file_error", $"The render folder {folder} could not be prepared: {ex.Message}");
+            throw new Refusal("file_error", UiText.Format("text.6cf8a511c401", $"The render folder {folder} could not be prepared: {ex.Message}"));
         }
         catch
         {
@@ -221,8 +221,7 @@ internal static partial class ReplaySession
         {
             if (file.Capture.Scale != 1)
                 DefaultCategory.Log.Warning("[CineCam] The capture scale is ignored. The pictures have the size of the game window.");
-            ReplayRenderRow start = new(0.0, job.Start, 1, "take", "start", string.Create(CultureInfo.InvariantCulture,
-                $"take={take.Name}; source=replay; recording={_replayId}; range={(range == ReplayRenderRange.FromCurrent ? "current" : "whole")}; takeStart={job.Start:F3}; takeEnd={job.End:F3}; fps={job.Fps}; pictures={job.Total}; grab={OfflineHooks.GrabName(file.Capture.Grab)}"));
+            ReplayRenderRow start = new(0.0, job.Start, 1, "take", UiText.MessageText("text.cced28c6dc3f", "start"), UiText.Format("", $"take={take.Name}; source=replay; recording={_replayId}; range={(range == ReplayRenderRange.FromCurrent ? "current" : "whole")}; takeStart={job.Start:F3}; takeEnd={job.End:F3}; fps={job.Fps}; pictures={job.Total}; grab={OfflineHooks.GrabName(file.Capture.Grab)}"));
             ReplayRenderLog.Write(log, start, plan, run.FlightStart);
             ReplayRenderLog.Write(log, start with { Kind = "take", Name = "offline", Detail = $"fps={OfflineOutput.FormatFps(job.Fps)}; frames={frames}" },
                 plan, run.FlightStart);
@@ -239,14 +238,13 @@ internal static partial class ReplaySession
         }
         catch (Exception ex)
         {
-            FinishRender($"error: {ex.GetBaseException().Message}", true);
+            FinishRender(UiText.Format("status.error", $"error: {ex.GetBaseException().Message}"), true);
             if (ex is IOException or UnauthorizedAccessException)
-                throw new Refusal("file_error", $"The event log of the render could not be written: {ex.Message}");
+                throw new Refusal("file_error", UiText.Format("text.be4844769a86", $"The event log of the render could not be written: {ex.Message}"));
             throw;
         }
 
-        string text = string.Create(CultureInfo.InvariantCulture,
-            $"Rendering \"{take.Name}\": {job.Total} pictures at {OfflineOutput.FormatFps(job.Fps)} per second ({job.VideoDuration:F1} s of video) into {output}. Escape or the start and stop key stops the render.{diskNote}");
+        string text = UiText.Format("text.d165b69cf23b", $"Rendering \"{take.Name}\": {job.Total} pictures at {OfflineOutput.FormatFps(job.Fps)} per second ({job.VideoDuration:F1} s of video) into {output}. Escape or the start and stop key stops the render.{diskNote}");
         DefaultCategory.Log.Info($"[CineCam] {text}");
         return text;
     }
@@ -269,12 +267,10 @@ internal static partial class ReplaySession
 
         long gib = 1L << 30;
         if (free < ReplayRenderLog.MinFreeBytes)
-            throw new Refusal("disk_low", string.Create(CultureInfo.InvariantCulture,
-                $"Only {free / (double)gib:F1} GB are free for the pictures. Free some space or choose another output folder."));
+            throw new Refusal("disk_low", UiText.Format("text.9287a0a3dc0e", $"Only {free / (double)gib:F1} GB are free for the pictures. Free some space or choose another output folder."));
         var size = Program.GetWindow()?.FramebufferSize;
         long need = size is { } s ? ReplayRenderLog.EstimateBytes(pictures, s.X, s.Y) : 0;
-        return need > free ? string.Create(CultureInfo.InvariantCulture,
-            $" The pictures can need up to {need / (double)gib:F1} GB, but only {free / (double)gib:F1} GB are free. The render stops when the disk is almost full.") : "";
+        return need > free ? UiText.Format("text.9b1e9fbe4b36", $" The pictures can need up to {need / (double)gib:F1} GB, but only {free / (double)gib:F1} GB are free. The render stops when the disk is almost full.") : "";
     }
 
     // Runs in the prefix of Program.OnFrame, after the offline frame of the takes. It collects the
@@ -356,7 +352,7 @@ internal static partial class ReplaySession
             Report(ex);
             try
             {
-                FinishRender($"error: {ex.GetBaseException().Message}", true);
+                FinishRender(UiText.Format("status.error", $"error: {ex.GetBaseException().Message}"), true);
             }
             catch (Exception cleanup)
             {
@@ -414,13 +410,13 @@ internal static partial class ReplaySession
         }
 
         bool giveUp = capture.RecordLost(RenderMaxFailuresInRow);
-        string reason = OfflineHooks.Result == PostRenderResult.NoPicture ? "the game made no picture of the frame" : "no finished file came in time";
-        string text = $"Picture {number} was not saved ({reason}). The next frame makes it again.";
+        string reason = OfflineHooks.Result == PostRenderResult.NoPicture ? UiText.MessageText("text.3f9b6f71990b", "the game made no picture of the frame") : UiText.MessageText("text.7e42b227c7d2", "no finished file came in time");
+        string text = UiText.Format("text.1ad47675704f", $"Picture {number} was not saved ({reason}). The next frame makes it again.");
         DefaultCategory.Log.Warning($"[CineCam] {text}");
         ReplayRenderLog.Write(run.Log, RenderRow(run, number, "warning", "frameGrab", text), run.Plan, run.FlightStart);
         if (giveUp)
         {
-            FinishRender($"the picture grab failed {capture.FailuresInRow} times in a row, see the log", true);
+            FinishRender(UiText.Format("text.b17731701094", $"the picture grab failed {capture.FailuresInRow} times in a row, see the log"), true);
             return false;
         }
 
@@ -470,7 +466,7 @@ internal static partial class ReplaySession
             {
                 string? root = Path.GetPathRoot(Path.GetFullPath(capture.FramesFolder));
                 if (root != null && new DriveInfo(root).AvailableFreeSpace < ReplayRenderLog.StopFreeBytes)
-                    run.StopReason ??= "the disk is almost full";
+                    run.StopReason ??= UiText.MessageText("text.92cdc325dd5f", "the disk is almost full");
             }
             catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
             {
@@ -488,7 +484,7 @@ internal static partial class ReplaySession
             return;
         run.LastTitle = now;
         if (Program.GetWindow() is { } window)
-            window.Title = $"CineCam render: {run.Progress.Text()} - {run.SavedTitle}";
+            window.Title = UiText.Render(UiText.Format("text.a7dd0a520e5b", $"CineCam render: {run.Progress.Text()} - {run.SavedTitle}"));
     }
 
     // Ends the render and gives back the interface, the window title and the state of the replay. A
@@ -537,7 +533,7 @@ internal static partial class ReplaySession
             }
         }
 
-        string ending = reason ?? "the take end";
+        string ending = reason ?? UiText.MessageText("text.52055cf056ca", "the take end");
         try
         {
             ReplayRenderLog.Write(run.Log, RenderRow(run, capture.Count, "take", "end", ending), run.Plan, run.FlightStart);
@@ -570,9 +566,8 @@ internal static partial class ReplaySession
         }
 
         ReplayRenderProgress progress = run.Progress;
-        string verb = reason == null ? "Render done" : $"Render ended ({reason})";
-        string result = string.Create(CultureInfo.InvariantCulture,
-            $"{verb}: {capture.Count} of {run.Job.Total} pictures ({capture.Count / capture.Fps:F1} s of video, {capture.BytesWritten / (1024.0 * 1024.0):F0} MB) in {ReplayRenderProgress.Span(progress.ElapsedSeconds)}, {capture.PicturesLost} lost and made again. Folder: {capture.OutputFolder}");
+        string verb = reason == null ? UiText.MessageText("text.91dd41b6882b", "Render done") : UiText.Format("text.8d1affef01e3", $"Render ended ({reason})");
+        string result = UiText.Format("text.988bfbb0ba4a", $"{verb}: {capture.Count} of {run.Job.Total} pictures ({capture.Count / capture.Fps:F1} s of video, {capture.BytesWritten / (1024.0 * 1024.0):F0} MB) in {ReplayRenderProgress.Span(progress.ElapsedSeconds)}, {capture.PicturesLost} lost and made again. Folder: {capture.OutputFolder}");
         _lastRender = run.Status(result);
         Status = result;
         DefaultCategory.Log.Info($"[CineCam] {result}");

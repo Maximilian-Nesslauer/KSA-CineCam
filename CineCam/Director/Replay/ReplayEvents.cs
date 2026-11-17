@@ -17,8 +17,8 @@ public static class ReplayEvents
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (ReplayMarker marker in markers.OrderBy(m => m.Time))
         {
-            string? name = marker.Label == "Lift-off" ? "liftoff"
-                : marker.Label.StartsWith("Ignition", StringComparison.Ordinal) ? "ignition" + marker.Label["Ignition".Length..]
+            string? name = marker.Label == UiText.MessageText("text.cf343cf67ee7", "Lift-off") ? "liftoff"
+                : marker.Label.StartsWith(UiText.MessageText("text.ae1c32802c31", "Ignition"), StringComparison.Ordinal) ? UiText.Concat("ignition", marker.Label[UiText.MessageText("text.ae1c32802c31", "Ignition").Length..])
                 : null;
             if (name != null && EventName.TryParse(name, out EventName parsed, out _) && parsed.Canonical == name && seen.Add(name))
                 events.Add(new ReplayEvent(marker.Time, name));

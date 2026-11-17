@@ -46,23 +46,23 @@ internal static class StillCapture
 
     /// <summary>Why a still cannot be taken now, or null.</summary>
     public static string? BlockReason =>
-        !OfflineHooks.Available ? "This game build does not support the capture of pictures, see the log at the start of the game."
-        : !Program.IsLoaded ? "Load a game first."
-        : Program.Editor != null ? "The game takes no pictures in the vehicle editor."
-        : IsBusy ? "A still is being taken."
-        : TakeRunner.Current is { Offline: not null } ? "An offline capture runs."
-        : ReplaySession.IsRendering ? "A render runs."
+        !OfflineHooks.Available ? UiText.MessageText("text.becfff7f1cea", "This game build does not support the capture of pictures, see the log at the start of the game.")
+        : !Program.IsLoaded ? UiText.MessageText("text.07c6c7d4f9c8", "Load a game first.")
+        : Program.Editor != null ? UiText.MessageText("text.ac074ef53330", "The game takes no pictures in the vehicle editor.")
+        : IsBusy ? UiText.MessageText("text.fa0012315d0f", "A still is being taken.")
+        : TakeRunner.Current is { Offline: not null } ? UiText.MessageText("text.b0541343ea75", "An offline capture runs.")
+        : ReplaySession.IsRendering ? UiText.MessageText("text.c07fcb0ae3ea", "A render runs.")
         : null;
 
     /// <summary>Queues a still at the given scale, or at the scale of the settings. Returns the message for the player.</summary>
     public static string Request(int? scale)
     {
         if (BlockReason is { } block)
-            return "No still: " + block;
+            return UiText.Concat(UiText.MessageText("text.6ac65cf3265a", "No still: "), block);
         int wanted = Math.Clamp(scale ?? CineCamSettings.StillScale, CineCamSettings.MinStillScale, CineCamSettings.MaxStillScale);
         _requested = wanted;
         _waitFrames = 0;
-        Status = string.Create(CultureInfo.InvariantCulture, $"Taking a still at {wanted} times the window size.");
+        Status = UiText.Format("text.58827d7491ef", $"Taking a still at {wanted} times the window size.");
         return Status;
     }
 
@@ -80,7 +80,7 @@ internal static class StillCapture
         {
             _requested = null;
             _pending = null;
-            Status = $"The still failed: {ex.Message}";
+            Status = UiText.Format("text.2f0e19275cca", $"The still failed: {ex.Message}");
             LogHelper.ErrorOnce("still", $"[CineCam] Error in the still capture: {ex}");
         }
     }
@@ -92,7 +92,7 @@ internal static class StillCapture
             if (++_waitFrames > MaxWaitFrames)
             {
                 _requested = null;
-                Finish("No still: the game is busy with another picture.");
+                Finish(UiText.MessageText("text.1cccedf493a5", "No still: the game is busy with another picture."));
             }
 
             return;
@@ -107,7 +107,7 @@ internal static class StillCapture
         var collector = new ScreenshotCollector(CineCamPaths.ScreenshotsFolder, folder);
         string name = TakeFolders.Unique(OfflineOutput.StillName(DateTime.Now, scale), n => File.Exists(Path.Combine(folder, n)));
         _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
-        _screenshot(scale, string.Create(CultureInfo.InvariantCulture, $"warm={WarmFrames}"));
+        _screenshot(scale, UiText.Format("", $"warm={WarmFrames}"));
         _pending = new Pending(collector, Path.Combine(folder, name), scale);
         DefaultCategory.Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"[CineCam] Still at {scale} times the window size requested, with {WarmFrames} warm-up frames."));
@@ -118,7 +118,7 @@ internal static class StillCapture
         if (pending.Collector.TryCollectAs(pending.Target) == CollectResult.Done)
         {
             _pending = null;
-            Finish($"Still saved: {pending.Target}");
+            Finish(UiText.Format("text.2e6b5489ed96", $"Still saved: {pending.Target}"));
             return;
         }
 
@@ -129,7 +129,7 @@ internal static class StillCapture
         if (pending.SinceCaptureEnd.Elapsed > SaveTimeout)
         {
             _pending = null;
-            Finish("No still: the game saved no picture, see the log of the game (a scale that does not fit into the video memory is lowered or refused).");
+            Finish(UiText.MessageText("text.9f37368a05af", "No still: the game saved no picture, see the log of the game (a scale that does not fit into the video memory is lowered or refused)."));
         }
     }
 

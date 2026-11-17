@@ -193,7 +193,7 @@ internal sealed class ReplayCrew : IDisposable
             return (null, null);
         }
 
-        LogAnimation("a field of the kitten model was not found");
+        LogAnimation(UiText.MessageText("text.0d5212e25cf8", "a field of the kitten model was not found"));
         return (null, null);
     }
 

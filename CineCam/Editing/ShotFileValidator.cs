@@ -40,12 +40,12 @@ public static class ShotFileValidator
             }
             catch (ArgumentException ex)
             {
-                errors.Add($"Take \"{take.Name}\": {ex.Message}");
+                errors.Add(UiText.Format("", $"Take \"{take.Name}\": {ex.Message}"));
             }
 
             string? site = take.Site ?? reread.Site;
             if (take.Anchor != null && !string.IsNullOrWhiteSpace(site))
-                warnings.Add($"Take \"{take.Name}\": the anchor has no effect, because the take uses the Landmark \"{site}\"");
+                warnings.Add(UiText.Format("problem.anchor", $"Take \"{take.Name}\": the anchor has no effect, because the take uses the Landmark \"{site}\""));
         }
 
         return new ValidationResult(errors, warnings);

@@ -237,7 +237,7 @@ public sealed class ReplayWorld
             }
         }
 
-        throw new InvalidDataException($"The recording has no followed vehicle at {time:0.###} s.");
+        throw new InvalidDataException(UiText.Format("text.65d9553dda6d", $"The recording has no followed vehicle at {time:0.###} s."));
     }
 
     // In the body-fixed frame, and the model origin in a file without the center of mass.

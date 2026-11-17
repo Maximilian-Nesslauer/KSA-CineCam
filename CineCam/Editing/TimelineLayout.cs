@@ -274,7 +274,7 @@ public sealed class TimelineLayout
     /// <summary>Matches the names that <see cref="TakeFolders.FolderName"/> and <see cref="TakeFolders.Unique"/> make.</summary>
     public static IReadOnlyList<string> RunFoldersNewestFirst(IEnumerable<string> folderNames, string takeName)
     {
-        var pattern = new Regex(@"^(\d{8}-\d{6})-" + Regex.Escape(TakeFolders.SafeName(takeName)) + @"(?:~(\d+))?$",
+        var pattern = new Regex(UiText.Concat(UiText.Concat(@"^(\d{8}-\d{6})-", Regex.Escape(TakeFolders.SafeName(takeName))), @"(?:~(\d+))?$"),
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         var runs = new List<(string Name, string Stamp, int Number)>();
         foreach (string name in folderNames)
