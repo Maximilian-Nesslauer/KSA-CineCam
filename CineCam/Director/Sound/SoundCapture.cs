@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace CineCam.Director.Sound;
 
-/// <summary>The result of a sound capture when it stopped.</summary>
+/// <summary>The published progress or final result of a sound capture.</summary>
 public sealed record SoundCaptureResult(string Path, int SampleRate, long Frames, long DroppedFrames, bool Full, string? Error)
 {
     public double Seconds => SampleRate > 0 ? Frames / (double)SampleRate : 0.0;
@@ -16,7 +16,7 @@ public sealed record SoundCaptureResult(string Path, int SampleRate, long Frames
 /// writer thread empties to the disk. A block that does not fit into the ring is lost, and the writer
 /// puts silence of the same length in its place, so the file keeps the timing of the mix.
 /// </summary>
-public sealed class SoundCapture
+public sealed partial class SoundCapture
 {
     /// <summary>The frames of one push that are mixed at a time, which bounds the scratch buffer.</summary>
     public const int ChunkFrames = 4096;
@@ -44,9 +44,10 @@ public sealed class SoundCapture
     // Written only by the writer thread.
     private long _gapRead;
     private string? _error;
+    private long _frames;
+    private bool _full;
 
     private volatile bool _accepting = true;
-    private bool _stopped;
 
     /// <param name="ringSeconds">How long the writer thread may stall before blocks are lost.</param>
     public SoundCapture(string path, int sampleRate, double ringSeconds = 8.0, int flushMilliseconds = 1000)
@@ -131,6 +132,7 @@ public sealed class SoundCapture
             {
                 bool stopping = _stop.Wait(20);
                 Drain(buffer);
+                PublishProgress();
                 long now = Stopwatch.GetTimestamp();
                 if ((now - lastFlush) * 1000 >= _flushMilliseconds * Stopwatch.Frequency)
                 {
@@ -143,19 +145,42 @@ public sealed class SoundCapture
             }
 
             Drain(buffer);
+            long tail = _pendingGapAt >= 0 ? _pendingGapFrames : 0;
+            _writer.WriteSilence(tail + Volatile.Read(ref _unplacedFrames));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
         {
-            _error = ex.Message;
+            Volatile.Write(ref _error, ex.Message);
             _accepting = false;
         }
+        finally
+        {
+            try
+            {
+                _writer.Dispose();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
+            {
+                Volatile.Write(ref _error, _error ?? ex.Message);
+            }
+
+            PublishProgress();
+        }
+    }
+
+    private void PublishProgress()
+    {
+        Volatile.Write(ref _frames, _writer.Frames);
+        Volatile.Write(ref _full, _writer.Full);
     }
 
     private void Drain(float[] buffer)
     {
         while (true)
         {
-            long limit = long.MaxValue;
+            // The producer publishes a gap before any later audio. Read the audio cursor first,
+            // so a gap published after the check cannot be crossed by this read.
+            long limit = _ring.Written - _ring.Read;
             if (_gapRead < Volatile.Read(ref _gapWritten))
             {
                 int slot = (int)(_gapRead % GapSlots);
@@ -166,9 +191,10 @@ public sealed class SoundCapture
                     continue;
                 }
 
-                limit = _gapAt[slot] - _ring.Read;
+                limit = Math.Min(limit, _gapAt[slot] - _ring.Read);
             }
 
+            BeforeRead();
             int count = _ring.ReadInto(buffer.AsSpan(0, (int)Math.Min(buffer.Length, limit)));
             if (count == 0)
                 return;
@@ -176,33 +202,22 @@ public sealed class SoundCapture
         }
     }
 
+    partial void BeforeRead();
+
     /// <summary>
-    /// Main thread, after the producer stopped calling <see cref="Push"/>. Ends the writer thread,
-    /// writes the lost blocks that have no place yet at the end, and closes the file.
+    /// Main thread, after the producer stopped calling <see cref="Push"/>. Requests that the writer
+    /// drain the sound and close the file. A timeout returns the last published progress with an
+    /// error while the writer keeps ownership of the file. Call again to wait for its final result.
     /// </summary>
     public SoundCaptureResult Stop(int timeoutMilliseconds = 5000)
     {
         _accepting = false;
-        if (!_stopped)
-        {
-            _stopped = true;
-            _stop.Set();
-            if (!_thread.Join(timeoutMilliseconds))
-                _error ??= "the sound writer did not end in time";
-        }
-
-        long tail = _pendingGapAt >= 0 ? _pendingGapFrames : 0;
-        try
-        {
-            if (!_thread.IsAlive)
-                _writer.WriteSilence(tail + Volatile.Read(ref _unplacedFrames));
-            _writer.Dispose();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
-        {
-            _error ??= ex.Message;
-        }
-
-        return new SoundCaptureResult(Path, SampleRate, _writer.Frames, Volatile.Read(ref _droppedFrames), _writer.Full, _error);
+        _stop.Set();
+        bool joined = _thread.Join(timeoutMilliseconds);
+        string? error = Volatile.Read(ref _error);
+        if (!joined)
+            error ??= "the sound writer did not end in time";
+        return new SoundCaptureResult(Path, SampleRate, Volatile.Read(ref _frames), Volatile.Read(ref _droppedFrames),
+            Volatile.Read(ref _full), error);
     }
 }
