@@ -425,10 +425,21 @@ internal static class TrackPanel
                 shot.Fit = fit;
                 changed = true;
             }
+
+            FitMeasure by = shot.FitBy;
+            if (Widgets.Choice("Fit by", ref by, FitMeasures, FitMeasureLabel, null, ViewText.FieldTip(ShotField.FitBy)))
+            {
+                shot.FitBy = by;
+                changed = true;
+            }
         }
 
         return changed;
     }
+
+    private static readonly FitMeasure[] FitMeasures = [FitMeasure.Size, FitMeasure.Height];
+
+    private static string FitMeasureLabel(FitMeasure by) => by == FitMeasure.Height ? "Height" : "Largest size";
 
     private static string _pointOwner = "";
     private static int _pointIndex;

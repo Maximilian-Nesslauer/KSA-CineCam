@@ -62,10 +62,10 @@ Fields of one shot type:
 | `orbit` | `center` (default `[0,0,0]`), `radius`, `height`, `startDeg`, `degPerSec`, `lookAt`. The camera circles the +X axis through `center` |
 | `crane` | `from`, `to` (heights along +X), `radius`, `azimuth`. The camera rises and looks at the axis |
 | `tripod` | `position`, `lookAt`. A fixed camera |
-| `track` | `position`, `keepSize`, `fit`. A fixed camera in the site frame that looks at the middle of the vehicle. With `keepSize` the field of view follows the distance, so the vehicle keeps its size on the screen |
-| `chase` | `frame`, `offset`, `lookAt`, `smoothing`, `fit`. Fixed to the vehicle. `frame` is `vehicle` (default), `local` or `flight`. `smoothing` is the turn smoothing in seconds (0 to 60, default 0.5). It smooths the turn of the vehicle frame, so a local shot ignores it |
-| `part` | `part`, `frame`, `offset`, `lookAt`, `smoothing`, `fit`. Like chase, with the origin at a part. `part` is the id or the display name of a part. An empty or unknown part uses the base of the vehicle |
-| `path` | `points`, `fit`, and `frame` for a vehicle-target path. A camera move through keyframes |
+| `track` | `position`, `keepSize`, `fit`, `fitBy`. A fixed camera in the site frame that looks at the middle of the vehicle. With `keepSize` the field of view follows the distance, so the vehicle keeps its size on the screen |
+| `chase` | `frame`, `offset`, `lookAt`, `smoothing`, `fit`, `fitBy`. Fixed to the vehicle. `frame` is `vehicle` (default), `local` or `flight`. `smoothing` is the turn smoothing in seconds (0 to 60, default 0.5). It smooths the turn of the vehicle frame, so a local shot ignores it |
+| `part` | `part`, `frame`, `offset`, `lookAt`, `smoothing`, `fit`, `fitBy`. Like chase, with the origin at a part. `part` is the id or the display name of a part. An empty or unknown part uses the base of the vehicle |
+| `path` | `points`, `fit`, `fitBy`, and `frame` for a vehicle-target path. A camera move through keyframes |
 
 A chase, part, path or track shot can also have `aim`, `aimOffset` and `pick`.
 
@@ -82,7 +82,7 @@ A path shot has a list of `points`. Each point is `{ "t": 0.5, "position": [x, y
 
 In a blend, the weight follows a smootherstep curve, so the camera starts and stops gently. The point that the camera looks at is mixed with the same weight, so a subject that both shots look at stays in the picture. When the two shots are tied to different frames (for example a site tripod and a vehicle chase), the camera position follows a curve that swings around the subject instead of the straight line. A blend between two shots of the same frame stays a straight line. A cut is not changed.
 
-`fit` is a number, the share of the picture height that the whole vehicle should fill, for example `0.7`, or `"off"` (the default). The field of view is set in every frame from the distance to the middle of the vehicle and from the size of the vehicle, so the vehicle keeps its share while it flies away. The field of view stays between 5 and 90 degrees. `fit` replaces the `fov` of the shot and of its path points, and `keepSize`. A part shot frames the whole vehicle, not the part.
+`fit` is a number, the share of the picture height that the whole vehicle should fill, for example `0.7`, or `"off"` (the default). The field of view is set in every frame from the distance to the middle of the vehicle and from the size of the vehicle, so the vehicle keeps its share while it flies away. The field of view stays between 5 and 90 degrees. `fit` replaces the `fov` of the shot and of its path points, and `keepSize`. A part shot frames the whole vehicle, not the part. `"fitBy": "size"` (the default) fits the diagonal of the length and the width of the vehicle, so the field of view does not change when the vehicle turns. `"fitBy": "height"` fits only the length along the nose axis of the vehicle (+X), the height of a rocket on the pad, so a slim rocket fills its share of the picture height and a wide one can stand out at the sides. In the window this is the field **Fit by** below **Share of the picture height**.
 
 ```json
 { "type": "chase", "frame": "flight", "offset": [15, 8, 120], "lookAt": [10, 0, 0], "fit": 0.7, "duration": 12, "transition": 2 }

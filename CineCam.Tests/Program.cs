@@ -6565,6 +6565,7 @@ Check("replay file: the height over the ground is optional and must be finite", 
 
 CineCam.Tests.BacklogTests.Run(Check, Expect);
 CineCam.Tests.BacklogTests.RunProblemText(Check, Expect);
+CineCam.Tests.BacklogTests.RunFitBy(Check, Expect);
 
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;

@@ -54,6 +54,56 @@ internal static class BacklogTests
         });
     }
 
+    public static void RunFitBy(Action<string, Action> check, Action<bool, string> expect)
+    {
+        check("fit by height: the field of view frames the length along the nose axis only", () =>
+        {
+            ShotFile file = ShotFileJson.Parse("""
+            { "camera": [
+                { "type": "chase", "offset": [-100, 0, 0], "lookAt": [20, 0, 0], "duration": 5, "fit": 0.5, "fitBy": "height", "smoothing": 0 },
+                { "type": "chase", "offset": [-100, 0, 0], "lookAt": [20, 0, 0], "duration": 5, "fit": 0.5, "smoothing": 0 } ] }
+            """).File;
+            expect(file.DefaultTake.Shots[0].FitBy == FitMeasure.Height && file.DefaultTake.Shots[1].FitBy == FitMeasure.Size, "fitBy is read");
+            string text = ShotFileJson.Write(file);
+            expect(text.Contains("\"fitBy\": \"height\"", StringComparison.Ordinal) && ShotFileJson.Write(ShotFileJson.Parse(text).File) == text,
+                "fitBy round trips: " + text);
+            expect(text.IndexOf("fitBy", StringComparison.Ordinal) == text.LastIndexOf("fitBy", StringComparison.Ordinal), "the default size is not written");
+
+            var world = new WorldSample
+            {
+                Vehicle = new VehicleSample(false, true, 0, 0, 0),
+                VehicleFrame = new Basis3(V3.Zero, V3.UnitX, V3.UnitY, V3.UnitZ),
+                VehicleHeight = 10.0,
+                VehicleWidth = 30.0,
+            };
+            double distance = (new V3(5, 0, 0) - new V3(-100, 0, 0)).Length;
+            CameraPose height = new TakeDirector(file.DefaultTake, file).Update(0.0, world).Pose!.Value;
+            expect(Math.Abs(height.Fov - PoseMath.FitFov(10.0, 0.0, distance, 0.5)) < 1e-6, "the height alone: " + height.Fov);
+            file.DefaultTake.Shots.RemoveAt(0);
+            CameraPose size = new TakeDirector(file.DefaultTake, file).Update(0.0, world).Pose!.Value;
+            expect(size.Fov > height.Fov + 1.0, $"a wide vehicle gets a wider view by size: {size.Fov} against {height.Fov}");
+        });
+
+        check("fit by height: a bad value is an error and a fit measure without a fit is a warning", () =>
+        {
+            bool rejected = false;
+            try
+            {
+                ShotFileJson.Parse("""{ "camera": [ { "type": "chase", "offset": [1,0,0], "duration": 5, "fit": 0.5, "fitBy": "width" } ] }""");
+            }
+            catch (ShotFileException ex)
+            {
+                rejected = ex.FieldPath == "camera[0].fitBy";
+            }
+
+            expect(rejected, "an unknown measure");
+            ShotFileReadResult result = ShotFileJson.Parse("""{ "camera": [ { "type": "chase", "offset": [1,0,0], "duration": 5, "fitBy": "height" } ] }""");
+            expect(result.Warnings.Any(w => w.Contains("fitBy", StringComparison.Ordinal)), "a warning: " + string.Join("; ", result.Warnings));
+            Shot copy = ShotEdit.Clone(ShotFileJson.Parse("""{ "camera": [ { "type": "track", "position": [1,0,0], "duration": 5, "fit": 0.4, "fitBy": "height" } ] }""").File.DefaultTake.Shots[0]);
+            expect(copy.FitBy == FitMeasure.Height, "a copy of the shot keeps the measure");
+        });
+    }
+
     private static TimelineLayout.RunLog Run(params string[] rows)
     {
         var text = new System.Text.StringBuilder("takeSeconds,gameSeconds,missionSeconds,simSpeed,frame,kind,name,detail\n");

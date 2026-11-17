@@ -35,6 +35,7 @@ public static class ProblemText
         ["to"] = "target",
         ["fov"] = "field of view",
         ["fit"] = "fit",
+        ["fitBy"] = "fit measure",
         ["avoidSun"] = "sun angle",
         ["aimOffset"] = "aim offset",
         ["lookAt"] = "look point",

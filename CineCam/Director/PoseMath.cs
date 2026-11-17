@@ -178,7 +178,8 @@ public static class PoseMath
         if (shot.Fit is double fit && SupportsFit(shot.Type) && inputs.VehicleHeight > 0.0)
         {
             V3 centre = smoothed.Origin + smoothed.X * (inputs.VehicleHeight * 0.5);
-            pose = pose with { Fov = FitFov(inputs.VehicleHeight, inputs.VehicleWidth, (centre - pose.Position).Length, fit) };
+            double width = shot.FitBy == FitMeasure.Height ? 0.0 : inputs.VehicleWidth;
+            pose = pose with { Fov = FitFov(inputs.VehicleHeight, width, (centre - pose.Position).Length, fit) };
         }
 
         if (shot.EffectiveUp == ShotUp.Horizon)
