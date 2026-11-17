@@ -64,7 +64,10 @@ internal static class ReplayPatches
             // patches the replay works and the live objects stay visible.
             PatchOptional(typeof(KittenEva), nameof(KittenEva.UpdateRenderData), nameof(BeforeVehicleDraw), draw);
             PatchOptional(typeof(Vehicle), nameof(Vehicle.UpdateParachuteRenderData), nameof(BeforeVehicleDraw), [typeof(IViewport)]);
-            PatchOptional(typeof(Vehicle), nameof(Vehicle.UpdateSeatedCrewRenderData), nameof(BeforeVehicleDraw), draw);
+            // Program.RenderViewport calls this for the controlled vehicle after it clears the mesh buckets of
+            // the view, so the replay draws its kittens here in place of the live crew. Without this patch the
+            // replay shows no kittens and the live crew stays visible.
+            PatchOptional(typeof(Vehicle), nameof(Vehicle.UpdateSeatedCrewRenderData), nameof(BeforeSeatedCrew), draw);
             PatchOptional(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
                 nameof(BeforeTrails), Shape(typeof(VolumetricTrailRenderer), nameof(VolumetricTrailRenderer.PrepareAndRenderShadowCascades),
                     "CommandBuffer", nameof(IViewport), nameof(Celestial), "Int32"));
@@ -205,6 +208,14 @@ internal static class ReplayPatches
 
     private static bool BeforeVehicleDraw(IViewport __0) =>
         !ReplaySession.IsPlayingBack || !ReferenceEquals(__0, Program.MainViewport);
+
+    private static bool BeforeSeatedCrew(IViewport __0, int __1)
+    {
+        if (ReplaySession.Scene is not { } scene || !ReferenceEquals(__0, Program.MainViewport))
+            return true;
+        scene.DrawCrew(__0, __1);
+        return false;
+    }
 
     private static bool BeforeVehicleLights(IViewport __1) =>
         !ReplaySession.IsPlayingBack || !ReferenceEquals(__1, Program.MainViewport);

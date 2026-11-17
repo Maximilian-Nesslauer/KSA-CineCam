@@ -230,6 +230,7 @@ internal static partial class ReplaySession
             scene.SetPlaying(false);
             scene.SetPreviewSpeed(1.0);
             scene.Seek(job.Start);
+            scene.ResetCrew();
             scene.SetCameraMode(ReplayCameraMode.Take);
             Program.DrawUI = false;
             // The console draws its lines over the picture, so new lines get no display time.

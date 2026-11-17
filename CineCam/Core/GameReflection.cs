@@ -123,6 +123,17 @@ internal static class GameReflection
     // Universe.DestroyVehicleFromEvent). The postfix reads the parameter "context".
     public static readonly MethodInfo? ExplosionSystem_SpawnForDestruction =
         AccessTools.Method(typeof(ExplosionSystem), nameof(ExplosionSystem.SpawnForDestruction), new[] { typeof(ExplosionContext).MakeByRefType() });
+    #endregion
+
+    #region Replay crew
+
+    // The replay advances the animation of a kitten itself, because the game advances it with the
+    // simulation speed, which is 0 in a replay. Without these fields the kittens keep their first pose.
+    public static readonly FieldInfo? KittenRenderable_CharacterAvatar =
+        AccessTools.Field(typeof(KittenRenderable), "_characterAvatar");
+
+    public static readonly FieldInfo? AnimatedRenderable_RuntimeAnim =
+        AccessTools.Field(typeof(AnimatedRenderable), "RuntimeAnim");
 
     #endregion
 

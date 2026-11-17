@@ -25,6 +25,8 @@ internal sealed class FlightRecorder
     private int _skipped;
     private string? _note;
     private readonly List<Vehicle> _neighbors = [];
+    private readonly List<KittenEva> _kittens = [];
+    private bool _kittenLimitLogged;
     private readonly HashSet<Vehicle> _seen = new(ReferenceEqualityComparer.Instance);
     private double _lastTime = -1;
     private int _ticks;
@@ -39,6 +41,11 @@ internal sealed class FlightRecorder
     {
         public RocketNozzle[] Nozzles { get; set; } = [];
         public int PartCount { get; set; }
+
+        // The kittens in the seats at the start of the segment. EVADoor.SpawnEva and
+        // KittenEva.BoardVehicle change the seats without a change of the parts, so a change of the crew
+        // starts a new segment, whose part tree holds the new crew.
+        public KeyHash[] Crew { get; set; } = [];
         public ReplayPartState? PartState { get; set; }
         public ReplayChannelWriter? Channels { get; set; }
     }
@@ -125,11 +132,15 @@ internal sealed class FlightRecorder
 
         // A split or a changed part count starts a new segment at once, so the segment starts
         // where the vehicle changed. Other samples wait for the next step of the sampling grid.
-        bool changed = _splits.Count > 0 || _followChanged || AnyPartCountChanged();
+        bool crewChanged = AnyCrewChanged();
+        bool changed = _splits.Count > 0 || _followChanged || crewChanged || AnyPartCountChanged();
         if (!changed && !ReplaySampling.IsDue(time, _lastTime))
             return null;
         if (ReplaySampling.NeighborScanDue(_ticks))
             FindNeighbors();
+        // A kitten that leaves a seat shows in the same tick as the empty seat.
+        if (crewChanged || ReplaySampling.NeighborScanDue(_ticks))
+            FindKittens();
 
         // The detector reads the vehicle once per tick, and the same values go into the state of the
         // sample, so a replay sees what the detector saw.
@@ -142,7 +153,7 @@ internal sealed class FlightRecorder
         foreach (Track track in _actors.Values)
         {
             bool newSegment = track.Actor.Segments.Count == 0 || track.PartCount != track.Vehicle.Parts.Count
-                || _splits.Any(split => ReferenceEquals(split.Source, track.Vehicle));
+                || CrewChanged(track) || _splits.Any(split => ReferenceEquals(split.Source, track.Vehicle));
             frames.Add(ReadFrame(track, newSegment));
         }
 
@@ -151,6 +162,8 @@ internal sealed class FlightRecorder
             frames.Add(ReadFrame(new Track(child, new ReplayActor(nextActorId++, child.Id, []) { Neighbor = neighbor }), true));
         foreach (Vehicle neighbor in _neighbors)
             frames.Add(ReadFrame(new Track(neighbor, new ReplayActor(nextActorId++, neighbor.Id, []) { Neighbor = true }), true));
+        foreach (KittenEva kitten in _kittens)
+            frames.Add(ReadFrame(new Track(kitten, new ReplayActor(nextActorId++, kitten.Id, []) { Neighbor = true, Kitten = kitten.Character.Id }), true));
 
         // A vehicle that the recording follows from now on and that it did not record yet, for
         // example the other vehicle of a docking that was too far for a neighbor scan.
@@ -181,6 +194,7 @@ internal sealed class FlightRecorder
             {
                 track.Nozzles = frame.Nozzles;
                 track.PartCount = track.Vehicle.Parts.Count;
+                track.Crew = CrewOf(track.Vehicle);
                 track.PartState = frame.PartState;
                 track.Channels = frame.Channels;
                 track.Actor.Segments.Add(frame.Segment);
@@ -210,6 +224,7 @@ internal sealed class FlightRecorder
         }
         _splits.Clear();
         _neighbors.Clear();
+        _kittens.Clear();
         foreach (DetectedEvent marker in markers)
         {
             AddEvent(marker);
@@ -238,6 +253,8 @@ internal sealed class FlightRecorder
             ReplaySample sample = Sample(track.Vehicle, nozzles, time, bodyPosition, eclToBodyFixed);
             if (ReferenceEquals(track.Vehicle, followed))
                 sample = sample with { State = state };
+            else if (track.Vehicle is KittenEva kitten)
+                sample = sample with { Kitten = KittenStateOf(kitten) };
             return new CaptureFrame(track, nozzles, segment, sample, partState, channels, channelBytes);
         }
     }
@@ -431,6 +448,8 @@ internal sealed class FlightRecorder
             _splits.RemoveAll(split => Lost(split.Child));
         if (_neighbors.Count > 0)
             _neighbors.RemoveAll(Lost);
+        if (_kittens.Count > 0)
+            _kittens.RemoveAll(Lost);
     }
 
     // Vehicles near the followed vehicle that did not split from it, for example a docking target or a
@@ -438,7 +457,7 @@ internal sealed class FlightRecorder
     private void FindNeighbors()
     {
         double3 origin = _primary.Vehicle.GetPositionEcl();
-        int neighbors = Flight.Actors.Count(actor => actor.Neighbor) + _neighbors.Count;
+        int neighbors = Flight.Actors.Count(actor => actor.Neighbor && actor.Kitten == null) + _neighbors.Count;
         foreach (Vehicle vehicle in _system.All.OfType<Vehicle>())
         {
             if (vehicle is KittenEva || Lost(vehicle) || _seen.Contains(vehicle)
@@ -452,6 +471,92 @@ internal sealed class FlightRecorder
             _seen.Add(vehicle);
             neighbors++;
         }
+    }
+
+    // Kittens on EVA near the followed vehicle. EVADoor.SpawnEva makes a new KittenEva for each EVA, and
+    // KittenEva.BoardVehicle destroys it, so each EVA is a new kitten actor whose track ends at the boarding.
+    private void FindKittens()
+    {
+        double3 origin = _primary.Vehicle.GetPositionEcl();
+        int kittens = Flight.Actors.Count(actor => actor.Kitten != null) + _kittens.Count;
+        foreach (KittenEva kitten in _system.All.OfType<KittenEva>())
+        {
+            if (Lost(kitten) || _seen.Contains(kitten) || kitten.Character?.Id is not { Length: > 0 })
+                continue;
+            if ((kitten.GetPositionEcl() - origin).Length() > ReplaySampling.NeighborMeters)
+                continue;
+            if (!ReplaySampling.CanAddKitten(Flight.Actors.Count + _neighbors.Count + _kittens.Count, _splits.Count, kittens))
+            {
+                if (!_kittenLimitLogged)
+                {
+                    _note ??= "A kitten on EVA is not recorded, because the recording has no free vehicle slot for it.";
+                    DefaultCategory.Log.Info($"[CineCam] The recording skips the kitten {kitten.Id} on EVA, because it keeps its vehicle slots for the followed vehicle and its stages, or it has {ReplaySampling.KittenLimit} kittens. Later skips are not logged.");
+                }
+                _kittenLimitLogged = true;
+                return;
+            }
+
+            _kittens.Add(kitten);
+            _seen.Add(kitten);
+            kittens++;
+        }
+    }
+
+    // The animation of a kitten reads these values in KittenEva.UpdateRenderData. The jump state is left
+    // out, because the jump animation of KittenRenderable runs on the live game clock.
+    private static ReplayKitten KittenStateOf(KittenEva kitten)
+    {
+        LocomotionState locomotion = kitten.LocomotionState;
+        int flags = (kitten.GetSprintInput() ? ReplayKittenFlags.Sprint : 0) | (kitten.GetTranslateInput() ? ReplayKittenFlags.Move : 0)
+            | (kitten.FlightComputer.RCSMode == FlightComputerRCSMode.Enabled ? ReplayKittenFlags.Rcs : 0);
+        float[]? motion = null;
+        if (locomotion.Mode == LocomotionMode.Mmu)
+        {
+            double3 acceleration = kitten.AccelerationBody;
+            double3 angular = kitten.AngularAccelerationBody;
+            motion = [Small(acceleration.X), Small(acceleration.Y), Small(acceleration.Z), Small(angular.X), Small(angular.Y), Small(angular.Z)];
+        }
+
+        return new ReplayKitten((int)locomotion.Mode, flags, Small(locomotion.GroundSpeed), Small(locomotion.GravityMagnitude),
+            Small(locomotion.LadderRailT), Small(locomotion.UprightAlignment)) { Motion = motion };
+
+        // The file reader rejects a value that is not finite or very large, so such a value is stored as 0.
+        static float Small(double value) => (float)value is float f && float.IsFinite(f) && Math.Abs(f) <= 1e6f ? f : 0f;
+    }
+
+    private static KeyHash[] CrewOf(Vehicle vehicle)
+    {
+        ReadOnlySpan<IVASeat> seats = vehicle.Crew;
+        var crew = new KeyHash[seats.Length];
+        for (int i = 0; i < seats.Length; i++)
+            crew[i] = seats[i].AssignedKittenHash;
+        return crew;
+    }
+
+    // A disposed vehicle ends its track in EndLost, so its crew is not read.
+    private static bool CrewChanged(Track track)
+    {
+        if (track.Vehicle.IsDisposed)
+            return false;
+        ReadOnlySpan<IVASeat> seats = track.Vehicle.Crew;
+        if (seats.Length != track.Crew.Length)
+            return true;
+        for (int i = 0; i < seats.Length; i++)
+        {
+            if (seats[i].AssignedKittenHash != track.Crew[i])
+                return true;
+        }
+        return false;
+    }
+
+    private bool AnyCrewChanged()
+    {
+        foreach (Track track in _actors.Values)
+        {
+            if (CrewChanged(track))
+                return true;
+        }
+        return false;
     }
 
     private void AddTrack(Track track)

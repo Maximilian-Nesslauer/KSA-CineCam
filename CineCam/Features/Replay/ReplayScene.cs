@@ -13,8 +13,8 @@ internal enum ReplayCameraMode { Take, Free }
 
 internal sealed class ReplayScene : IDisposable
 {
-    private sealed record Model(ReplaySegment Segment, PartTree Parts, RocketNozzle[] Nozzles, ReplayShape Shape,
-        double3 Center, double Radius)
+    private sealed record Model(ReplayActor Actor, ReplaySegment Segment, PartTree Parts, RocketNozzle[] Nozzles, ReplayShape Shape,
+        double3 Center, double Radius, IVASeat[] Seats)
     {
         public ReplayPartState? PartState { get; set; }
     }
@@ -27,6 +27,10 @@ internal sealed class ReplayScene : IDisposable
     private readonly ReplayLiveState _liveState = new();
     private readonly ReplayCamera _camera;
     private ReplaySound? _sound;
+    private readonly ReplayCrew _crew = new();
+    private readonly HashSet<IVASeat> _shownSeats = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<int> _shownKittens = [];
+    private bool _crewFailed;
     private double _lastFrameTime;
     private readonly ReplayFrameStep _cloudStep = new();
     private bool _partStateFailed;
@@ -82,7 +86,7 @@ internal sealed class ReplayScene : IDisposable
 
         try
         {
-            foreach (ReplaySegment segment in flight.Actors.SelectMany(actor => actor.Segments))
+            foreach ((ReplayActor actor, ReplaySegment segment) in flight.Actors.SelectMany(actor => actor.Segments.Select(segment => (actor, segment))))
             {
                 PartTree parts = ReplayParts.Decode(segment.Definition, out int dropped);
                 try
@@ -101,8 +105,8 @@ internal sealed class ReplayScene : IDisposable
                     }
                     var shape = ReplayShape.FromBounds(FlightRecorder.ToV3(min), FlightRecorder.ToV3(max), segment.CenterOfMass,
                         id => FindPart(parts, id));
-                    _models.Add(segment, new Model(segment, parts, nozzles, shape, (min + max) * 0.5,
-                        Math.Max(2, (max - min).Length() * 0.5)) { PartState = PartStateOf(segment, parts) });
+                    _models.Add(segment, new Model(actor, segment, parts, nozzles, shape, (min + max) * 0.5,
+                        Math.Max(2, (max - min).Length() * 0.5), SeatedCrew(parts)) { PartState = PartStateOf(segment, parts) });
                 }
                 catch
                 {
@@ -146,6 +150,8 @@ internal sealed class ReplayScene : IDisposable
         }
         finally
         {
+            // The seats own the renderables of the seated kittens, so they go before the part trees.
+            _crew.Dispose();
             foreach (Model model in _models.Values)
             {
                 model.PartState?.Release();
@@ -273,6 +279,7 @@ internal sealed class ReplayScene : IDisposable
             if (ReplayTimeline.Sample(actor, Time) is { } pose)
                 _visible.Add((_models[pose.Segment], pose.Sample));
         }
+        RetainCrew();
 
         if (CameraMode == ReplayCameraMode.Take)
             ApplyTake();
@@ -378,10 +385,81 @@ internal sealed class ReplayScene : IDisposable
         {
             if (model.PartState != null)
                 ApplyPartState(model, sample.Time);
-            (double3 position, doubleQuat orientation) = ReplayCamera.WorldPose(_body, sample);
-            double4x4 transform = double4x4.CreateFromQuaternion(orientation) *
-                double4x4.CreateTranslation(position - Camera.PositionEcl);
+            double4x4 transform = ModelMatrix(sample);
             model.Parts.UpdateRenderData(in transform, false, viewport, frameIndex);
+        }
+    }
+
+    // The assembly frame of the recorded vehicle in the frame of the camera, as Vehicle.GetMatrixAsmb2Ego.
+    private double4x4 ModelMatrix(ReplaySample sample)
+    {
+        (double3 position, doubleQuat orientation) = ReplayCamera.WorldPose(_body, sample);
+        return double4x4.CreateFromQuaternion(orientation) * double4x4.CreateTranslation(position - Camera.PositionEcl);
+    }
+
+    // The seats of a decoded part tree with a kitten. The part tree of a segment keeps the crew that the
+    // recorder saw at its start (IVASeat.ApplySaveData), and a change of the crew starts a new segment.
+    private static IVASeat[] SeatedCrew(PartTree parts)
+    {
+        var seats = new List<IVASeat>();
+        foreach (IVASeat seat in parts.Modules.Get<IVASeat>())
+        {
+            if (seat.AssignedKittenHash != KeyHash.Zero)
+                seats.Add(seat);
+        }
+        return seats.ToArray();
+    }
+
+    private void RetainCrew()
+    {
+        _shownSeats.Clear();
+        _shownKittens.Clear();
+        foreach ((Model model, ReplaySample _) in _visible)
+        {
+            foreach (IVASeat seat in model.Seats)
+                _shownSeats.Add(seat);
+            if (model.Actor.Kitten != null)
+                _shownKittens.Add(model.Actor.Id);
+        }
+        _crew.Retain(_shownSeats, _shownKittens);
+    }
+
+    /// <summary>
+    /// Makes the kittens again at the next frame with a new animation clock, so a render gives the same
+    /// kitten poses whatever the replay showed before it.
+    /// </summary>
+    public void ResetCrew() => _crew.Reset();
+
+    /// <summary>
+    /// Draws the seated crew of the recorded vehicles and the recorded kittens on EVA. A vehicle or kitten
+    /// smaller than a pixel is skipped, as Vehicle.GetWorldMatrix skips a live kitten. The kittens are a part
+    /// of the picture, not of the flight, so an error turns them off and the replay goes on.
+    /// </summary>
+    public void DrawCrew(IViewport viewport, int frameIndex)
+    {
+        if (_crewFailed)
+            return;
+        try
+        {
+            foreach ((Model model, ReplaySample sample) in _visible)
+            {
+                if (model.Seats.Length == 0 && model.Actor.Kitten == null)
+                    continue;
+                double4x4 transform = ModelMatrix(sample);
+                double distance = model.Center.Transform(transform).Length();
+                if (Camera.GetObjectDiameterPixels(2.0 * model.Radius, distance) < 1.0)
+                    continue;
+                if (model.Seats.Length > 0)
+                    _crew.DrawSeats(viewport, frameIndex, model.Seats, in transform, Time);
+                if (model.Actor.Kitten != null)
+                    _crew.DrawKitten(viewport, frameIndex, model.Actor, sample.Kitten, in transform, Time);
+            }
+        }
+        catch (Exception ex)
+        {
+            _crewFailed = true;
+            DefaultCategory.Log.Warning($"[CineCam] The replay shows no kittens after an error: {ex}");
+            _crew.Reset();
         }
     }
 

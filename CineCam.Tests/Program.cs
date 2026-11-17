@@ -6573,6 +6573,7 @@ CineCam.Tests.BacklogTests.RunControl(Check, Expect);
 OldRecordingTests.Run(Check, Expect);
 CineCam.Tests.ReplayWorldTests.Run(Check, Expect);
 CineCam.Tests.SoundTests.Run(Check, Expect);
+ReplayCrewTests.Run(Check, Expect);
 
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;
