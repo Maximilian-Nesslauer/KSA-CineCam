@@ -93,7 +93,9 @@ public static class ShotFileJson
                     string target = property.Value.GetString()!;
                     if (!EventName.TryParse(target, out EventName parsed, out string error))
                         throw new ShotFileException(path, error);
-                    if (EventName.TryParse(property.Name, out _, out _))
+                    // An alias may keep the name of an event that came after the file was written, so the file means
+                    // what it meant before.
+                    if (EventName.TryParse(property.Name, out EventName builtIn, out _) && !builtIn.AliasMayShadow)
                         throw new ShotFileException(path, "an alias must not use the name of a built-in event");
                     file.Events[property.Name] = parsed.Canonical;
                 }
@@ -576,7 +578,7 @@ public static class ShotFileJson
             double delay = obj.OptNum("delay", -3600.0, 3600.0) ?? 0.0;
             if (delay < 0.0 && !resolved.IsPredictable)
             {
-                _warnings.Add($"{obj.Child("delay")}: a delay below 0 works only for altitude, speed, ground and slow events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0");
+                _warnings.Add($"{obj.Child("delay")}: a delay below 0 works only for altitude, speed, ground, slow, q and maxq events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0");
                 delay = 0.0;
             }
 

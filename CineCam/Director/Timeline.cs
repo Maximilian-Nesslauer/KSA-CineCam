@@ -47,7 +47,7 @@ public sealed record TimelineStarts(double?[] Shots, double?[] Speed, double?[] 
 /// with a take time that does not go back.
 /// </summary>
 /// <remarks>
-/// A negative delay works only for altitude, speed, ground and slow events, which the caller predicts. The start is
+/// A negative delay works only for the predictable events (altitude, speed, ground, slow, q and maxq), which the caller predicts. The start is
 /// then fixed on the frame in which the predicted time is reached, or in which the event comes first.
 /// <para>
 /// The start of each pre-roll loop shot moves to its latest pass, so the active shot and the shot to
@@ -407,7 +407,7 @@ public sealed class TimelineRunner
                 if (eventTimes.TryGetValue(name, out double seen))
                 {
                     double start = seen + trigger.Delay;
-                    return trigger.Delay < 0.0 ? Math.Max(start, now) : start;
+                    return trigger.Delay < 0.0 || eventName.Value.IsFoundLate ? Math.Max(start, now) : start;
                 }
 
                 if (trigger.Delay < 0.0 && eventName.Value.IsPredictable

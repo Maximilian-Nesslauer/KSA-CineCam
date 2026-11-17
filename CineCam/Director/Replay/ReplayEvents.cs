@@ -1,8 +1,9 @@
 namespace CineCam.Director.Replay;
 
 /// <summary>
-/// Times are recording seconds. Altitude, speed, ground and slow events depend on the values that a take
-/// waits for, so they are not recorded but found here from the samples.
+/// Times are recording seconds. Altitude, speed, ground, slow and q events depend on the values that a take
+/// waits for, so they are not recorded but found here from the samples. A max Q is recorded, and it is found
+/// here in a recording made before CineCam knew it.
 /// </summary>
 public static class ReplayEvents
 {
@@ -51,6 +52,8 @@ public static class ReplayEvents
             {
                 EventKind.Altitude => Crossing(flight, sample => Altitude(sample, bodyRadius), name.Value),
                 EventKind.Ground or EventKind.Slow => Fall(flight, name.Kind == EventKind.Ground ? ground : sample => Speed(sample), name),
+                EventKind.Q => Crossing(flight, DynamicPressure, name.Value),
+                EventKind.MaxQ => MaxQ(flight, (int)Math.Max(name.Value, 1.0)),
                 _ => Crossing(flight, Speed, name.Value),
             };
             if (time is double t)
@@ -119,6 +122,35 @@ public static class ReplayEvents
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The time of the Nth max Q of the followed vehicle by the rule of <see cref="MaxQTracker"/>, which a live take
+    /// and the recorder use too. A recording made with the max Q events has them recorded, so this finds them in an
+    /// older recording.
+    /// </summary>
+    public static double? MaxQ(ReplayFlight flight, int count)
+    {
+        var tracker = new MaxQTracker();
+        int found = 0;
+        foreach (ReplaySample sample in ReplayTimeline.FollowedSamples(flight))
+        {
+            if (tracker.Update(sample.Time, DynamicPressure(sample), sample.State?.Has(ReplayStateFlags.Contact) == true) is var (time, _)
+                && ++found == count)
+                return time;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Pascals, from the recorded air density and the velocity over the surface, as Vehicle.ComputeDynamicPressure
+    /// computes it from the density at the altitude and the surface speed.
+    /// </summary>
+    public static double DynamicPressure(ReplaySample sample)
+    {
+        double speed = sample.AirVelocity.Length;
+        return 0.5 * sample.AirDensity * speed * speed;
     }
 
     /// <summary>Barometric altitude, or the distance of the model origin above the mean radius in a file of version 1.</summary>

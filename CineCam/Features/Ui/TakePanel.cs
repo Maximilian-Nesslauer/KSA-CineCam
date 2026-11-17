@@ -420,6 +420,7 @@ internal static class TakePanel
         {
             Widgets.Muted(string.Create(CultureInfo.InvariantCulture,
                 $"engine {(s.EngineOn ? "on" : "off")}, contact {(s.Contact ? "yes" : "no")}, sequence {s.ActiveSequence}, altitude {s.Altitude:F0} m, over ground {(s.Ground is double g ? g.ToString("F1", CultureInfo.InvariantCulture) + " m" : "unknown")}, speed {s.Speed:F1} m/s"));
+            Widgets.Muted(ViewText.FlightState(s));
         }
 
         var awaited = new List<string>();

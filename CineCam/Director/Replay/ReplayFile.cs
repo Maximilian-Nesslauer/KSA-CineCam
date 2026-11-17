@@ -5,8 +5,8 @@ using System.Text.Json;
 namespace CineCam.Director.Replay;
 
 /// <summary>
-/// The part channels, the neighbor flag and end time of an actor, the follow changes and the height over the
-/// ground in the state of a sample are optional fields of version 2. A file of version 1 has no events, states or centers of mass, so its markers
+/// The part channels, the neighbor flag and end time of an actor, the follow changes, the height over the
+/// ground in the state of a sample and the detail of an event are optional fields of version 2. A file of version 1 has no events, states or centers of mass, so its markers
 /// become events and the rest is derived from the poses.
 /// </summary>
 public static class ReplayFile
@@ -14,6 +14,9 @@ public static class ReplayFile
     public const int CurrentVersion = 2;
     public const int MaxBytes = 256 * 1024 * 1024;
     public const int EventLimit = 10000;
+
+    /// <summary>The most characters of the detail of an event.</summary>
+    public const int DetailLimit = 200;
 
     /// <summary>The loader drops the channels of a segment with more.</summary>
     public const int ChannelLimit = 4096;
@@ -162,7 +165,8 @@ public static class ReplayFile
             Require(marker != null && double.IsFinite(marker.Time) && marker.Time >= 0 && marker.Time <= duration && Text(marker.Label), "marker");
         foreach (ReplayEvent item in flight.Events)
             Require(item != null && double.IsFinite(item.Time) && item.Time >= 0 && item.Time <= duration && item.Name is { Length: > 0 and <= 64 }
-                && EventName.TryParse(item.Name, out EventName name, out _) && name.Canonical == item.Name, "event");
+                && EventName.TryParse(item.Name, out EventName name, out _) && name.Canonical == item.Name
+                && (item.Detail is null || item.Detail.Length <= DetailLimit), "event");
         double previousFollow = 0.0;
         foreach (ReplayFollow follow in flight.Follows ?? [])
         {

@@ -47,6 +47,25 @@ public static class ViewText
 
     public static string SpeedText(double value) => value.ToString("0.##", CultureInfo.InvariantCulture) + "x";
 
+    /// <summary>The second line of the live readout in the take setup, with the values of the flight state events.</summary>
+    public static string FlightState(in VehicleSample s)
+    {
+        string control = s.Controllable switch
+        {
+            true => "yes",
+            false => s.ControlReason is { Length: > 0 } reason ? "no (" + reason + ")" : "no",
+            null => "no control module",
+        };
+        string probes = s.ProbesFailed > 0 || s.ProbesRebooting > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{s.ProbesFailed} failed, {s.ProbesRebooting} rebooting")
+            : "ok";
+        string mission = s.MissionBody is { } body ? (s.MissionArrived ? "arrived at " : "to ") + body : "none";
+        return string.Create(CultureInfo.InvariantCulture,
+            $"control {control}, probe cores {probes}, probe power {Lower(s.ProbePower.ToString())}, life support {Lower(s.LifeSupport.ToString())}, incapacitated {s.Incapacitated}, mission {mission}, gimbal {s.GimbalLimit * 100.0:F0} % of limit, dynamic pressure {s.DynamicPressure / 1000.0:F2} kPa");
+
+        static string Lower(string text) => text == "None" ? "ok" : EventText.Words(text);
+    }
+
     /// <param name="index">The place of the item in its list, to name the item that "after" refers to.</param>
     public static string TriggerText(Trigger trigger, int index)
     {

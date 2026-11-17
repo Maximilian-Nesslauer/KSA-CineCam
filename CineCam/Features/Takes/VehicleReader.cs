@@ -1,4 +1,5 @@
 using Brutal.Numerics;
+using CineCam.Core;
 using CineCam.Director;
 using CineCam.Features.Quick;
 using CineCam.Features.Replay;
@@ -23,6 +24,8 @@ internal sealed class VehicleReader
     private double _height = 1.0;
     private double _width = 1.0;
     private long _firedCursor;
+    private long _hookCursor;
+    private List<FlightHooks.Entry>? _carried;
     private bool _changed;
     private readonly HashSet<EngineController> _engineSeen = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Part> _knownParts = new(ReferenceEqualityComparer.Instance);
@@ -31,9 +34,15 @@ internal sealed class VehicleReader
     {
         _vehicle = vehicle;
         _firedCursor = SequenceWatch.Cursor(vehicle);
+        _hookCursor = FlightHooks.Cursor(vehicle);
     }
 
     public Vehicle Vehicle => _vehicle;
+
+    /// <summary>False when the private Vehicle._control is not found, so control-lost has no reason.</summary>
+    public static bool ControlReasonAvailable { get; set; }
+
+    public static void ResetReflection() => ControlReasonAvailable = false;
 
     // Follows the controlled vehicle when it shares a part object with the known parts. A docking
     // (DockingPort.Dock, Vehicle.MergeFrom on the other vehicle), an undocking (Vehicle.Split) and a
@@ -49,8 +58,13 @@ internal sealed class VehicleReader
         if (!shared)
             return false;
 
+        // The EVAs, boardings and explosions of the vehicle before that no sample read yet go into the next sample,
+        // because a part failure explodes the part on the vehicle before the game splits it.
+        if (FlightHooks.Since(_vehicle, ref _hookCursor) is { } pending)
+            (_carried ??= new List<FlightHooks.Entry>()).AddRange(pending);
         _vehicle = current;
         _firedCursor = SequenceWatch.Cursor(current);
+        _hookCursor = FlightHooks.Cursor(current);
         _partCount = -1;
         _knownCount = -1;
         _nextExtent = 0.0;
@@ -88,6 +102,10 @@ internal sealed class VehicleReader
         bool stable = orbit.GetOrbitType() == Orbit.OrbitType.Elliptical
             && (parent.GetAtmosphereRadius() > 0.0 || orbit.Periapsis >= parent.GetNearSurfaceRadius());
         bool outside = !contact && distance > parent.GetAtmosphereRadius();
+        ReadHooks(out int evas, out int boardings, out List<string>? explosions);
+        ReadProbes(out int rebooting, out int failed, out PowerWarning power);
+        bool? controllable = _vehicle.HasControlModule ? _vehicle.IsControllable : null;
+        MissionPlan? mission = _vehicle.Parts.Mission;
 
         return new VehicleSample(
             engineOn,
@@ -104,7 +122,170 @@ internal sealed class VehicleReader
             DockedPorts(),
             marks,
             changed,
-            GroundHeight());
+            GroundHeight(),
+            Controllable: controllable,
+            ControlReason: controllable == false ? ControlReason() : null,
+            ProbesRebooting: rebooting,
+            ProbesFailed: failed,
+            ProbePower: power,
+            LifeSupport: LifeSupportLevel(),
+            Incapacitated: Incapacitated(),
+            MissionArrived: mission?.ArrivedAt.HasValue == true,
+            MissionBody: mission?.Destination == MissionDestination.Body ? mission.BodyId : null,
+            Evas: evas,
+            Boardings: boardings,
+            Explosions: explosions,
+            GimbalLimit: GimbalLimit(),
+            DynamicPressure: _vehicle.ComputeDynamicPressure());
+    }
+
+    /// <summary>
+    /// The explosions of the vehicle that no sample read yet, for a vehicle that the game destroyed, so the take and
+    /// the recording can log them before they end.
+    /// </summary>
+    public List<string> TakeExplosions()
+    {
+        ReadHooks(out _, out _, out List<string>? explosions);
+        return explosions ?? [];
+    }
+
+    private void ReadHooks(out int evas, out int boardings, out List<string>? explosions)
+    {
+        evas = 0;
+        boardings = 0;
+        explosions = null;
+        List<FlightHooks.Entry>? entries = FlightHooks.Since(_vehicle, ref _hookCursor);
+        if (_carried != null)
+        {
+            if (entries != null)
+                _carried.AddRange(entries);
+            entries = _carried;
+            _carried = null;
+        }
+
+        foreach (FlightHooks.Entry entry in entries ?? [])
+        {
+            switch (entry.Kind)
+            {
+                case FlightHooks.Kind.Eva:
+                    evas++;
+                    break;
+                case FlightHooks.Kind.Board:
+                    boardings++;
+                    break;
+                default:
+                    (explosions ??= new List<string>()).Add(entry.Detail);
+                    break;
+            }
+        }
+    }
+
+    // Vehicle.UpdateControl computes the private VehicleControl, and its name is the reason, for example
+    // "probe core unpowered". Vehicle.NoControlTooltip has the same reasons only as translated texts.
+    private string? ControlReason()
+    {
+        if (!ControlReasonAvailable)
+            return null;
+        try
+        {
+            return GameReflection.Vehicle_Control!.GetValue(_vehicle) is VehicleControl control ? EventText.Words(control.ToString()) : null;
+        }
+        catch (Exception ex)
+        {
+            LogHelper.ErrorOnce("control-reason", $"[CineCam] The reason of a loss of control could not be read: {ex.Message}");
+            return null;
+        }
+    }
+
+    // The avionics of all parts, as Vehicle.CreditAvionics credits them, and the power of the probe cores as
+    // Vehicle.ScanControls finds them: a Control part outside every HabitatZone, with its PowerConsumer that has a
+    // power switch. PowerConsumer.ComputeStatus is the status light of the game, Low below PowerForecast.LOW_SECONDS.
+    private void ReadProbes(out int rebooting, out int failed, out PowerWarning power)
+    {
+        rebooting = 0;
+        failed = 0;
+        power = PowerWarning.None;
+        PartTree tree = _vehicle.Parts;
+        double now = Universe.GetElapsedSeconds();
+        foreach (Avionics avionics in tree.Modules.Get<Avionics>())
+        {
+            if (avionics.ComputeHealth() == AvionicsHealth.Failed)
+                failed++;
+            else if (avionics.IsRebooting(now))
+                rebooting++;
+        }
+
+        foreach (Control control in tree.Modules.Get<Control>())
+        {
+            if (HabitatZone.FindZone(tree, control.Parent) != null)
+                continue;
+            foreach (PowerConsumer consumer in control.Parent.Modules.Get<PowerConsumer>())
+            {
+                if (!consumer.PowerSwitch)
+                    continue;
+                PowerWarning level = consumer.ComputeStatus(tree) switch
+                {
+                    PowerStatus.Out => PowerWarning.Out,
+                    PowerStatus.Low => PowerWarning.Low,
+                    _ => PowerWarning.None,
+                };
+                if (level > power)
+                    power = level;
+                break;
+            }
+        }
+    }
+
+    // The game warns of life support and incapacitates kittens only with the life support rule.
+    private SupplyWarning LifeSupportLevel()
+    {
+        if (!Universe.Rules.LifeSupport)
+            return SupplyWarning.None;
+        return _vehicle.LifeSupportForecast.Level switch
+        {
+            KSA.LifeSupportLevel.Low => SupplyWarning.Low,
+            KSA.LifeSupportLevel.Critical => SupplyWarning.Critical,
+            KSA.LifeSupportLevel.Out => SupplyWarning.Out,
+            _ => SupplyWarning.None,
+        };
+    }
+
+    // The kittens in the seats that the roster rates incapacitated, as Vehicle.CreditCrewStats finds the able zones.
+    private int Incapacitated()
+    {
+        if (!Universe.Rules.LifeSupport)
+            return 0;
+        UniverseTime now = Universe.GetElapsedTime();
+        int count = 0;
+        foreach (IVASeat seat in _vehicle.Crew)
+        {
+            if (seat.AssignedKittenHash == KeyHash.Zero)
+                continue;
+            KittenRosterEntryData? kitten = Universe.KittenRoster.Find(seat.AssignedKittenHash);
+            if (kitten != null && !kitten.Kia && kitten.Condition.IsIncapacitated(now))
+                count++;
+        }
+
+        return count;
+    }
+
+    // Only a gimbal that can move (Gimbal.CanActuate) counts.
+    private double GimbalLimit()
+    {
+        var gimbals = _vehicle.Parts.Gimbals;
+        if (gimbals == null)
+            return 0.0;
+        double share = 0.0;
+        foreach (var item in gimbals.ModulesAndStates)
+        {
+            Gimbal gimbal = item.Module;
+            if (!gimbal.CanActuate())
+                continue;
+            ref readonly GimbalState state = ref item.State;
+            share = Math.Max(share, GimbalMath.Share(state.AngleY, state.AngleZ, gimbal.AxisY.MaxAngle, gimbal.AxisZ.MaxAngle, gimbal.ConstrainToCircle));
+        }
+
+        return share;
     }
 
     // The part bounding box (PartTree.ComputeBoundingBoxAsmb) is read on every sample, because an animated

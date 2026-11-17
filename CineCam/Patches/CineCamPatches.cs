@@ -71,6 +71,26 @@ internal static class CineCamPatches
                 prefix: new HarmonyMethod(typeof(SequenceWatch), nameof(SequenceWatch.Prefix)),
                 postfix: new HarmonyMethod(typeof(SequenceWatch), nameof(SequenceWatch.Postfix))));
 
+        FlightHooks.EvaAvailable = Group(GameReflection.ValidateEvaWatch(),
+            "[CineCam] The event \"eva\" never comes",
+            () => harmony.Patch(GameReflection.EVADoor_SpawnEva,
+                prefix: new HarmonyMethod(typeof(FlightHooks), nameof(FlightHooks.EvaPrefix)),
+                postfix: new HarmonyMethod(typeof(FlightHooks), nameof(FlightHooks.EvaPostfix))));
+
+        FlightHooks.BoardAvailable = Group(GameReflection.ValidateBoardWatch(),
+            "[CineCam] The event \"board\" never comes",
+            () => harmony.Patch(GameReflection.KittenEva_BoardVehicle,
+                postfix: new HarmonyMethod(typeof(FlightHooks), nameof(FlightHooks.BoardPostfix))));
+
+        FlightHooks.ExplosionAvailable = Group(GameReflection.ValidateExplosionWatch(),
+            "[CineCam] The event \"explosion\" never comes",
+            () => harmony.Patch(GameReflection.ExplosionSystem_SpawnForDestruction,
+                postfix: new HarmonyMethod(typeof(FlightHooks), nameof(FlightHooks.ExplosionPostfix))));
+
+        VehicleReader.ControlReasonAvailable = GameReflection.ValidateControlReason();
+        if (!VehicleReader.ControlReasonAvailable)
+            DefaultCategory.Log.Warning("[CineCam] The event \"control-lost\" gives no reason - reflection targets not found.");
+
         KeysAvailable = Group(GameReflection.ValidateKeys(),
             "[CineCam] Keys disabled. Use the console commands",
             () => harmony.Patch(GameReflection.Program_OnKey,
@@ -142,6 +162,8 @@ internal static class CineCamPatches
         CameraAvailable = false;
         SaveLoadWatch.Reset();
         SequenceWatch.Reset();
+        FlightHooks.Reset();
+        VehicleReader.ResetReflection();
         OfflineHooks.Available = false;
         OfflineHooks.Detects = false;
         OfflineHooks.Reset();

@@ -742,11 +742,15 @@ internal static partial class TakeRunner
         Vehicle? current = Program.ControlledVehicle;
         if (current == null || current.IsDisposed)
         {
-            End("the vehicle is gone");
+            EndGone(take, t);
             return null;
         }
 
-        if (!ReferenceEquals(current, take.Vehicle.Vehicle))
+        // EVADoor.SpawnEva gives the control to the new kitten, which has no part of the vehicle, so the take stays
+        // on its vehicle while a kitten of it is out. KittenEva.BoardVehicle gives the control back to the vehicle.
+        bool kittenOut = current is KittenEva kitten && !take.Vehicle.Vehicle.IsDisposed
+            && ReferenceEquals(FlightHooks.SourceOf(kitten), take.Vehicle.Vehicle);
+        if (!kittenOut && !ReferenceEquals(current, take.Vehicle.Vehicle))
         {
             if (!take.Vehicle.TryFollow(current))
             {
@@ -761,7 +765,7 @@ internal static partial class TakeRunner
         }
         else if (take.Vehicle.Vehicle.IsDisposed)
         {
-            End("the vehicle is gone");
+            EndGone(take, t);
             return null;
         }
 
@@ -801,6 +805,19 @@ internal static partial class TakeRunner
             SurfaceVelocity = take.Vehicle.SurfaceVelocity(take.Site),
             PartLookup = take.Vehicle.FindPart,
         };
+    }
+
+    // A vehicle that the game destroyed with an explosion has no sample any more, so its explosions go into the
+    // log at the end of the take.
+    private static void EndGone(ActiveTake take, double t)
+    {
+        if (take.Preview == null)
+        {
+            foreach (DetectedEvent seen in take.Director.Events.Destroyed(t, take.Vehicle.TakeExplosions()))
+                WriteRow(take, "event", seen.Name, seen.Detail, t);
+        }
+
+        End("the vehicle is gone");
     }
 
     private static void TickPreview(ActiveTake take, PreviewState preview, WorldSample world, double t)
