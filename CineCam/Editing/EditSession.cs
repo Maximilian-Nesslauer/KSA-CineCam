@@ -230,6 +230,17 @@ public sealed class EditSession
         return true;
     }
 
+    /// <summary>Reads the file at <see cref="Path"/> again and keeps the selected take when the file still has it.</summary>
+    public bool Reload()
+    {
+        string? selected = Take?.Name;
+        if (!Load(Path))
+            return false;
+        if (selected != null)
+            SelectTakeByName(selected);
+        return true;
+    }
+
     public bool SelectTakeByName(string name)
     {
         if (Document?.FindTake(name) is not { } take)

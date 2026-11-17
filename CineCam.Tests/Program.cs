@@ -6567,6 +6567,7 @@ CineCam.Tests.BacklogTests.Run(Check, Expect);
 CineCam.Tests.BacklogTests.RunProblemText(Check, Expect);
 CineCam.Tests.BacklogTests.RunFitBy(Check, Expect);
 CineCam.Tests.BacklogTests.RunPauseAt(Check, Expect);
+CineCam.Tests.BacklogTests.RunControl(Check, Expect);
 
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;

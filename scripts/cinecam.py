@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Control a running CineCam replay through its local control directory.
 
+It also reads the shot file of the editor again, selects a take of the editor and ends the game.
+
 A replay plays the selected take of the CineCam editor on a recorded flight. Times are take
 seconds, the time of the video; the status lists the events with their recording and take times.
 """
@@ -109,6 +111,10 @@ def parser():
     sub = p.add_subparsers(dest="action", required=True)
     for name in ("status", "list", "record", "stop", "retry-save", "close", "play", "pause", "preview", "render-stop"):
         sub.add_parser(name)
+    reload = sub.add_parser("reload", help="read the shot file of the editor again")
+    reload.add_argument("--discard", action="store_true", help="drop the unsaved changes of the editor")
+    sub.add_parser("select-take", help="select a take of the editor by its name").add_argument("take", type=str)
+    sub.add_parser("quit", help="end the game, refused while a render, a recording or a take writes files")
     sub.add_parser("open").add_argument("id", type=str)
     sub.add_parser("seek", help="go to a take time in seconds").add_argument("time", type=float)
     sub.add_parser("speed", help="preview speed on top of the speed track").add_argument("speed", type=float)
@@ -129,7 +135,8 @@ def command(args):
                   "retry-save": "retrySave", "open": "open", "close": "close", "seek": "seek",
                   "play": "setPlaying", "pause": "setPlaying", "speed": "setSpeed", "camera": "setCamera",
                   "follow": "follow", "fov": "setFov", "add-key": "addKey", "interface": "setInterface", "preview": "preview",
-                  "render": "render", "render-stop": "renderStop"}
+                  "render": "render", "render-stop": "renderStop", "reload": "reload", "select-take": "selectTake",
+                  "quit": "quit"}
     result = {"operation": operations[args.action]}
     for attr, field in (("id", "id"), ("actor_id", "actorId"), ("time", "time"), ("speed", "speed"), ("fov", "fov")):
         if getattr(args, attr, None) is not None:
@@ -144,6 +151,10 @@ def command(args):
         result["name"] = args.kind
     elif args.action == "render":
         result["name"] = "current" if args.from_here else "whole"
+    elif args.action == "select-take":
+        result["name"] = args.take
+    elif args.action == "reload" and args.discard:
+        result["discard"] = True
     return result
 
 

@@ -1,4 +1,5 @@
 using CineCam.Director;
+using CineCam.Director.Replay;
 using CineCam.Editing;
 
 namespace CineCam.Tests;
@@ -160,6 +161,66 @@ internal static class BacklogTests
             expect(RehearsalEdit.PauseAtDue(10.0, 10.5, false, true), "a frame after the time");
             expect(!RehearsalEdit.PauseAtDue(10.0, 10.5, true, true), "paused already");
             expect(!RehearsalEdit.PauseAtDue(10.0, 10.5, false, false), "a preview or an offline capture");
+        });
+    }
+
+    public static void RunControl(Action<string, Action> check, Action<bool, string> expect)
+    {
+        check("local control: a quit is refused while anything writes files, in the order of the checks", () =>
+        {
+            expect(ControlRules.QuitBlock(default) == null, "an idle game ends");
+            expect(ControlRules.QuitBlock(new QuitState(true, true, true, true, true, true))?.Code == "rendering", "a render first");
+            expect(ControlRules.QuitBlock(new QuitState(false, true, false, false, false, false))?.Code == "capture_busy", "the last pictures");
+            expect(ControlRules.QuitBlock(new QuitState(false, false, true, true, false, false))?.Code == "recording", "a recording");
+            expect(ControlRules.QuitBlock(new QuitState(false, false, false, true, false, false))?.Code == "unsaved_flight", "a flight to save");
+            expect(ControlRules.QuitBlock(new QuitState(false, false, false, false, true, false))?.Code == "busy", "a take");
+            expect(ControlRules.QuitBlock(new QuitState(false, false, false, false, false, true))?.Code == "busy", "a reset");
+        });
+
+        check("local control: the new commands read from the wire form of the client", () =>
+        {
+            var options = new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase, false) },
+            };
+            ReplayCommand? reload = System.Text.Json.JsonSerializer.Deserialize<ReplayCommand>("""{"operation":"reload","discard":true}""", options);
+            ReplayCommand? select = System.Text.Json.JsonSerializer.Deserialize<ReplayCommand>("""{"operation":"selectTake","name":"landing"}""", options);
+            ReplayCommand? quit = System.Text.Json.JsonSerializer.Deserialize<ReplayCommand>("""{"operation":"quit"}""", options);
+            expect(reload is { Operation: ReplayOperation.Reload, Discard: true }, "reload");
+            expect(select is { Operation: ReplayOperation.SelectTake, Name: "landing" }, "select");
+            expect(quit is { Operation: ReplayOperation.Quit, Discard: null }, "quit");
+        });
+
+        check("local control: a reload reads the file again and keeps the selected take", () =>
+        {
+            const string json = """
+            { "takes": [
+              { "name": "launch", "default": true, "camera": [ { "type": "tripod", "position": [1, 2, 3], "lookAt": [4, 5, 6], "duration": 5 } ] },
+              { "name": "landing", "camera": [ { "type": "tripod", "position": [1, 2, 3], "lookAt": [4, 5, 6], "duration": 7 } ] } ] }
+            """;
+            string path = Path.Combine(Path.GetTempPath(), "cinecam-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(path, json);
+                var session = new EditSession();
+                expect(session.Load(path) && session.Take!.Name == "launch", "the default take first");
+                expect(session.SelectTakeByName("LANDING") && session.Take!.Name == "landing", "a name in any case");
+                expect(!session.SelectTakeByName("orbit") && session.Take!.Name == "landing", "an unknown name keeps the take");
+                session.Take!.Shots[0].Duration = 9.0;
+                session.Changed();
+                File.WriteAllText(path, json.Replace("\"duration\": 7", "\"duration\": 8", StringComparison.Ordinal));
+                expect(session.Reload() && !session.Dirty, session.Message);
+                expect(session.Take!.Name == "landing" && session.Take.Shots[0].Duration == 8.0, "the file wins and the take stays selected");
+                File.WriteAllText(path, json.Replace("\"name\": \"landing\"", "\"name\": \"orbit\"", StringComparison.Ordinal));
+                expect(session.Reload() && session.Take!.Name == "launch", "a take that is gone gives the default take");
+                File.WriteAllText(path, "{ not json");
+                expect(!session.Reload() && session.MessageIsError && session.Document!.Takes.Count == 2, "a bad file keeps the document");
+            }
+            finally
+            {
+                File.Delete(path);
+            }
         });
     }
 

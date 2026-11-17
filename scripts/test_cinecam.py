@@ -89,6 +89,14 @@ class CommandTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             cinecam.parser().parse_args(["render", "whole"])
 
+    def test_shot_file_and_game_commands(self):
+        self.assertEqual(self.build("reload"), {"operation": "reload"})
+        self.assertEqual(self.build("reload", "--discard"), {"operation": "reload", "discard": True})
+        self.assertEqual(self.build("select-take", "launch two"), {"operation": "selectTake", "name": "launch two"})
+        self.assertEqual(self.build("quit"), {"operation": "quit"})
+        with self.assertRaises(SystemExit):
+            cinecam.parser().parse_args(["select-take"])
+
     def test_removed_commands_are_rejected(self):
         for name in ("save-view", "play-views", "speed-key", "new-project"):
             with self.assertRaises(SystemExit):
