@@ -144,6 +144,10 @@ public static class ProblemText
         return new ProblemLine(Sentence(prefix, body), raw ?? "", isError, take, item, itemIndex);
     }
 
+    /// <summary>The plain sentence of a reader or planner message, for a place that shows one line and no list.</summary>
+    public static string Plain(string raw, IReadOnlyList<string> takeNames, int selectedTake) =>
+        Describe(raw, true, takeNames, selectedTake).Sentence;
+
     public static List<ProblemLine> DescribeAll(ValidationResult result, IReadOnlyList<string> takeNames, int selectedTake)
     {
         var lines = new List<ProblemLine>(result.Errors.Count + result.Warnings.Count);
