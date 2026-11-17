@@ -20,7 +20,7 @@ dotnet run --project CineCam.Tests
 
 `CineCam.Tests` is a console program that compiles only the game-free code (`Director` and `Editing`) and never loads the game. It tests the shot file reader and writer, the timeline layout, the presets, the pose math, the event detector, the speed rules, the actions and the stage guard, the local horizon frame, the fired sequence detection, the offline frame bookkeeping and the picture collector. It exits with 0 when all tests pass. The code that touches the game (`Features` and `Patches`) is not covered by these tests. The Python tools have their own tests: `python -I scripts/test_events_to_markers.py` and `python -I scripts/test_cinecam.py`.
 
-The mod has a self test that runs inside the game. It is off unless the environment variable `CINECAM_AUTOTEST` names a result folder. It plays a take of every shot type in real time and an offline take, checks the event log and the return of the camera, and writes `result.json` in the result folder.
+The mod has a self test that runs inside the game. It is off unless the environment variable `CINECAM_AUTOTEST` names a result folder. It plays a take of every shot type in real time and an offline take, checks the event log, the return of the camera and the game sound (the real-time take records `game-sound.wav` without a change of the settings file, and the offline take must record none), and writes `result.json` in the result folder.
 
 ## Console commands
 
