@@ -94,6 +94,8 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(self.build("reload"), {"operation": "reload"})
         self.assertEqual(self.build("reload", "--discard"), {"operation": "reload", "discard": True})
         self.assertEqual(self.build("select-take", "launch two"), {"operation": "selectTake", "name": "launch two"})
+        for name in (" Ascent ", "Pad##B" + "x" * 520):
+            self.assertEqual(self.build("select-take", name), {"operation": "selectTake", "name": name})
         self.assertEqual(self.build("quit"), {"operation": "quit"})
         with self.assertRaises(SystemExit):
             cinecam.parser().parse_args(["select-take"])

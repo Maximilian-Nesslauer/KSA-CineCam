@@ -134,7 +134,7 @@ internal static partial class ReplaySession
             case ReplayOperation.Reload:
                 return ReloadShotFile(command.Discard == true);
             case ReplayOperation.SelectTake:
-                return SelectTake(Text(command.Name, "take name"));
+                return SelectTake(command.Name);
             case ReplayOperation.Quit:
                 return Quit();
             case ReplayOperation.Unknown:
@@ -205,8 +205,10 @@ internal static partial class ReplaySession
         return UiText.Format("text.09ecf0f42774", $"{session.Message} Selected take: {session.Take?.Name}.");
     }
 
-    private static string SelectTake(string name)
+    private static string SelectTake(string? requestedName)
     {
+        string name = ControlRules.TakeName(requestedName)
+            ?? throw InvalidText("take name");
         EditSession session = CineCamWindow.EditorSession;
         if (session.Document is not { } document)
             throw new Refusal("no_file", UiText.MessageText("text.9f6bb4bade69", "The editor has no shot file."));
@@ -279,7 +281,10 @@ internal static partial class ReplaySession
     private static ReplayScene NeedScene() => Scene ?? throw new Refusal("no_replay", UiText.MessageText("text.8f3cd85721ea", "Open a replay first."));
 
     private static string Text(string? value, string label) =>
-        value?.Trim() is { Length: > 0 and <= 120 } text ? text : throw new Refusal("invalid_argument", UiText.Format("text.ec68c6a86320", $"Enter a valid {label}."));
+        value?.Trim() is { Length: > 0 and <= 120 } text ? text : throw InvalidText(label);
+
+    private static Refusal InvalidText(string label) =>
+        new("invalid_argument", UiText.Format("text.ec68c6a86320", $"Enter a valid {label}."));
 
     private static double Number(double? value, string label, double min, double max) =>
         value is double number && double.IsFinite(number) && number >= min && number <= max
@@ -298,7 +303,7 @@ internal static partial class ReplaySession
             return _events;
         IEnumerable<EventName> watched = plan.Take != null && plan.File != null ? EventDetector.Watched(plan.Take, plan.File.Events) : [];
         _events = ReplayEvents.ForTake(scene.Flight, watched, scene.World.BodyRadius, scene.World.GroundHeight)
-            .Select(e => new ReplayEventStatus(e.Name, e.Detail is { } detail ? UiText.Concat(UiText.Concat(UiText.Concat(EventDisplay.Name(e.Name), " ("), EventName.TryParse(e.Name, out _, out _) ? StoredEventText.Describe(detail) : detail), ")") : EventDisplay.Name(e.Name), e.Time,
+            .Select(e => new ReplayEventStatus(e.Name, StoredEventText.Label(e.Name, e.Detail), e.Time,
                 plan.Take == null ? plan.TakeTime(e.Time) : plan.EventTimes.TryGetValue(e.Name, out double t) ? t : null))
             .ToArray();
         _eventsPlan = plan;

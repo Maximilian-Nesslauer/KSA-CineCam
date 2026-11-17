@@ -132,16 +132,16 @@ public static class ProblemText
         if (named.Success)
         {
             take = IndexOf(takeNames, named.Groups[UiText.MessageText("text.82a3537ff0db", "name")].Value);
-            rest = UiText.Fragment(rest, rest[named.Length..]);
+            rest = UiText.WithoutPrefix(rest, named.Length);
         }
 
         Match indexed = TakeIndex.Match(rest);
         if (indexed.Success && int.TryParse(indexed.Groups["i"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int i))
         {
             take = i;
-            rest = UiText.Fragment(rest, rest[indexed.Length..]);
+            rest = UiText.WithoutPrefix(rest, indexed.Length);
             if (rest.StartsWith(": ", StringComparison.Ordinal))
-                rest = UiText.Fragment(rest, rest[2..]);
+                rest = UiText.WithoutPrefix(rest, 2);
         }
 
         if (!SplitPath(rest, out string path, out string message))
@@ -215,7 +215,7 @@ public static class ProblemText
         }
 
         path = text[..colon];
-        message = UiText.Fragment(text, text[(colon + 2)..]);
+        message = UiText.WithoutPrefix(text, colon + 2);
         return true;
     }
 

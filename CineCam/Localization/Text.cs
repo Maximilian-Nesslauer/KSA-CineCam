@@ -67,20 +67,15 @@ public static class UiText
         return result;
     }
 
-    // The diagnostic reader removes a field path before it presents the message.
-    public static string Fragment(string source, string fragment)
+    public static string WithPrefix(string prefix, string message) => Register("@prefix", "{0}{1}", [prefix, message]);
+
+    public static string WithoutPrefix(string source, int length)
     {
-        if (source == fragment) return source;
-        if (!Messages.TryGetValue(source, out Message? message)) return fragment;
-        foreach (string part in message.Arguments.OfType<string>().OrderByDescending(s => s.Length))
-        {
-            if (part.Length == 0) continue;
-            if (part.Contains(fragment, StringComparison.Ordinal)) return Fragment(part, fragment);
-            int at = fragment.IndexOf(part, StringComparison.Ordinal);
-            if (at >= 0 && Messages.TryGetValue(part, out _))
-                return Concat(Concat(fragment[..at], part), fragment[(at + part.Length)..]);
-        }
-        return fragment;
+        if (length == 0) return source;
+        if (Messages.TryGetValue(source, out Message? message) && message.Id == "@prefix"
+            && message.Arguments is [string prefix, string body] && length <= prefix.Length)
+            return length == prefix.Length ? body : WithPrefix(prefix[length..], body);
+        return source[length..];
     }
 
     public static string Render(string value)

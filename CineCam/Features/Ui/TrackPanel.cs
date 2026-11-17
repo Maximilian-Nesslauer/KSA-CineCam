@@ -42,7 +42,7 @@ internal static class TrackPanel
         Widgets.Section(UiText.MessageText("text.06ec293303ec", "Camera track"));
         DrawPreRoll(session, take);
         int active = TakeRunner.Current is { Preview: null } run ? run.LastFrame?.ShotIndex ?? -1 : -1;
-        var rows = take.Shots.Select((s, i) => ViewText.ShotRow(i, s) with { Name = ShotLabels.Type(s.Type), Starts = Widgets.TriggerText(s.At, i) }).ToList();
+        var rows = take.Shots.Select((s, i) => ViewText.ShotRow(i, s) with { Name = ShotLabels.Type(s.Type), Starts = Widgets.TriggerText(s.At, i, session.Document?.Events) }).ToList();
         bool changed = DrawList("shots", ShotHeaders, rows, session.ShotIndex, active, i => session.ShotIndex = i,
             () => session.SelectedShot is { } shot && DrawShotFields(session, shot));
         DrawShotButtons(session, take);
@@ -100,7 +100,7 @@ internal static class TrackPanel
 
         Widgets.Section(UiText.MessageText("text.3ce700cd0ade", "Speed track"));
         Widgets.Muted(UiText.MessageText("text.8714b88dde35", "Each key ramps the sim speed from its value at the start of the key to the target. The game locks the throttle and the engines above 30x."));
-        var rows = take.Speed.Select((k, i) => ViewText.KeyRow(i, k) with { Starts = Widgets.TriggerText(k.At, i) }).ToList();
+        var rows = take.Speed.Select((k, i) => ViewText.KeyRow(i, k) with { Starts = Widgets.TriggerText(k.At, i, session.Document?.Events) }).ToList();
         bool changed = DrawList("keys", KeyHeaders, rows, session.KeyIndex, -1, i => session.KeyIndex = i,
             () => session.SelectedKey is { } key && DrawKeyFields(session, key));
         DrawListButtons("key", session.KeyIndex, take.Speed.Count, session.AddKey, session.DuplicateKey, session.RemoveKey, session.MoveKey,
@@ -119,7 +119,7 @@ internal static class TrackPanel
 
         Widgets.Section(UiText.MessageText("text.f07f5fa98f04", "Action track"));
         Widgets.Muted(UiText.MessageText("text.ebd812ca9877", "An action runs once per run when its trigger is reached. A stage action presses the staging key. A cue gives a name to other mods, for example to show an overlay at the lift-off."));
-        var rows = take.Actions.Select((a, i) => ViewText.ActionRow(i, a) with { Starts = Widgets.TriggerText(a.At, i) }).ToList();
+        var rows = take.Actions.Select((a, i) => ViewText.ActionRow(i, a) with { Starts = Widgets.TriggerText(a.At, i, session.Document?.Events) }).ToList();
         bool changed = DrawList("actions", ActionHeaders, rows, session.ActionIndex, -1, i => session.ActionIndex = i,
             () => session.SelectedAction is { } action && DrawActionFields(session, action));
         DrawListButtons("action", session.ActionIndex, take.Actions.Count, session.AddAction, session.DuplicateAction, session.RemoveAction, session.MoveAction,
@@ -706,7 +706,7 @@ internal static class TrackPanel
                 break;
             case TriggerKind.Event:
                 if (trigger.Event.Length > 0)
-                    Widgets.Muted(UiText.Concat(UiText.MessageText("text.06d915c5cd08", "Event: "), Widgets.EventName(trigger.Event)));
+                    Widgets.Muted(UiText.Concat(UiText.MessageText("text.06d915c5cd08", "Event: "), Widgets.EventName(trigger.Event, file?.Events)));
                 if (Widgets.Text(UiText.MessageText("text.25bc9efedfb7", "Event name"), UiText.Concat(id, "-event"), trigger.Event, out string name, 512,
                         UiText.MessageText("text.bdd33cd37d4d", "The name of the event as the file stores it. Pick one below, or type for example altitude:5000.")))
                 {
@@ -736,19 +736,14 @@ internal static class TrackPanel
         {
             try
             {
-                var names = new List<string>(EventNames);
-                if (file != null)
-                    names.AddRange(file.Events.Keys);
-                for (int i = 0; i < names.Count; i++)
+                int i = 0;
+                foreach ((string key, string label) in EventDisplay.Choices(file?.Events))
                 {
-                    string name = names[i];
-                    ImGui.PushID(i);
-                    bool picked = ImGui.Selectable(UiText.Control(Widgets.EventName(name)).AsSpan(), name == trigger.Event);
-                    Widgets.Tip(name);
-                    ImGui.PopID();
+                    bool picked = Widgets.SelectableText(i++, label, key == trigger.Event);
+                    Widgets.Tip(key);
                     if (!picked)
                         continue;
-                    trigger.Event = name;
+                    trigger.Event = key;
                     changed = true;
                 }
             }
@@ -761,8 +756,6 @@ internal static class TrackPanel
         Widgets.Tip(UiText.MessageText("text.160a1e4a6bf6", "Type ignition:N, burnout:N, sequence:N, altitude:METERS, speed:METERS_PER_SECOND, ground:METERS, slow:METERS_PER_SECOND or q:PASCALS in the field above for the others, and :N after a counted event for its Nth time. ignition:2 is the second time the engines come on, for example the upper stage in a hot staging. ground:100 comes when the lowest corner of the part bounding box comes down to 100 m over the terrain or the sea, and slow:50 when the speed over the surface falls to 50 m/s. Both need the vehicle in the air with the value above the target first, so they do not come on the pad or after a landing. q:20000 comes when the dynamic pressure rises to 20 kPa, and maxq at the peak of the dynamic pressure (a live take finds the peak a few seconds after it, so start the shot with a negative delay)."));
         return changed;
     }
-
-    private static readonly string[] EventNames = { "ignition", "ignition:2", "liftoff", "burnout", "burnout:2", "sequence:1", "sequence:2", "sequence:3", "ground:100", "landed", "soi", "apoapsis", "periapsis", "docked", "undocked", "mark", "maxq", "q:20000", "gimbal-limit", "explosion", "control-lost", "control-back", "reboot", "probe-failed", "power-low", "life-support-low", "incapacitated", "arrival", "eva", "board" };
 
     #endregion
 }

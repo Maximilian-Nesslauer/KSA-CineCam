@@ -23,6 +23,8 @@ public readonly record struct QuitState(bool Rendering, bool PictureWrite, bool 
 
 public static class ControlRules
 {
+    public static string? TakeName(string? name) => string.IsNullOrWhiteSpace(name) ? null : name;
+
     /// <summary>
     /// The code and the message of the refusal of a quit, or null when the game can end now. A quit ends
     /// nothing that writes files, so a render, an offline take, a recording, a flight that is not saved yet,

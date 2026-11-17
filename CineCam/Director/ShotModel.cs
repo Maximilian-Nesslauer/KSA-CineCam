@@ -403,7 +403,7 @@ public sealed class ShotFileException : Exception
     public string FieldPath { get; }
 
     public ShotFileException(string fieldPath, string message)
-        : base(fieldPath.Length == 0 ? message : UiText.Format("", $"{fieldPath}: {message}"))
+        : base(fieldPath.Length == 0 ? message : UiText.WithPrefix(fieldPath + ": ", message))
     {
         FieldPath = fieldPath;
     }

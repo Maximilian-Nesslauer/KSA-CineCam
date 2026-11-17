@@ -362,20 +362,15 @@ internal static class ReplayPanel
                 {
                     foreach (var actor in flight.Actors)
                     {
-                        ImGui.PushID(actor.Id);
+                        bool available = ReplaySession.CanFollow(actor.Id);
+                        ImGui.BeginDisabled(!available);
                         try
                         {
-                            bool available = ReplaySession.CanFollow(actor.Id);
-                            ImGui.BeginDisabled(!available);
-                            try
-                            {
-                                if (ImGui.Selectable(UiText.Control(actor.Name).AsSpan(), ReplaySession.FollowActorId == actor.Id))
-                                    ReplaySession.Follow(actor.Id);
-                            }
-                            finally { ImGui.EndDisabled(); }
-                            Widgets.Tip(available ? null : UiText.MessageText("text.4450dfce1484", "This stage is not present at the current time."));
+                            if (Widgets.SelectableText(actor.Id, actor.Name, ReplaySession.FollowActorId == actor.Id))
+                                ReplaySession.Follow(actor.Id);
                         }
-                        finally { ImGui.PopID(); }
+                        finally { ImGui.EndDisabled(); }
+                        Widgets.Tip(available ? null : UiText.MessageText("text.4450dfce1484", "This stage is not present at the current time."));
                     }
                 }
             }

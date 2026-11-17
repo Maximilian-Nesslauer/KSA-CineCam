@@ -163,25 +163,8 @@ internal static class Widgets
     }
 
     // Measures in the font that is pushed now.
-    private static string Fit(string text, float room)
-    {
-        text = UiText.Render(text);
-        if (ImGui.CalcTextSize(UiText.Render(text)).X <= room)
-            return text;
-        const string Dots = "...";
-        float dots = ImGui.CalcTextSize(UiText.Render(Dots)).X;
-        int low = 0, high = text.Length;
-        while (low < high)
-        {
-            int mid = (low + high + 1) / 2;
-            if (ImGui.CalcTextSize(UiText.Render(text).AsSpan()).X + dots <= room)
-                low = mid;
-            else
-                high = mid - 1;
-        }
-
-        return low == 0 ? "" : UiText.Concat(text[..low].TrimEnd(), Dots);
-    }
+    private static string Fit(string text, float room) =>
+        Editing.StatusText.Fit(text, room, static prefix => ImGui.CalcTextSize(prefix).X);
 
     // FitWords measures in the font that is pushed now, and a first word that does not fit is cut in
     // the word. The cache key holds the full width because that tells the fonts apart.
@@ -633,6 +616,23 @@ internal static class Widgets
         EndRow(_comboTip);
     }
 
+    public static bool SelectableText(int id, string label, bool selected)
+    {
+        string shown = UiText.Render(label);
+        float2 at = ImGui.GetCursorScreenPos();
+        float2 size = ImGui.CalcTextSize(shown.AsSpan());
+        size.Y = Math.Max(size.Y, ImGui.GetTextLineHeight());
+        ImGui.PushID(id);
+        try
+        {
+            // A literal name can contain ImGui's label delimiter, so the item and its text use separate calls.
+            bool clicked = ImGui.Selectable("##choice".AsSpan(), selected, ImGuiSelectableFlags.None, size);
+            ImGui.GetWindowDrawList().AddText(at, ImGui.GetColorU32(ImGuiCol.Text), shown);
+            return clicked;
+        }
+        finally { ImGui.PopID(); }
+    }
+
     public static bool Enum<T>(string label, ref T value, IReadOnlyList<T>? options = null, string? tip = null) where T : struct, Enum
     {
         bool changed = false;
@@ -886,15 +886,17 @@ internal static class Widgets
     #region Event names
 
     // The stored text of a trigger stays canonical. These helpers only change what the player reads.
-    public static string EventName(string name) => name.Length == 0 ? UiText.MessageText("text.8dd598d338e0", "(no event)") : EventDisplay.Name(name);
+    public static string EventName(string name, IReadOnlyDictionary<string, string>? aliases = null) =>
+        name.Length == 0 ? UiText.MessageText("text.8dd598d338e0", "(no event)") : EventDisplay.Name(name, aliases);
 
-    public static string TriggerText(Trigger trigger, int index)
+    public static string TriggerText(Trigger trigger, int index, IReadOnlyDictionary<string, string>? aliases)
     {
         if (trigger.Kind != TriggerKind.Event)
             return Editing.ViewText.TriggerText(trigger, index);
+        string name = EventName(trigger.Event, aliases);
         if (trigger.Delay == 0.0)
-            return EventName(trigger.Event);
-        return UiText.Concat(UiText.Concat(EventName(trigger.Event), (trigger.Delay > 0.0 ? " +" : " -")), Editing.ViewText.Seconds(Math.Abs(trigger.Delay)));
+            return name;
+        return UiText.Concat(UiText.Concat(name, (trigger.Delay > 0.0 ? " +" : " -")), Editing.ViewText.Seconds(Math.Abs(trigger.Delay)));
     }
 
     public static string DescribeTrigger(Trigger trigger)

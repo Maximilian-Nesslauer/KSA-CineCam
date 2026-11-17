@@ -112,24 +112,27 @@ public sealed class TimelineRunner
     private int FindLoopWait(Take take, PreRoll preRoll, IReadOnlyDictionary<string, string> aliases)
     {
         if (!EventName.TryResolve(preRoll.Until, aliases, out EventName until, out string error))
-            throw new ArgumentException($"preRoll.until: {error}");
+            throw new ArgumentException(UiText.WithPrefix("preRoll.until: ", error));
         for (int i = 0; i < take.Shots.Count; i++)
         {
             if (_shotEvents[i] is not EventName name || name.Canonical != until.Canonical)
                 continue;
             if (i == 0)
-                throw new ArgumentException(UiText.Format("text.11b2e0f9ea5d", $"preRoll.until: the first shot waits for \"{preRoll.Until}\", so no shot is left to loop"));
+                throw new ArgumentException(UiText.WithPrefix("preRoll.until: ",
+                    UiText.Format("text.11b2e0f9ea5d", $"the first shot waits for \"{preRoll.Until}\", so no shot is left to loop")));
             for (int j = 0; j < i; j++)
             {
                 TriggerKind kind = take.Shots[j].At.Kind;
                 if (kind == TriggerKind.Event || (j > 0 && kind == TriggerKind.Time))
-                    throw new ArgumentException(UiText.Format("text.491947277f45", $"camera[{j}].at: a shot of the pre-roll loop starts after the one before (only the first may start at a time)"));
+                    throw new ArgumentException(UiText.WithPrefix($"camera[{j}].at: ",
+                        UiText.MessageText("text.491947277f45", "a shot of the pre-roll loop starts after the one before (only the first may start at a time)")));
             }
 
             return i;
         }
 
-        throw new ArgumentException(UiText.Format("text.7179f0157412", $"preRoll.until: no shot starts on the event \"{preRoll.Until}\", so the loop would never end"));
+        throw new ArgumentException(UiText.WithPrefix("preRoll.until: ",
+            UiText.Format("text.7179f0157412", $"no shot starts on the event \"{preRoll.Until}\", so the loop would never end")));
     }
 
     public Take Take => _take;
@@ -427,7 +430,7 @@ public sealed class TimelineRunner
         if (trigger.Kind != TriggerKind.Event)
             return null;
         if (!EventName.TryResolve(trigger.Event, aliases, out EventName name, out string error))
-            throw new ArgumentException($"{path}: {error}");
+            throw new ArgumentException(UiText.WithPrefix(path + ": ", error));
         return name;
     }
 }
