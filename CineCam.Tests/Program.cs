@@ -6007,7 +6007,7 @@ Check("status text: the list of recordings: date, order, texts and the delete ch
     Expect(RecordingList.LengthText(103.07) == "1:43" && RecordingList.LengthText(3725) == "1:02:05" && RecordingList.LengthText(-1) == "-", "lengths");
     var read = new RecordingEntry("p", "Flight 2026-11-11 15-46-52 x", new DateTime(2026, 11, 11, 15, 46, 52), 2048,
         new RecordingHeader(2, "v", "Sol", "Earth", "Rocket", 103.07), null);
-    Expect(RecordingList.Cells(read).SequenceEqual(["2026-11-11 15:46", "Rocket", "1:43", "2 KB"]), string.Join("|", RecordingList.Cells(read)));
+    Expect(RecordingList.Cells(read).SequenceEqual(["2026-11-11 15:46", "Rocket", "v", "1:43", "2 KB"]), string.Join("|", RecordingList.Cells(read)));
     Expect(RecordingList.Cells(older)[1] == "reading..." && RecordingList.Cells(older with { Error = "bad" })[1] == "cannot be read", "pending and failed reads");
     Expect(RecordingList.DisplayName(read) == "Rocket, 2026-11-11 15:46" && RecordingList.DisplayName(undated) == "c", "display names");
 
@@ -6570,6 +6570,7 @@ CineCam.Tests.BacklogTests.RunProblemText(Check, Expect);
 CineCam.Tests.BacklogTests.RunFitBy(Check, Expect);
 CineCam.Tests.BacklogTests.RunPauseAt(Check, Expect);
 CineCam.Tests.BacklogTests.RunControl(Check, Expect);
+OldRecordingTests.Run(Check, Expect);
 
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;

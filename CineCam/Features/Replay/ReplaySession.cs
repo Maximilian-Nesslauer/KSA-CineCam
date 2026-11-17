@@ -36,6 +36,7 @@ internal static partial class ReplaySession
     private static string? _recordingTake;
     private static bool _recordingForTake;
     private static string _takeProblem = "";
+    private static string _openWarning = "";
     private static string Folder => Path.Combine(CineCamPaths.Root, "replays");
     private static string ProjectFolder => Path.Combine(CineCamPaths.Root, "projects");
     private const string Extension = ".ccreplay";
@@ -84,6 +85,15 @@ internal static partial class ReplaySession
 
     /// <summary>Why the take of the editor does not play, or an empty text.</summary>
     public static string TakeProblem => Scene == null ? "" : _takeProblem;
+
+    /// <summary>The game build of the open recording, or null.</summary>
+    public static string? RecordingBuild => Scene?.Flight.GameVersion;
+
+    /// <summary>
+    /// What the open replay shows differently from the flight, because the recording is from an older
+    /// build or does not fit the installed parts, or an empty text.
+    /// </summary>
+    public static string OpenWarning => Scene == null ? "" : _openWarning;
 
     public static string? OpenBlockReason => ReadyBlock().Message;
     public static string? StartBlockReason => StartBlock().Message;
@@ -323,7 +333,9 @@ internal static partial class ReplaySession
         }
     }
 
-    private static void OpenCore(string id)
+    // A recording of an older build opens only after the player confirmed it, and one of a later
+    // build never, see ReplayBuild.
+    private static void OpenCore(string id, bool olderConfirmed)
     {
         Require(ReadyBlock());
         string? path = IsRecordingId(id) ? ListFiles().FirstOrDefault(path =>
@@ -333,13 +345,22 @@ internal static partial class ReplaySession
         CelestialSystem system = Universe.CurrentSystem!;
         ReplayFlight flight = ReplayFile.Load(path);
         string gameVersion = VersionInfo.Current.VersionString;
-        if (!string.Equals(flight.GameVersion, gameVersion, StringComparison.Ordinal))
-            throw new Refusal("game_version_mismatch", $"This replay needs KSA {flight.GameVersion}. The current version is {gameVersion}.");
+        if (ReplayBuild.OpenBlock(flight.GameVersion, gameVersion, olderConfirmed) is { } block)
+            throw new Refusal(block.Code, block.Message);
+        bool older = ReplayBuild.Compare(flight.GameVersion, gameVersion) == ReplayBuildAge.Older;
         if (!string.Equals(flight.SystemId, system.Id, StringComparison.Ordinal) || system.Get<Celestial>(flight.BodyId) is not { } body)
             throw new Refusal("system_mismatch", $"Open the {flight.SystemId} system with {flight.BodyId} to play this replay.");
 
         Quick.QuickCamera.Stop("a replay opens");
-        var scene = new ReplayScene(flight, system, body);
+        ReplayScene scene;
+        try
+        {
+            scene = new ReplayScene(flight, system, body);
+        }
+        catch (InvalidDataException ex) when (older)
+        {
+            throw new InvalidDataException($"{ex.Message} The recording is from KSA {flight.GameVersion}, and this build can have other parts.", ex);
+        }
         try
         {
             scene.Enter();
@@ -351,15 +372,25 @@ internal static partial class ReplaySession
             string note = flight.FormatVersion < ReplayFile.CurrentVersion
                 ? " This recording is from an older version: only the lift-off and the ignitions are known as events."
                 : "";
+            _openWarning = OpenWarningOf(flight.GameVersion, gameVersion, scene.Fit);
+            if (_openWarning.Length > 0)
+                DefaultCategory.Log.Warning($"[CineCam] Opened the recording {id} on KSA {gameVersion}: {_openWarning}");
             Status = $"Opened {id}.{note}{imported}";
         }
         catch
         {
             Scene = null;
             _replayId = null;
+            _openWarning = "";
             scene.Dispose();
             throw;
         }
+    }
+
+    private static string OpenWarningOf(string recorded, string current, ReplayFitReport fit)
+    {
+        string build = ReplayBuild.Compare(recorded, current) == ReplayBuildAge.Same ? "" : ReplayBuild.BuildLine(recorded, current);
+        return string.Join(" ", new[] { build, fit.Text() }.Where(text => text.Length > 0));
     }
 
     private static void CloseCore()
@@ -372,6 +403,7 @@ internal static partial class ReplaySession
         _replayId = null;
         _takeName = null;
         _takeProblem = "";
+        _openWarning = "";
         _editorVersion = -1;
         _appliedVersion = -1;
         _scrubTarget = null;

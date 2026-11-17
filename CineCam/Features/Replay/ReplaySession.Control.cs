@@ -28,7 +28,9 @@ internal static partial class ReplaySession
     public static void StartRecording() => Submit(new(ReplayOperation.StartRecording));
     public static void StopRecording() => Submit(new(ReplayOperation.StopRecording));
     public static void RetrySave() => Submit(new(ReplayOperation.RetrySave));
-    public static void Open(string path) => Submit(new(ReplayOperation.Open, Id: Path.GetFileNameWithoutExtension(path)));
+    /// <summary>Opens a recording. A recording of an older game build opens only with <paramref name="olderConfirmed"/>.</summary>
+    public static void Open(string path, bool olderConfirmed = false) =>
+        Submit(new(ReplayOperation.Open, Id: Path.GetFileNameWithoutExtension(path), Enabled: olderConfirmed));
     public static void Close() => Submit(new(ReplayOperation.Close));
     public static void Seek(double time) => Submit(new(ReplayOperation.Seek, Time: time));
     public static void Follow(int? actorId) => Submit(new(ReplayOperation.Follow, ActorId: actorId));
@@ -113,7 +115,7 @@ internal static partial class ReplaySession
                 SaveRecording();
                 return Status;
             case ReplayOperation.Open:
-                OpenCore(Text(command.Id, "recording ID"));
+                OpenCore(Text(command.Id, "recording ID"), command.Enabled == true);
                 return Status;
             case ReplayOperation.Close:
                 NeedScene();
@@ -337,7 +339,8 @@ internal static partial class ReplaySession
         Flight?.Actors.Select(actor => new ReplayActorStatus(actor.Id, actor.Name, CanFollow(actor.Id))).ToArray() ?? [],
         CanHideInterface, OfflineHooks.Available, RenderStatus, Events().Count, Markers().Count,
         CineCamWindow.EditorSession.Document?.Takes.Select(t => t.Name).ToArray() ?? [], CineCamWindow.EditorSession.Take?.Name,
-        CineCamWindow.EditorSession.Path, CineCamWindow.EditorSession.Dirty);
+        CineCamWindow.EditorSession.Path, CineCamWindow.EditorSession.Dirty,
+        RecordingBuild, VersionInfo.Current.VersionString, OpenWarning.Length > 0 ? OpenWarning : null);
 
     private static void Complete(Action<ReplayResult>? completion, bool ok, string code, string message, string? previewPath = null)
     {

@@ -70,6 +70,7 @@ class CommandTests(unittest.TestCase):
 
     def test_replay_commands(self):
         self.assertEqual(self.build("open", "Flight A"), {"operation": "open", "id": "Flight A"})
+        self.assertEqual(self.build("open", "Flight A", "--older-build"), {"operation": "open", "id": "Flight A", "enabled": True})
         self.assertEqual(self.build("seek", "12.5"), {"operation": "seek", "time": 12.5})
         self.assertEqual(self.build("play"), {"operation": "setPlaying", "enabled": True})
         self.assertEqual(self.build("pause"), {"operation": "setPlaying", "enabled": False})

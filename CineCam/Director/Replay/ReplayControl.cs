@@ -10,6 +10,8 @@ public enum ReplayOperation
 /// Times are take seconds. <see cref="Name"/> is the camera ("take" or "free") for SetCamera, the kind of
 /// shot for AddKey, the range ("whole" or "current") for Render and the take for SelectTake.
 /// <see cref="Discard"/> lets Reload drop the unsaved changes of the editor.
+/// <see cref="Enabled"/> true for Open
+/// confirms the open of a recording of an older game build.
 /// </summary>
 public sealed record ReplayCommand(ReplayOperation Operation, string? Id = null, int? ActorId = null,
     double? Time = null, double? Speed = null, bool? Enabled = null, string? Name = null, double? Fov = null,
@@ -44,7 +46,8 @@ public sealed record ReplayResult(bool Ok, string Code, string Message, ReplaySt
 /// <summary>
 /// <see cref="Time"/> and <see cref="Duration"/> are take seconds, <see cref="RecordingTime"/> is recording
 /// seconds. <see cref="Events"/> and <see cref="Markers"/> hold at most the first 1000 items, and
-/// <see cref="EventCount"/> and <see cref="MarkerCount"/> give the whole number.
+/// <see cref="EventCount"/> and <see cref="MarkerCount"/> give the whole number. <see cref="RecordingBuild"/> is the
+/// game build of the open recording, and <see cref="Warning"/> says what the replay shows differently from the flight.
 /// </summary>
 public sealed record ReplayStatus(string Mode, bool Available, string? ReplayId, int FormatVersion, string? SelectedVehicle,
     double RecordingSeconds, string? Take, string? TakeProblem, string Camera, double Time, double Duration,
@@ -53,7 +56,8 @@ public sealed record ReplayStatus(string Mode, bool Available, string? ReplayId,
     IReadOnlyList<string> Recordings, IReadOnlyList<ReplayEventStatus> Events, IReadOnlyList<ReplayMarkerStatus> Markers,
     IReadOnlyList<ReplayActorStatus> Actors, bool CanHideInterface, bool CanPreview, ReplayRenderStatus? Render = null,
     int EventCount = 0, int MarkerCount = 0, IReadOnlyList<string>? Takes = null, string? SelectedTake = null,
-    string? ShotFile = null, bool UnsavedChanges = false);
+    string? ShotFile = null, bool UnsavedChanges = false,
+    string? RecordingBuild = null, string? GameBuild = null, string? Warning = null);
 
 /// <summary>The take time is null when the take ends before the event.</summary>
 public sealed record ReplayEventStatus(string Name, string Label, double RecordingTime, double? TakeTime);

@@ -524,7 +524,11 @@ internal static class ReplayParts
         return writer.ToString();
     }
 
-    public static PartTree Decode(string definition)
+    // The same steps as UncompressedVehicleSave.Load for a saved vehicle of an older build: a missing
+    // part refuses the vehicle, and a connection to a connector index that the part template no longer
+    // has is dropped, because PartTree.Deserialize does not drop it. A module whose save data fits no
+    // module of this build loses that state in PartTree.ApplyModuleSaveData with a warning of the game.
+    public static PartTree Decode(string definition, out int droppedConnectors)
     {
         using var text = new StringReader(definition);
         using var xml = XmlReader.Create(text, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
@@ -533,6 +537,7 @@ internal static class ReplayParts
         data.Root.OnDataLoad(KSA.Mod.Empty);
         if (data.Root.FindMissingParts() is { } missing)
             throw new InvalidDataException($"Install the recorded vehicle parts: {missing}");
+        droppedConnectors = data.Root.DropStaleConnectors();
         return PartTree.Deserialize(data);
     }
 
