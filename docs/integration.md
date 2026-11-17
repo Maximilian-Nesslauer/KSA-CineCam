@@ -50,6 +50,7 @@ The event name is the canonical name of the [shot file](shot-file.md#events), fo
 - In one frame the order is: flight events, then shots, then cues. `InterfaceChanged` comes before `TakeStarted` when a take hides the interface at its start, and before `TakeEnded` at the end. `RenderStarted` comes before the `TakeStarted` of the render, and `RenderEnded` after its `TakeEnded`.
 - A live take hides the interface at its start or at the event of `hideUiAt`. A pause for an edit shows the interface, so `InterfaceChanged(false)` and later `InterfaceChanged(true)` come.
 - A replay runs the take while it plays. A pause, the end of the replay, a seek, an edit of the take and the close each end that run with `TakeEnded`, and the next play starts a new run with `TakeStarted`. A run that starts after a cue counts that cue in `PassedCues`, so read `PassedCues` in your `TakeStarted` handler to set your state. When a run starts in the middle of a shot, `ShotStarted` comes for that shot.
+- While `IsReplayOpen` is true, a `TakeEnded` does not mean that the take is over: the replay is only paused or moved. Keep your take state until the next `TakeStarted` or until `ReplayClosed`, and do not treat a paused replay as "no take", or an overlay goes in and out at each pause.
 - A render is one run from its first to its last picture. Its frames step by the picture time, so an animation that counts the frame time (the `dtPlayer` of the game) runs at the speed of the video.
 - When CineCam unloads, it ends a running take (with its events) and then removes all handlers.
 
@@ -68,7 +69,7 @@ In the window, add an action on the **Actions** tab and set **Action** to **Cue*
 
 ## Example: subscribe without a reference
 
-The class below finds CineCam at run time and subscribes two handlers. Call `CineCamLink.TryAttach()` in your `[StarMapAllModsLoaded]` method and `CineCamLink.Detach()` in your `[StarMapUnload]` method. When CineCam is not installed, `TryAttach` returns false and nothing else happens.
+The class below finds CineCam at run time and subscribes four handlers. Call `CineCamLink.TryAttach()` in your `[StarMapAllModsLoaded]` method and `CineCamLink.Detach()` in your `[StarMapUnload]` method. When CineCam is not installed, `TryAttach` returns false and nothing else happens.
 
 ```csharp
 using System.Reflection;
@@ -87,7 +88,7 @@ internal static class CineCamLink
             return false;
         _api = api;
         return Attach(api, "Cue", nameof(OnCue)) & Attach(api, "TakeStarted", nameof(OnTakeStarted))
-            & Attach(api, "TakeEnded", nameof(OnTakeEnded));
+            & Attach(api, "TakeEnded", nameof(OnTakeEnded)) & Attach(api, "ReplayClosed", nameof(OnReplayClosed));
     }
 
     public static void Detach()
@@ -128,7 +129,14 @@ internal static class CineCamLink
             && !passed.Contains("overlay-out", StringComparer.OrdinalIgnoreCase));
     }
 
-    private static void OnTakeEnded(string take, string mode, string reason) => MyOverlay.PlayOutro();
+    // A replay ends its run at each pause and seek, so the overlay keeps its state until the replay closes.
+    private static void OnTakeEnded(string take, string mode, string reason)
+    {
+        if (_api?.GetProperty("IsReplayOpen")?.GetValue(null) is not true)
+            MyOverlay.PlayOutro();
+    }
+
+    private static void OnReplayClosed(string recording) => MyOverlay.PlayOutro();
 }
 ```
 

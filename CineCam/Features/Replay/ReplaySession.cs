@@ -59,8 +59,11 @@ internal static partial class ReplaySession
         : "";
     public static bool IsPlaying => Scene?.IsPlaying == true;
 
-    /// <summary>True while the player hid the game interface in an open replay. A preview picture hides it only for its frame and does not count.</summary>
-    public static bool HidesInterface => Scene != null && _preview == null && !Program.DrawUI;
+    /// <summary>
+    /// True while the player hid the game interface in an open replay. A preview picture hides it only until the
+    /// picture is saved, so while one is pending the state from before the preview counts.
+    /// </summary>
+    public static bool HidesInterface => Scene != null && !(_preview?.InterfaceVisible ?? Program.DrawUI);
 
     /// <summary>The take time of the replay, the time of the video.</summary>
     public static double Time => Scene?.TakeTime ?? 0;
