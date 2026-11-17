@@ -19,6 +19,8 @@ internal static class ApiFeed
         public int Jumps { get; } = jumps;
         public double Last { get; set; } = last;
         public bool IncludeFrom { get; set; } = includeFrom;
+        public int InitialShot { get; set; } = -1;
+        public bool InitialPending { get; set; } = true;
     }
 
     private static Source _source;
@@ -79,30 +81,37 @@ internal static class ApiFeed
     // the move. A run lasts while the replay plays without a jump, so a seek, an edit of the take, a pause and the
     // end each end it. A new run starts where the play started in this frame, so a play from the take start
     // gives the items at 0 too.
-    public static void ReplayFrame(ReplayScene scene, double before, int jumpsBefore)
+    public static void ReplayFrame(ReplayScene scene, double before, int jumpsBefore, bool wasPlaying, int initialShot)
     {
         if (_source is Source.Live or Source.Render)
             return;
         ReplayTakePlayer player = scene.Player;
         bool playing = player.IsPlaying && player.Plan.Take != null && ReplaySession.TakeName != null;
+        bool traversed = wasPlaying && player.Plan.Take != null && ReplaySession.TakeName != null
+            && player.Jumps == jumpsBefore && player.Time >= before;
         if (_replay is { } run)
         {
             bool jumped = player.Jumps != run.Jumps || !ReferenceEquals(player.Plan, run.Plan) || player.Time < run.Last;
             if (!jumped)
                 Step(scene, run);
+            if (!ReferenceEquals(ReplaySession.Scene, scene) || _source is Source.Live or Source.Render) return;
             if (jumped || !playing)
             {
                 string reason = jumped ? "the replay moved to another time or the take changed"
                     : player.Time >= player.Duration ? "the end of the replay" : "the replay paused";
                 EndRun(Source.Replay, reason);
+                if (!ReferenceEquals(ReplaySession.Scene, scene)) return;
+                if (!jumped && !playing) return;
             }
         }
 
-        if (_replay == null && playing)
+        if (_replay == null && (playing || traversed))
         {
             double start = player.Jumps == jumpsBefore && before <= player.Time ? before : player.Time;
-            StartReplayRun(scene, start);
-            Step(scene, _replay!);
+            StartReplayRun(scene, start, player.Jumps == jumpsBefore ? initialShot : player.Frame?.ShotIndex ?? -1);
+            if (_replay is not { } started || !Current(scene, started)) return;
+            Step(scene, started);
+            if (Current(scene, started) && !playing) EndRun(Source.Replay, "the end of the replay");
         }
     }
 
@@ -121,26 +130,26 @@ internal static class ApiFeed
 
     // The frame is already at the time after the move, so the shot that runs at the start is the one of the frame
     // unless it started in the move, which the first step reports.
-    private static void StartReplayRun(ReplayScene scene, double time)
+    private static void StartReplayRun(ReplayScene scene, double time, int initialShot)
     {
         ReplayTakePlayer player = scene.Player;
         Take take = player.Plan.Take!;
         bool fromStart = time <= 1e-9;
-        _replay = new ReplayRun(player.Plan, player.Jumps, time, fromStart);
+        var run = new ReplayRun(player.Plan, player.Jumps, time, fromStart) { InitialShot = initialShot };
+        _replay = run;
         _source = Source.Replay;
         SyncInterface();
+        if (!Current(scene, run)) return;
         IEnumerable<string> passed = ReplayFeed.CuesUntil(player.Plan, time)
             .Where(cue => !fromStart || cue.TakeSeconds < time).Select(cue => cue.Name);
         CineCamEvents.RaiseTakeStarted(take.Name, "replay", CineCamEvents.InterfaceHidden, time, passed);
-        if (player.Frame is { ShotIndex: >= 0 } frame && !(player.Time > time && frame.StartedShots.Contains(frame.ShotIndex)))
-            Shot(take, frame.ShotIndex, true);
     }
 
     private static void Step(ReplayScene scene, ReplayRun run)
     {
         ReplayTakePlayer player = scene.Player;
         double time = player.Time;
-        if (time == run.Last && !run.IncludeFrom)
+        if (time == run.Last && !run.IncludeFrom && !run.InitialPending)
             return;
         List<FeedItem> due = ReplayFeed.Due(run.Plan, run.Last, time, run.IncludeFrom);
         bool moved = time > run.Last;
@@ -149,18 +158,46 @@ internal static class ApiFeed
         CineCamEvents.SetTakeSeconds(time);
         double start = scene.Flight.StartTime;
         foreach (FeedItem item in due.Where(item => item.Kind == FeedKind.Event))
+        {
             CineCamEvents.RaiseFlightEvent(item.Name, item.TakeSeconds, start + run.Plan.RecordingTime(item.TakeSeconds));
-        if (moved && player.Frame is { } frame && run.Plan.Take is { } take)
+            if (!Current(scene, run)) return;
+        }
+        var announced = new HashSet<int>();
+        if (run.InitialShot >= 0 && run.Plan.Take is { } initialTake)
+        {
+            int initial = run.InitialShot;
+            run.InitialShot = -1;
+            announced.Add(initial);
+            Shot(initialTake, initial, true);
+            if (!Current(scene, run)) return;
+        }
+        if ((moved || announced.Count > 0 || run.InitialPending) && player.Frame is { } frame && run.Plan.Take is { } take)
         {
             foreach (int index in frame.StartedShots)
-                Shot(take, index, true);
+            {
+                if (announced.Add(index)) Shot(take, index, true);
+                if (!Current(scene, run)) return;
+            }
+            if (run.InitialPending && frame.ShotIndex >= 0 && announced.Add(frame.ShotIndex))
+            {
+                Shot(take, frame.ShotIndex, true);
+                if (!Current(scene, run)) return;
+            }
             if (frame.ShotIndex != CineCamEvents.ShotIndex)
                 Shot(take, frame.ShotIndex, false);
         }
+        run.InitialPending = false;
 
         foreach (FeedItem item in due.Where(item => item.Kind == FeedKind.Cue))
+        {
             CineCamEvents.RaiseCue(item.Name, item.TakeSeconds, start + run.Plan.RecordingTime(item.TakeSeconds));
+            if (!Current(scene, run)) return;
+        }
     }
+
+    private static bool Current(ReplayScene scene, ReplayRun run) =>
+        ReferenceEquals(ReplaySession.Scene, scene) && ReferenceEquals(_replay, run) && _source == Source.Replay
+        && scene.Player.Jumps == run.Jumps && ReferenceEquals(scene.Player.Plan, run.Plan);
 
     #endregion
 

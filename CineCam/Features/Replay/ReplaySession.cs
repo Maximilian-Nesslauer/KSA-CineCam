@@ -173,9 +173,11 @@ internal static partial class ReplaySession
 
                 double before = scene.Player.Time;
                 int jumps = scene.Player.Jumps;
+                bool wasPlaying = scene.Player.IsPlaying;
+                int initialShot = scene.Player.Frame?.ShotIndex ?? -1;
                 scene.Update(frameTime);
                 if (_render == null)
-                    ApiFeed.ReplayFrame(scene, before, jumps);
+                    ApiFeed.ReplayFrame(scene, before, jumps, wasPlaying, initialShot);
             }
             catch (Exception ex)
             {
@@ -308,6 +310,7 @@ internal static partial class ReplaySession
         // Retain the recorder through that frame so the final effects reach the recording.
         if (_recorder.PrimaryDestroyed)
         {
+            _recorder.MarkTerminal();
             _terminalStop ??= (Program.FrameNumber, null);
             return;
         }
@@ -319,6 +322,16 @@ internal static partial class ReplaySession
         {
             Report(ex);
         }
+    }
+
+    private static void RequestRecordingStop()
+    {
+        if (_recorder?.PrimaryDestroyed == true)
+        {
+            _recorder.MarkTerminal();
+            _terminalStop ??= (Program.FrameNumber, null);
+        }
+        else FinishRecording();
     }
 
     private static void FinishRecording(string? reason = null)
@@ -459,10 +472,13 @@ internal static partial class ReplaySession
         _markers = [];
         if (scene != null)
         {
-            ApiFeed.ReplayClosed();
             scene.Dispose();
             // The result of a render that the close ended stays in the status.
             Status = rendering ? UiText.Format("text.c9acf2733111", $"Replay closed. {Status}") : UiText.MessageText("text.09e5d7c01fb3", "Replay closed. Returned to the live flight.");
+            var renderEnd = _deferredRenderEnd;
+            _deferredRenderEnd = null;
+            if (renderEnd is { } ended) ApiFeed.RenderEnded(ended.Take, ended.Folder, ended.Reason);
+            if (Scene == null) ApiFeed.ReplayClosed();
         }
     }
 

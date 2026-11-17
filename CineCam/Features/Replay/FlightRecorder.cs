@@ -38,6 +38,7 @@ internal sealed class FlightRecorder
     private int _pendingMarks;
     private readonly ReplayEffectLog _effects = new();
     private double _effectEnd;
+    private double? _terminalTime;
 
     private sealed record Track(Vehicle Vehicle, ReplayActor Actor)
     {
@@ -115,6 +116,7 @@ internal sealed class FlightRecorder
         Vehicle followed = _primary.Vehicle;
         if (followed.IsDisposed)
         {
+            MarkTerminal();
             AddDestroyedEvents();
             return UiText.MessageText("recording.vehicle_lost", "The recorded vehicle was lost.");
         }
@@ -288,24 +290,28 @@ internal sealed class FlightRecorder
     {
         if (_lastTime < 0)
             return;
-        foreach (DetectedEvent detected in _events.Destroyed(_lastTime, _primary.TakeExplosions()))
+        foreach (DetectedEvent detected in _events.Destroyed(_terminalTime ?? _lastTime, _primary.TakeExplosions()))
             AddEvent(detected);
     }
+
+    public void MarkTerminal() => _terminalTime ??= Math.Max(_lastTime, Universe.GetElapsedSeconds() - Flight.StartTime);
 
     /// <summary>Adds the explosions and destructions up to the last sample, before the flight is saved.</summary>
     public void Close()
     {
-        double end = Math.Max(Math.Max(0, _lastTime), Universe.GetElapsedSeconds() - Flight.StartTime);
+        double end = Math.Max(0, _lastTime);
         if (PrimaryDestroyed)
         {
-            for (int i = 0; i < Flight.Actors.Count; i++)
+            MarkTerminal();
+            AddDestroyedEvents();
+            foreach (Track track in _actors.Values)
             {
-                ReplayActor actor = Flight.Actors[i];
-                if (actor.End == null) Flight.Actors[i] = actor with { End = end };
+                if (!track.Vehicle.IsDisposed || track.Actor.End != null) continue;
+                Flight.Actors[track.Actor.Id] = track.Actor with { End = _terminalTime };
             }
-            end = Math.Max(end, _effectEnd);
+            end = Math.Max(Math.Max(end, _terminalTime ?? end), _effectEnd);
         }
-        Flight = Flight with { EndTime = end };
+        Flight = Flight with { EndTime = end > _lastTime ? end : null };
         _bytes += _effects.Flush(Flight, end);
     }
 

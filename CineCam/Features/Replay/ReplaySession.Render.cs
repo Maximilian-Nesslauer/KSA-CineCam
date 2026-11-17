@@ -32,6 +32,7 @@ internal static partial class ReplaySession
     private const int CutSettleFrames = 8;
 
     private const int DiskCheckEvery = 200;
+    private static (string Take, string Folder, string Reason)? _deferredRenderEnd;
 
     private static readonly TimeSpan RenderCollectTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TitleInterval = TimeSpan.FromMilliseconds(500);
@@ -551,7 +552,6 @@ internal static partial class ReplaySession
             OfflineHooks.SetDrawUi(run.SavedDrawUi);
             Program.ConsoleWindow?.EnableMessageFading();
             RenderAlerts.RemoveNew(run.SavedAlerts);
-            ApiFeed.RenderEnded(run.Plan.Take?.Name ?? "", run.Folder, reason ?? "done");
             if (restoreScene && Scene is { } scene)
             {
                 scene.SetPreviewSpeed(run.SavedSpeed);
@@ -571,6 +571,9 @@ internal static partial class ReplaySession
         _lastRender = run.Status(result);
         Status = result;
         DefaultCategory.Log.Info($"[CineCam] {result}");
+        var ended = (run.Plan.Take?.Name ?? "", run.Folder, reason ?? "done");
+        if (!restoreScene && Scene != null) _deferredRenderEnd = ended;
+        else ApiFeed.RenderEnded(ended.Item1, ended.Item2, ended.Item3);
     }
 
     // Takes the picture of a render that ended in the middle of its frame out of the screenshot

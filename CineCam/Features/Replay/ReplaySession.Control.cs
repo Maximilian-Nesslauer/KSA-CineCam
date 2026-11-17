@@ -108,7 +108,7 @@ internal static partial class ReplaySession
             case ReplayOperation.StopRecording:
                 if (!IsRecording)
                     throw new Refusal("not_recording", UiText.MessageText("text.cee26c069c3d", "There is no active flight recording."));
-                FinishRecording();
+                RequestRecordingStop();
                 return Status;
             case ReplayOperation.RetrySave:
                 if (!HasUnsavedFlight)
