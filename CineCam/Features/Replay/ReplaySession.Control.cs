@@ -22,6 +22,7 @@ internal static partial class ReplaySession
     }
 
     private static readonly Queue<Request> Requests = new();
+    private static List<Action<ReplayResult>>? _stopCompletions;
     public const double MaximumFieldOfView = 150;
     // The window key shows the interface again, so the interface hides only when that key works.
     public static bool CanHideInterface => CineCamPatches.KeysAvailable && CineCamSettings.WindowKey.HasValue;
@@ -69,6 +70,11 @@ internal static partial class ReplaySession
                     BeginPreview(request.Completion);
                     continue;
                 }
+                if (request.Command.Operation == ReplayOperation.StopRecording)
+                {
+                    RequestRecordingStop(request.Completion);
+                    continue;
+                }
                 string message = Execute(request.Command);
                 if (request.Command.Operation is not (ReplayOperation.Status or ReplayOperation.List))
                     Status = message;
@@ -80,17 +86,21 @@ internal static partial class ReplaySession
             }
             catch (Exception ex)
             {
-                Report(ex);
-                string code = ex switch
-                {
-                    FileNotFoundException => "file_not_found",
-                    InvalidDataException or JsonException => "invalid_data",
-                    IOException or UnauthorizedAccessException => "file_error",
-                    _ => "internal_error"
-                };
-                Complete(request.Completion, false, code, Status);
+                Complete(request.Completion, false, ReportRequestError(ex), Status);
             }
         }
+    }
+
+    private static string ReportRequestError(Exception ex)
+    {
+        Report(ex);
+        return ex switch
+        {
+            FileNotFoundException => "file_not_found",
+            InvalidDataException or JsonException => "invalid_data",
+            IOException or UnauthorizedAccessException => "file_error",
+            _ => "internal_error"
+        };
     }
 
     private static string Execute(ReplayCommand command)
@@ -104,11 +114,6 @@ internal static partial class ReplaySession
                 return "Replay library.";
             case ReplayOperation.StartRecording:
                 BeginRecording();
-                return Status;
-            case ReplayOperation.StopRecording:
-                if (!IsRecording)
-                    throw new Refusal("not_recording", UiText.MessageText("text.cee26c069c3d", "There is no active flight recording."));
-                RequestRecordingStop();
                 return Status;
             case ReplayOperation.RetrySave:
                 if (!HasUnsavedFlight)

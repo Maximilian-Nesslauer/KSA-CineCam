@@ -254,6 +254,9 @@ internal static partial class ReplaySession
             throw;
         }
 
+        if (!IsCurrentRender(run, scene))
+            throw new Refusal("render_cancelled", Status);
+
         string text = UiText.Format("text.d165b69cf23b", $"Rendering \"{take.Name}\": {job.Total} pictures at {OfflineOutput.FormatFps(job.Fps)} per second ({job.VideoDuration:F1} s of video) into {output}. Escape or the start and stop key stops the render.{diskNote}");
         DefaultCategory.Log.Info($"[CineCam] {text}");
         return text;
@@ -331,7 +334,10 @@ internal static partial class ReplaySession
             {
                 run.MovedTo = index;
                 scene.Player.MoveTo(run.Job.TakeTime(index));
-                if (WriteRenderRows(run, scene, index) && index > 0)
+                bool cut = WriteRenderRows(run, scene, index);
+                if (!IsCurrentRender(run, scene))
+                    return;
+                if (cut && index > 0)
                     run.Settle = Math.Max(run.Settle, CutSettleFrames);
             }
 
@@ -387,6 +393,9 @@ internal static partial class ReplaySession
         dtPlayer = step;
     }
 
+    private static bool IsCurrentRender(RenderRun run, ReplayScene scene) =>
+        ReferenceEquals(_render, run) && ReferenceEquals(Scene, scene);
+
     // Writes the rows of the events that are due and of the shots and speed keys that start in the
     // frame of a picture. Returns true when a shot starts.
     private static bool WriteRenderRows(RenderRun run, ReplayScene scene, int index)
@@ -397,7 +406,7 @@ internal static partial class ReplaySession
             ReplayRenderLog.Write(run.Log, run.EventRows[run.NextEventRow++], run.Plan, run.FlightStart);
         ApiFeed.RenderPicture(run.Plan, run.FlightStart, run.Job.TakeTime(index), run.EventRows.Skip(first).Take(run.NextEventRow - first),
             scene.Player.Frame, index == 0);
-        if (scene.Player.Frame is not { } frame || run.Plan.Take is not { } take)
+        if (!IsCurrentRender(run, scene) || scene.Player.Frame is not { } frame || run.Plan.Take is not { } take)
             return false;
         List<ReplayRenderRow> rows = ReplayRenderLog.FrameRows(take, frame, run.Job, index, out bool cut);
         foreach (ReplayRenderRow row in rows)

@@ -89,6 +89,21 @@ static class ReplayFxTests
             }
         });
 
+        check("replay fx: a replaced volume no longer extends the tail", () =>
+        {
+            var flight = new ReplayFlight("game", "system", "Earth", 0, [], []) { Explosions = [] };
+            var log = new ReplayEffectLog();
+            log.Add(Explosion(1) with { VolumeId = 1 }, 190);
+            log.Add(Explosion(2) with { VolumeId = 2 }, 60);
+            log.Flush(flight, 2);
+            expect(log.ExplosionEnd == 190, "the original long fireball remains without a replacement");
+            log.Add(Explosion(3, 8) with { VolumeId = 3, ReplacesId = 1 }, 33);
+            log.Add(Explosion(4, 0) with { MergeTargetId = 3 }, 43);
+            log.Flush(flight, 4);
+            expect(log.ExplosionEnd == 60 && flight.Explosions!.Count == 4,
+                "the tail ends with the longest surviving volume and keeps the full event history");
+        });
+
         check("replay fx: volume identities retain merge and replacement targets", () =>
         {
             var actor = new ReplayActor(0, "Rocket", [new ReplaySegment(0, "<parts/>",
@@ -136,6 +151,10 @@ static class ReplayFxTests
             var world = new ReplayWorld(flight, 600000, segment => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), V3.Zero));
             expect(world.Motion(130).OriginCcf == terminal && ReplayTimeline.Sample(old, 130) != null
                 && ReplayTimeline.Sample(subject, 130) == null, "the surviving booster must not replace the terminal camera anchor");
+            var legacy = new ReplayWorld(flight with { FormatVersion = 2, EndTime = null }, 600000,
+                segment => ReplayShape.FromBounds(V3.Zero, new V3(10, 1, 1), V3.Zero));
+            expect(legacy.Motion(1).OriginCcf == old.Segments[0].Samples[^1].Position,
+                "a legacy recording falls back to the earlier surviving actor");
         });
 
         check("replay fx: parachute kinds are their own group and the state steps", () =>

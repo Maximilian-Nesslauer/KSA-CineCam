@@ -37,7 +37,6 @@ internal sealed class FlightRecorder
     private bool _followChanged;
     private int _pendingMarks;
     private readonly ReplayEffectLog _effects = new();
-    private double _effectEnd;
     private double? _terminalTime;
     private readonly Dictionary<ExplosionVolume, int> _volumeIds = new(ReferenceEqualityComparer.Instance);
 
@@ -285,8 +284,7 @@ internal sealed class FlightRecorder
             Flight.Events.Add(new ReplayEvent(detected.TakeTime, detected.Name) { Detail = EventText.Clip(detected.Detail, ReplayFile.DetailLimit) });
     }
 
-    // A vehicle that the game destroyed with an explosion has no sample any more, so its explosions get the time
-    // of the last sample.
+    // A destroyed vehicle has no new pose sample, but its event keeps the time of destruction.
     private void AddDestroyedEvents()
     {
         if (_lastTime < 0)
@@ -310,15 +308,19 @@ internal sealed class FlightRecorder
                 if (!track.Vehicle.IsDisposed || track.Actor.End != null) continue;
                 Flight.Actors[track.Actor.Id] = track.Actor with { End = _terminalTime };
             }
-            end = Math.Max(Math.Max(end, _terminalTime ?? end), _effectEnd);
+            // The next frame can flush the effects that the game made during the destruction frame.
+            _bytes += _effects.Flush(Flight, double.PositiveInfinity);
+            end = Math.Max(Math.Max(end, _terminalTime ?? end), _effects.ExplosionEnd);
+            if (Flight.Destructions is { Count: > 0 } destructions)
+                end = Math.Max(end, destructions[^1].Time);
         }
+        else _bytes += _effects.Flush(Flight, end);
         Flight = Flight with { EndTime = end > _lastTime ? end : null };
-        _bytes += _effects.Flush(Flight, end);
     }
 
     /// <summary>
     /// Takes an explosion volume that ExplosionVolumeManager.Spawn made now. The flight gets it at the next
-    /// sample, because a replay shows nothing after its last sample.
+    /// sample or in the effects tail if the followed vehicle was destroyed.
     /// </summary>
     public void AddExplosion(ExplosionVolumeTemplate template, Celestial parent, double3 positionCcf, double3 velocityCcf,
         float intensity, float ambientPressurePa, int seed, ExplosionVolume? observed = null, bool merged = false,
@@ -342,11 +344,12 @@ internal sealed class FlightRecorder
             }
             if (replaced != null) _volumeIds.TryGetValue(replaced, out replacesId);
         }
-        _effects.Add(new ReplayExplosion(Universe.GetElapsedSeconds() - Flight.StartTime, template.Id, parent.Id,
-            ToV3(positionCcf), ToV3(velocityCcf), Math.Max(0f, Finite(intensity)), Math.Max(0f, Finite(ambientPressurePa)), Math.Max(0, seed))
-            { VolumeId = volumeId, MergeTargetId = mergeId, ReplacesId = replacesId });
-        _effectEnd = Math.Max(_effectEnd, observed != null ? observed.SpawnTime - Flight.StartTime + observed.LifeSeconds
-            : Universe.GetElapsedSeconds() - Flight.StartTime + template.GetScaledLifeSeconds(intensity, Math.Max(0, Finite(ambientPressurePa))));
+        double time = Universe.GetElapsedSeconds() - Flight.StartTime;
+        float pressure = Math.Max(0, Finite(ambientPressurePa));
+        double end = observed != null ? observed.SpawnTime - Flight.StartTime + observed.LifeSeconds
+            : time + template.GetScaledLifeSeconds(intensity, pressure);
+        _effects.Add(new ReplayExplosion(time, template.Id, parent.Id, ToV3(positionCcf), ToV3(velocityCcf), intensity,
+            pressure, Math.Max(0, seed)) { VolumeId = volumeId, MergeTargetId = mergeId, ReplacesId = replacesId }, end);
     }
 
     /// <summary>

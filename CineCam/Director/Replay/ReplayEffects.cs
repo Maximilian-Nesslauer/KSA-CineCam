@@ -36,12 +36,17 @@ public sealed class ReplayEffectLog
     /// <summary>The label of a destruction marker. The marker list of the replay shows the labels that start with it.</summary>
     public static readonly string MarkerLabel = UiText.MessageText("text.ca6482a42bab", "Explosion");
 
-    private readonly List<ReplayExplosion> _explosions = [];
+    private readonly List<(ReplayExplosion Item, double End)> _explosions = [];
     private readonly List<(ReplayDestruction Item, string? Vehicle)> _destructions = [];
+    private readonly Dictionary<int, double> _volumeEnds = [];
+    private double _anonymousEnd;
 
     public int Pending => _explosions.Count + _destructions.Count;
 
-    public void Add(ReplayExplosion item) => _explosions.Add(item);
+    public void Add(ReplayExplosion item, double end = 0) => _explosions.Add((item, Math.Max(item.Time, end)));
+
+    /// <summary>The last expiry of a volume that the saved effect log still retains.</summary>
+    public double ExplosionEnd => Math.Max(_anonymousEnd, _volumeEnds.Values.DefaultIfEmpty().Max());
 
     /// <param name="vehicle">The name of the vehicle for the marker, or null.</param>
     public void Add(ReplayDestruction item, string? vehicle) => _destructions.Add((item, vehicle));
@@ -56,15 +61,22 @@ public sealed class ReplayEffectLog
         long bytes = 0;
         if (flight.Explosions is { } explosions)
         {
-            foreach (ReplayExplosion item in _explosions)
+            foreach ((ReplayExplosion item, double end) in _explosions)
             {
                 if (item.Time > time || explosions.Count >= ReplayFile.EventLimit)
                     continue;
                 explosions.Add(item);
                 bytes += ReplayFile.MeasureExplosion(item);
+                if (item.ReplacesId > 0)
+                    _volumeEnds.Remove(item.ReplacesId);
+                int id = item.MergeTargetId > 0 ? item.MergeTargetId : item.VolumeId;
+                if (id > 0)
+                    _volumeEnds[id] = end;
+                else
+                    _anonymousEnd = Math.Max(_anonymousEnd, end);
             }
         }
-        _explosions.RemoveAll(item => item.Time <= time);
+        _explosions.RemoveAll(entry => entry.Item.Time <= time);
 
         if (flight.Destructions is { } destructions)
         {

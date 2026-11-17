@@ -228,7 +228,8 @@ public sealed class ReplayWorld
     {
         if (ReplayTimeline.Sample(followed, time) is { } pose)
             return pose;
-        if (followed.End is double ended && time >= ended)
+        if (Flight.FormatVersion >= 3 && Flight.EndTime is double end && time <= end
+            && ReferenceEquals(followed, _follows[^1].Actor) && followed.End is double ended && time >= ended)
         {
             ReplaySegment terminal = followed.Segments[^1];
             return (terminal, terminal.Samples[^1]);

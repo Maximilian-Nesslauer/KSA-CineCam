@@ -325,32 +325,60 @@ internal static partial class ReplaySession
         }
     }
 
-    private static void RequestRecordingStop()
+    private static void RequestRecordingStop(Action<ReplayResult>? completion)
     {
-        if (_recorder?.PrimaryDestroyed == true)
+        if (_recorder is not { } recorder)
+            throw new Refusal("not_recording", UiText.MessageText("text.cee26c069c3d", "There is no active flight recording."));
+        if (recorder.PrimaryDestroyed)
         {
-            _recorder.MarkTerminal();
+            recorder.MarkTerminal();
             _terminalStop ??= (Program.FrameNumber, null);
+            if (completion != null)
+                (_stopCompletions ??= []).Add(completion);
+            return;
         }
-        else FinishRecording();
+        bool saved = FinishRecording();
+        Complete(completion, saved, saved ? "ok" : "no_samples", Status);
     }
 
-    private static void FinishRecording(string? reason = null)
+    private static bool FinishRecording(string? reason = null)
     {
         FlightRecorder? recorder = _recorder;
         string? takeName = _recordingTake;
+        List<Action<ReplayResult>>? completions = _stopCompletions;
         _recorder = null;
         _recordingTake = null;
         _recordingForTake = false;
         _terminalStop = null;
+        _stopCompletions = null;
         if (recorder == null)
-            return;
+            return false;
+
+        bool saved = false;
+        string code;
+        try
+        {
+            saved = SaveClosedRecording(recorder, takeName, reason);
+            code = saved ? "ok" : "no_samples";
+        }
+        catch (Exception ex) when (completions != null)
+        {
+            code = ReportRequestError(ex);
+        }
+        if (completions != null)
+            foreach (Action<ReplayResult> completion in completions)
+                Complete(completion, saved, code, Status);
+        return saved;
+    }
+
+    private static bool SaveClosedRecording(FlightRecorder recorder, string? takeName, string? reason)
+    {
         recorder.Close();
         ReplayFlight flight = recorder.Flight;
         if (flight.Actors.Count == 0 || flight.Actors[0].Segments.Count == 0)
         {
             Status = reason ?? UiText.MessageText("text.225a5896c4e5", "The recording contained no flight samples.");
-            return;
+            return false;
         }
         string suffix = Guid.NewGuid().ToString("N")[..8];
         string take = takeName != null && RecordingTakePart(takeName) is { Length: > 0 } part ? UiText.Concat(" ", part) : "";
@@ -359,6 +387,7 @@ internal static partial class ReplaySession
         _unsavedPath = Path.Combine(Folder, UiText.Concat(name, Extension));
         SaveRecording();
         Status = reason == null ? UiText.MessageText("text.3890d72d1274", "Flight saved. It is at the top of the list below.") : UiText.Format("text.08bfeff1b4f4", $"{reason} The recorded portion was saved.");
+        return true;
     }
 
     // The take name in the name of a recording: safe in a file name and short enough for the id of a recording.
