@@ -17,8 +17,12 @@ internal sealed class ReplayCrew : IDisposable
     private sealed class Pose
     {
         public KittenRenderable? Renderable;
+        public AnimatedRenderable? Model;
         public BoneAnimRuntime? Runtime;
         public KittenClock Clock = new();
+
+        // KittenRenderable picks the clip of the pose in its first draw, so the clock starts after it.
+        public bool Drawn;
     }
 
     private readonly Dictionary<IVASeat, Pose> _seats = new(ReferenceEqualityComparer.Instance);
@@ -70,6 +74,7 @@ internal sealed class ReplayCrew : IDisposable
                 Track(pose, seat.Renderable);
             double step = Advance(pose, time);
             seat.UpdateSeatedRenderable(viewport, frameIndex, Math.Min(step, KittenClock.MaxDampingStep), in matrixAsmb2Ego);
+            Settle(pose, step);
         }
     }
 
@@ -122,6 +127,7 @@ internal sealed class ReplayCrew : IDisposable
         drawn.ConditionRung = KittenRenderable.ReadConditionRung(Universe.KittenRoster.Find(actor.Name));
         drawn.UpdateRenderData(viewport, frameIndex, Math.Min(step, KittenClock.MaxDampingStep), float4x4.Pack(in matrixAsmb2Ego),
             acceleration, angular, in locomotion, in inputs);
+        Settle(pose, step);
     }
 
     /// <summary>Disposes every kitten, so the next frame makes them again with a new animation clock.</summary>
@@ -140,43 +146,55 @@ internal sealed class ReplayCrew : IDisposable
     private static void Track(Pose pose, KittenRenderable? renderable)
     {
         pose.Renderable = renderable;
-        pose.Runtime = renderable != null ? RuntimeOf(renderable) : null;
+        (pose.Model, pose.Runtime) = renderable != null ? RuntimeOf(renderable) : (null, null);
         pose.Clock = new KittenClock();
+        pose.Drawn = false;
     }
 
     // The game advances the animation by the frame time times the simulation speed, which is 0 in a
     // replay. So the replay advances the animation of the model by the recording time before the draw,
-    // at the playback rate that KittenRenderable chose for the clip. The draw then samples it without a
-    // step of its own.
+    // at the playback rate that KittenRenderable chose for the clip, and not while KittenRenderable holds
+    // the clip (a kitten that stands still on a ladder). The draw then samples it without a step of its own.
     private static double Advance(Pose pose, double time)
     {
-        if (pose.Renderable == null)
+        if (pose.Renderable == null || !pose.Drawn)
             return 0.0;
         double step = pose.Clock.Advance(time);
-        if (step > 0 && pose.Runtime != null)
+        if (step > 0 && pose.Runtime != null && pose.Model?.FreezeAnimation != true)
             pose.Runtime.Update((float)(step * pose.Renderable.GroundAnimPlaybackRate));
         return step;
+    }
+
+    // A draw that changes the clip starts a blend from the pose before, which only a step of time ends. A
+    // paused replay gives no step, so the blend ends here and the next frame shows the new clip.
+    private static void Settle(Pose pose, double step)
+    {
+        pose.Drawn = pose.Renderable != null;
+        if (step > 0 || pose.Runtime == null || pose.Model?.IsAnimationBlending != true)
+            return;
+        pose.Runtime.Update(KittenLocomotionTuning.Current.AnimBlendTime + 0.01f);
     }
 
     // KittenRenderable keeps its model in the private field _characterAvatar, and AnimatedRenderable keeps
     // its animation in the protected field RuntimeAnim. Without them the kittens keep the first pose of
     // their animation.
-    private static BoneAnimRuntime? RuntimeOf(KittenRenderable renderable)
+    private static (AnimatedRenderable? Model, BoneAnimRuntime? Runtime) RuntimeOf(KittenRenderable renderable)
     {
         try
         {
             if (GameReflection.KittenRenderable_CharacterAvatar?.GetValue(renderable) is CharacterAvatar avatar
-                && GameReflection.AnimatedRenderable_RuntimeAnim?.GetValue(avatar.Core.CharacterModel) is BoneAnimRuntime runtime)
-                return runtime;
+                && avatar.Core.CharacterModel is { } model
+                && GameReflection.AnimatedRenderable_RuntimeAnim?.GetValue(model) is BoneAnimRuntime runtime)
+                return (model, runtime);
         }
         catch (Exception ex) when (ex is ArgumentException or FieldAccessException or InvalidCastException)
         {
             LogAnimation(ex.Message);
-            return null;
+            return (null, null);
         }
 
         LogAnimation("a field of the kitten model was not found");
-        return null;
+        return (null, null);
     }
 
     private static void LogAnimation(string reason)
