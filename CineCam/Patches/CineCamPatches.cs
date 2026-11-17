@@ -153,7 +153,7 @@ internal static class CineCamPatches
         SequenceWatch.Reset();
         OfflineHooks.Available = false;
         OfflineHooks.Detects = false;
-        OfflineHooks.Reset();
+        OfflineHooks.Shutdown();
         GameUiGuard.Reset();
         LookGuard.Reset();
         SunWarp.ExactArrival = false;

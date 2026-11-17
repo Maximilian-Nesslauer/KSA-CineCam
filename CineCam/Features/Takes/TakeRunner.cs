@@ -105,7 +105,14 @@ internal static partial class TakeRunner
         try
         {
             ApplyPendingSpeed();
+            OfflineHooks.AfterGrab(_take != null);
             ProcessRequests();
+            if (_take is { HideUiNextFrame: true, IsPaused: false } hiding)
+            {
+                hiding.HideUiNextFrame = false;
+                HideInterface(hiding);
+                WriteRow(hiding, "marker", "hideUi", "the game interface is hidden");
+            }
         }
         catch (Exception ex)
         {
@@ -592,7 +599,7 @@ internal static partial class TakeRunner
         {
             if (take.HidUi)
             {
-                Program.DrawUI = take.SavedDrawUi;
+                OfflineHooks.SetDrawUi(take.SavedDrawUi);
                 Program.ConsoleWindow?.EnableMessageFading();
                 TimedAlert.ClearAll();
             }
@@ -856,6 +863,15 @@ internal static partial class TakeRunner
                 if (take.IsPaused)
                 {
                     take.HideUiDeferred = true;
+                    continue;
+                }
+
+                // A clean grab hides the interface from ScreenshotCapture.OnPrepareFrame to its
+                // OnPostRender and then sets the value from before back, which would undo a hide in
+                // this frame and make the end of the take restore a hidden interface.
+                if (take.Offline is { Grab: CaptureGrab.Clean })
+                {
+                    take.HideUiNextFrame = true;
                     continue;
                 }
 

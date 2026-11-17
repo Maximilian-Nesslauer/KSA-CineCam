@@ -155,7 +155,7 @@ internal static partial class TakeRunner
                 {
                     // The step of this frame is applied in the next frame, whose picture shows it.
                     WriteRow(take, "info", "exactTime", string.Create(CultureInfo.InvariantCulture,
-                        $"picture {offline.FrameNumber + 1} shows the {offline.LandingName} at game time {landing:F3}; the step was {stepSeconds:G6} s"));
+                        $"picture {offline.FrameNumber + 1} shows the {offline.LandingName} at game time {landing:F6}; the step was {stepSeconds:G6} s"));
                 }
 
                 offline.LandingTarget = null;

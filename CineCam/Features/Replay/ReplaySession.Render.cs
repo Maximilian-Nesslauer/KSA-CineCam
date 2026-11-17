@@ -535,7 +535,7 @@ internal static partial class ReplaySession
         {
             if (run.SavedTitle != null && Program.GetWindow() is { } window)
                 window.Title = run.SavedTitle;
-            Program.DrawUI = run.SavedDrawUi;
+            OfflineHooks.SetDrawUi(run.SavedDrawUi);
             Program.ConsoleWindow?.EnableMessageFading();
             RenderAlerts.RemoveNew(run.SavedAlerts);
             if (restoreScene && Scene is { } scene)

@@ -145,6 +145,19 @@ Other mods lose their state when the game loads a save. Arm them again after a r
 
 On the **Settings** page, **Hide the game interface during a take** hides the game interface while the take records. **Hide at (event)** hides it later, for example at the ignition, so you can still work with the interface until then. A pause for an edit shows it again. **White frame at the take start** draws one white frame at the start, as a mark for the cut in the video.
 
+While CineCam hides the interface (a take, a render, or **Hide interface** in a replay), it also turns off the frame statistics of the game (the FPS and MS numbers in the corner), which the game draws even without the interface. They come back when the interface does. If you turn them on with the game key during that time, they stay on.
+
+### Sound and picture of a take
+
+**Take setup** has two groups for the look of the take:
+
+- **Sound of the take**: **Music** and **Sound effects** play at a share of the volumes of the game settings: as in the game, off, 25, 50 or 75 percent. The volumes come back when the take ends.
+- **Picture of the take**: **Fixed exposure** replaces the Tonemap Exposure of the game settings with the value below it (higher is brighter, the game default is 1.25). **Cloud ambient light**, **Cloud shadows** and **Reflections** can be pinned on or off, so the take looks the same on every computer. **Cloud shadows** can only be pinned on when they are on in the game settings, because the game sets their quality at its start.
+
+The sound and picture apply while the take runs (also in a dry run, not in a shot preview), while a replay renders it, and while a replay shows it with the take camera. Your game settings come back after it, and CineCam never saves them. While the game settings window is open, CineCam shows your own values, so a pinned value cannot be saved by mistake.
+
+**Land pictures on the apsides** is for an offline capture in orbit: a picture lands exactly on each apoapsis and periapsis that the orbit forecasts. The two pictures before it take a shorter step, so the speed of the video does not jump, and the event log gets an `exactTime` row with the picture number.
+
 ## Record and capture
 
 **Real time.** Record the screen yourself, for example with OBS. Turn on hiding of the interface for a clean picture and the white frame to mark the start in the video.
@@ -156,6 +169,12 @@ ffmpeg -framerate 30 -start_number 1 -i frames\%06d.png -c:v libx264 -pix_fmt yu
 ```
 
 Add the music in the video editor. A picture that the game does not save is made again with a very small time step, and the take ends when three pictures in a row fail. A take needs free disk space for all pictures. Each run also writes an event log, see [the take folder and event log](shot-file.md#take-folder-and-event-log).
+
+**Picture grab.** Under **Video**, **Picture grab** chooses how the offline capture and the render of a replay take each picture. **Screen** (the default) copies the finished screen image, with everything that is drawn on it, also the overlays of other mods. **Clean scene** draws the scene of the main view into its own picture, without the interface and without overlays. The game hides its interface for the frame of each picture.
+
+**Stills.** **Take still** (on the **Settings** page under **Video**, and in the replay block) saves one picture of the current view, from a take, a replay or the free camera, at **Still size** times the window size (2 to 8, default 4). The game draws 30 frames at the larger size first, so a running flight moves on by about half a second; a replay pauses for it. The interface is hidden for that time. The stills go to `Documents\My Games\Kitten Space Agency\CineCam\stills\`. The console command `cinecam_still [scale]` does the same. The game lowers a size that does not fit into the video memory, and says so in its log.
+
+**Sound during a capture.** The pictures have no sound, so the game sound is muted during an offline capture and the render of a replay, and while a replay is open. **Game sound** on the **Settings** page turns each of these off.
 
 ## Settings and keys
 
@@ -173,10 +192,13 @@ Open the **Settings** page of the window. A key change is saved at once. A key t
 | Keep this window open during a take (`showWindowDuringTake`) | off | Keeps the window on the screen while a take records |
 | Replay of recorded flights (`experimentalReplay`) | off | Shows the replay |
 | Record the flight with each take (`recordWithTake`) | off | Records the flight while a take runs, for a replay. Needs the replay |
+| Mute the game during an offline capture and a render (`muteOfflineCapture`) | on | Mutes the game sound while pictures are saved |
+| Mute the game during a replay (`muteReplay`) | on | Mutes the game sound while a replay is open |
+| Still size (`stillScale`) | 4 | The size of a still as a multiple of the window size, 2 to 8 |
 | Developer mode (`developerMode`) | off | Shows file paths, the file section of the take, the local control and the autotest |
 | `enableLocalControl` | off | Settings file only. See [Local control](development.md#local-control-from-a-terminal-developer-mode) |
 
-The page has the groups **Video**, **Interface during a take**, **Keys**, **Free camera**, **Game speed**, **Time of day**, **Experimental** and **Developer**. A label that does not fit beside its control stands on its own line above it. Other items of the page:
+The page has the groups **Video**, **Interface during a take**, **Game sound**, **Keys**, **Free camera**, **Game speed**, **Time of day**, **Experimental** and **Developer**. A label that does not fit beside its control stands on its own line above it. Other items of the page:
 
 - **Free camera FOV**: changes the field of view of the game camera now. It goes back when the window closes.
 - **Game speed now**: a slider and the buttons 0.1x to 4x. It is locked while a recording take runs, while an automatic warp runs and while a menu pauses the game.

@@ -22,6 +22,8 @@ internal static class OfflineHooks
 {
     private static Action<int, string>? _screenshot;
     private static bool _expecting;
+    private static bool _cleanInFlight;
+    private static bool? _drawUiAfterGrab;
 
     public static bool Available { get; set; }
 
@@ -47,8 +49,36 @@ internal static class OfflineHooks
             return false;
         Result = PostRenderResult.Unknown;
         _expecting = true;
+        _cleanInFlight = grab == CaptureGrab.Clean;
         _screenshot(1, grab == CaptureGrab.Clean ? "" : "ui");
         return true;
+    }
+
+    // A clean grab hides the interface in ScreenshotCapture.OnPrepareFrame and sets the value from
+    // that moment back in ScreenshotCapture.OnPostRender, so a change of Program.DrawUI in between
+    // would be undone. This sets it now and again after the grab.
+    public static void SetDrawUi(bool shown)
+    {
+        Program.DrawUI = shown;
+        if (_cleanInFlight && Program.Instance?.IsScreenshotCaptureActive == true)
+            _drawUiAfterGrab = shown;
+    }
+
+    // Runs at the start of each frame. A run that started since then owns the interface.
+    public static void AfterGrab(bool runActive)
+    {
+        if (_drawUiAfterGrab is not bool shown || Program.Instance?.IsScreenshotCaptureActive == true)
+            return;
+        _drawUiAfterGrab = null;
+        if (!runActive)
+            Program.DrawUI = shown;
+    }
+
+    public static void Shutdown()
+    {
+        Reset();
+        _cleanInFlight = false;
+        _drawUiAfterGrab = null;
     }
 
     public static string GrabName(CaptureGrab grab) => grab == CaptureGrab.Clean ? "clean" : "swapchain";
@@ -60,6 +90,8 @@ internal static class OfflineHooks
             Thread.Sleep(5);
     }
 
+    // The end of a capture calls this while its last clean grab can still be in flight, so the
+    // interface restore of SetDrawUi stays armed. Shutdown clears it too.
     public static void Reset()
     {
         _expecting = false;
@@ -72,6 +104,7 @@ internal static class OfflineHooks
     public static void PostRenderPrefix(ScreenshotCapture __instance)
     {
         PostRenderCount++;
+        _cleanInFlight = false;
         if (!_expecting)
             return;
         _expecting = false;
