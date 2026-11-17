@@ -1,4 +1,5 @@
 {
+  "recording.legacy_merges": "{0} Explosionszusammenf\u00fchrungen ohne Ziel-ID werden ausgelassen; das Volumenwachstum kann daher vom urspr\u00fcnglichen Flug abweichen",
   "capture.pending_picture": "Ein Bild wird gerade aufgenommen oder gespeichert. Versuche es gleich noch einmal.",
   "recording.vehicle_lost": "Das aufgezeichnete Fahrzeug ist nicht mehr vorhanden.",
   "recording.body_changed": "Das aufgezeichnete Fahrzeug hat seinen Zentralk\u00f6rper gewechselt.",

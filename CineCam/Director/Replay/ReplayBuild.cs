@@ -114,8 +114,9 @@ public sealed class ReplayFitReport
 
     /// <summary>Connections to a part connector that this build no longer has, dropped as the game drops them from a saved vehicle.</summary>
     public int ConnectorsDropped { get; set; }
+    public int LegacyExplosionMerges { get; set; }
 
-    public bool IsClean => PartStateLeftOut == 0 && ExhaustLeftOut == 0 && ConnectorsDropped == 0;
+    public bool IsClean => PartStateLeftOut == 0 && ExhaustLeftOut == 0 && ConnectorsDropped == 0 && LegacyExplosionMerges == 0;
 
     /// <summary>A sentence for the replay block, or an empty text when nothing was left out.</summary>
     public string Text()
@@ -127,6 +128,8 @@ public sealed class ReplayFitReport
             parts.Add(UiText.Format("text.6bfb61332584", $"{ExhaustLeftOut} of {Segments} vehicle segments show no engine plumes, because their engines differ from the recording"));
         if (ConnectorsDropped > 0)
             parts.Add(UiText.Format("text.b1a8569fb19e", $"{ConnectorsDropped} part connections to connectors that the parts no longer have were dropped"));
+        if (LegacyExplosionMerges > 0)
+            parts.Add(UiText.Format("recording.legacy_merges", $"{LegacyExplosionMerges} explosion merge records without target IDs are left out, so volume growth can differ from the original flight"));
         return parts.Count == 0 ? "" : UiText.Concat(UiText.Join(". ", parts), ".");
     }
 }

@@ -85,6 +85,7 @@ internal sealed class ReplayScene : IDisposable
     public ReplayScene(ReplayFlight flight, CelestialSystem system, Celestial body)
     {
         Flight = flight;
+        Fit.LegacyExplosionMerges = flight.Explosions?.Count(item => item.Seed == 0 && item.MergeTargetId == 0) ?? 0;
         System = system;
         _body = body;
         _sun = Universe.WorldSun;

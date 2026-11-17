@@ -89,6 +89,42 @@ static class ReplayFxTests
             }
         });
 
+        check("replay fx: volume identities retain merge and replacement targets", () =>
+        {
+            var actor = new ReplayActor(0, "Rocket", [new ReplaySegment(0, "<parts/>",
+                [new ReplaySample(0, V3.Zero, new ReplayRotation(0, 0, 0, 1), []),
+                 new ReplaySample(10, V3.Zero, new ReplayRotation(0, 0, 0, 1), [])])]);
+            ReplayExplosion birth = Explosion(1) with { VolumeId = 1 };
+            ReplayExplosion merge = Explosion(2, 0) with { MergeTargetId = 1 };
+            ReplayExplosion replacement = Explosion(3, 8) with { VolumeId = 2, ReplacesId = 1 };
+            var flight = new ReplayFlight("game", "system", "Earth", 0, [actor], [])
+                { Explosions = [birth, merge, replacement] };
+            string path = Path.Combine(Path.GetTempPath(), "cinecam-volume-ids-" + Guid.NewGuid().ToString("N") + ".ccreplay");
+            try
+            {
+                ReplayFile.Save(path, flight);
+                expect(ReplayFile.Load(path).Explosions!.SequenceEqual(flight.Explosions!), "the target graph survives a round trip");
+                void Invalid(List<ReplayExplosion> items)
+                {
+                    bool rejected = false;
+                    try { ReplayFile.Save(path, flight with { Explosions = items }); }
+                    catch (InvalidDataException) { rejected = true; }
+                    expect(rejected, "an invalid explosion graph must not be written");
+                }
+                Invalid([merge]);
+                Invalid([birth, birth with { Time = 2 }]);
+                Invalid([birth, replacement with { ReplacesId = 9 }]);
+                Invalid([birth, replacement, merge with { Time = 4 }]);
+                Invalid([birth, merge with { Body = "another body" }]);
+                expect(new ReplayFitReport { LegacyExplosionMerges = 1 }.Text().Contains("without target IDs"),
+                    "unidentified old merges give a visible warning");
+            }
+            finally
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+        });
+
         check("replay fx: parachute kinds are their own group and the state steps", () =>
         {
             expect(ReplayChannelKind.IsChute(ReplayChannelKind.ChuteFill) && !ReplayChannelKind.IsKnown(ReplayChannelKind.ChuteFill), "groups");

@@ -190,10 +190,11 @@ internal static partial class ReplaySession
 
     /// <summary>An explosion volume that the game made. The volumes that a replay makes are not recorded.</summary>
     public static void ObserveExplosion(ExplosionVolumeTemplate template, Celestial parent, Brutal.Numerics.double3 positionCcf,
-        Brutal.Numerics.double3 velocityCcf, float intensity, float ambientPressurePa, int seed)
+        Brutal.Numerics.double3 velocityCcf, float intensity, float ambientPressurePa, int seed,
+        ExplosionVolume? observed = null, bool merged = false, ExplosionVolume? replaced = null)
     {
         if (Scene == null)
-            _recorder?.AddExplosion(template, parent, positionCcf, velocityCcf, intensity, ambientPressurePa, seed);
+            _recorder?.AddExplosion(template, parent, positionCcf, velocityCcf, intensity, ambientPressurePa, seed, observed, merged, replaced);
     }
 
     public static void ObserveDestruction(in ExplosionContext context)

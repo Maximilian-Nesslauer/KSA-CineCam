@@ -1,12 +1,23 @@
+using System.Text.Json.Serialization;
+
 namespace CineCam.Director.Replay;
 
 /// <summary>
 /// One explosion volume as the game made it: the template, the body and the place and speed in the body-fixed
 /// frame of that body, the intensity and the air pressure that size it, and the noise seed of its shape. A seed of
-/// 0 means that the game merged it into a volume that burned already.
+/// 0 means that the game merged it into a volume that burned already. Volume and target identities
+/// distinguish that volume from other nearby fireballs and preserve replacements in a full store.
 /// </summary>
 public sealed record ReplayExplosion(double Time, string Template, string Body, V3 Position, V3 Velocity, float Intensity,
-    float AmbientPressure, int Seed);
+    float AmbientPressure, int Seed)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int VolumeId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int MergeTargetId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ReplacesId { get; init; }
+}
 
 /// <summary>
 /// A destruction that asked the game for an explosion. <see cref="Cause"/> is the name of the game cause, the actor is
@@ -17,8 +28,8 @@ public sealed record ReplayDestruction(double Time, string Cause, float Intensit
 
 /// <summary>
 /// The explosions and destructions of a recording that wait for the next sample. The game makes them later in the
-/// frame than the recorder samples, and a replay shows nothing after its last sample, so they go into the flight
-/// when a sample at or after their time is in it. Those after the last sample are left out.
+/// frame than the recorder samples. They enter the flight when their time lies within its duration,
+/// which can include a terminal effects tail after the last vehicle pose.
 /// </summary>
 public sealed class ReplayEffectLog
 {

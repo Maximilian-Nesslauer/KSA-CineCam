@@ -39,6 +39,7 @@ internal sealed class FlightRecorder
     private readonly ReplayEffectLog _effects = new();
     private double _effectEnd;
     private double? _terminalTime;
+    private readonly Dictionary<ExplosionVolume, int> _volumeIds = new(ReferenceEqualityComparer.Instance);
 
     private sealed record Track(Vehicle Vehicle, ReplayActor Actor)
     {
@@ -320,15 +321,32 @@ internal sealed class FlightRecorder
     /// sample, because a replay shows nothing after its last sample.
     /// </summary>
     public void AddExplosion(ExplosionVolumeTemplate template, Celestial parent, double3 positionCcf, double3 velocityCcf,
-        float intensity, float ambientPressurePa, int seed)
+        float intensity, float ambientPressurePa, int seed, ExplosionVolume? observed = null, bool merged = false,
+        ExplosionVolume? replaced = null)
     {
         if (!ReferenceEquals(parent, _body) || string.IsNullOrWhiteSpace(template.Id) || template.Id.Length > 256)
             return;
         intensity = KSA.Rendering.ExplosionIntensity.ClampIntensity(Finite(intensity));
+        int volumeId = 0, mergeId = 0, replacesId = 0;
+        if (observed != null)
+        {
+            if (merged)
+            {
+                // A volume from before recording has no recorded birth to grow.
+                if (!_volumeIds.TryGetValue(observed, out mergeId)) return;
+            }
+            else
+            {
+                volumeId = _volumeIds.Count + 1;
+                _volumeIds.Add(observed, volumeId);
+            }
+            if (replaced != null) _volumeIds.TryGetValue(replaced, out replacesId);
+        }
         _effects.Add(new ReplayExplosion(Universe.GetElapsedSeconds() - Flight.StartTime, template.Id, parent.Id,
-            ToV3(positionCcf), ToV3(velocityCcf), Math.Max(0f, Finite(intensity)), Math.Max(0f, Finite(ambientPressurePa)), Math.Max(0, seed)));
-        _effectEnd = Math.Max(_effectEnd, Universe.GetElapsedSeconds() - Flight.StartTime
-            + template.GetScaledLifeSeconds(intensity, Math.Max(0, Finite(ambientPressurePa))));
+            ToV3(positionCcf), ToV3(velocityCcf), Math.Max(0f, Finite(intensity)), Math.Max(0f, Finite(ambientPressurePa)), Math.Max(0, seed))
+            { VolumeId = volumeId, MergeTargetId = mergeId, ReplacesId = replacesId });
+        _effectEnd = Math.Max(_effectEnd, observed != null ? observed.SpawnTime - Flight.StartTime + observed.LifeSeconds
+            : Universe.GetElapsedSeconds() - Flight.StartTime + template.GetScaledLifeSeconds(intensity, Math.Max(0, Finite(ambientPressurePa))));
     }
 
     /// <summary>

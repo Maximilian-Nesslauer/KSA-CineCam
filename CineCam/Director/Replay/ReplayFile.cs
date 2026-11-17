@@ -175,7 +175,26 @@ public static class ReplayFile
             Require(item != null && double.IsFinite(item.Time) && item.Time >= 0 && item.Time <= duration && Text(item.Template) && item.Template.Length <= 256
                 && Text(item.Body) && item.Body.Length <= 256 && SupportedVector(item.Position) && SupportedVector(item.Velocity)
                 && float.IsFinite(item.Intensity) && item.Intensity >= 0 && float.IsFinite(item.AmbientPressure) && item.AmbientPressure >= 0
-                && item.Seed >= 0, "explosion");
+                && item.Seed >= 0 && item.VolumeId >= 0 && item.MergeTargetId >= 0 && item.ReplacesId >= 0, "explosion");
+        }
+        var volumeIds = new Dictionary<int, ReplayExplosion>();
+        var presentIds = new HashSet<int>();
+        foreach (ReplayExplosion item in (flight.Explosions ?? []).OrderBy(item => item.Time))
+        {
+            if (item.MergeTargetId > 0)
+            {
+                Require(item.VolumeId == 0 && item.ReplacesId == 0 && item.Seed == 0
+                    && presentIds.Contains(item.MergeTargetId) && volumeIds.TryGetValue(item.MergeTargetId, out var birth)
+                    && birth.Template == item.Template && birth.Body == item.Body, "explosion merge target");
+            }
+            else if (item.VolumeId > 0)
+            {
+                Require(item.Seed > 0 && volumeIds.TryAdd(item.VolumeId, item), "explosion volume identity");
+                if (item.ReplacesId > 0)
+                    Require(presentIds.Remove(item.ReplacesId), "explosion replacement target");
+                presentIds.Add(item.VolumeId);
+            }
+            else Require(item.ReplacesId == 0, "unidentified explosion replacement");
         }
         foreach (ReplayDestruction item in flight.Destructions ?? [])
         {

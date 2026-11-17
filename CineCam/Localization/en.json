@@ -1,4 +1,5 @@
 {
+  "recording.legacy_merges": "{0} explosion merge records without target IDs are left out, so volume growth can differ from the original flight",
   "capture.pending_picture": "A picture is being captured or saved. Try again in a moment.",
   "recording.vehicle_lost": "The recorded vehicle was lost.",
   "recording.body_changed": "The recorded vehicle changed its parent body.",

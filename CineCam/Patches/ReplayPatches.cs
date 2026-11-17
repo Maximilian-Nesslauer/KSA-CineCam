@@ -522,23 +522,37 @@ internal static class ReplayPatches
 
     // ExplosionVolumeStore.Add replaces a slot when full. Object identity detects that insertion as
     // well as an append, while a merge keeps the original object.
-    private static void BeforeExplosionSpawn(ExplosionVolumeManager __instance, out HashSet<ExplosionVolume>? __state)
+    private static void BeforeExplosionSpawn(ExplosionVolumeManager __instance, out Dictionary<ExplosionVolume, float>? __state)
     {
-        __state = ReplaySession.IsRecording && !ReplaySession.IsPlayingBack && ReplayExplosions.StoreOf(__instance) is { } store
-            ? ReplayExplosions.Snapshot(store) : null;
+        __state = null;
+        if (!Program.IsMainThread() || !ReplaySession.IsRecording || ReplaySession.IsPlayingBack
+            || ReplayExplosions.StoreOf(__instance) is not { } store) return;
+        __state = new Dictionary<ExplosionVolume, float>(ReferenceEqualityComparer.Instance);
+        for (int i = 0; i < store.Count; i++) __state.Add(store[i], store[i].Intensity);
     }
 
-    private static void AfterExplosionSpawn(ExplosionVolumeManager __instance, HashSet<ExplosionVolume>? __state, ExplosionVolumeTemplate __0, Celestial __1,
+    private static void AfterExplosionSpawn(ExplosionVolumeManager __instance, Dictionary<ExplosionVolume, float>? __state, ExplosionVolumeTemplate __0, Celestial __1,
         double3 __2, double3 __3, float __4, float __5)
     {
         if (__state == null)
             return;
         try
         {
-            int seed = 0;
-            if (ReplayExplosions.StoreOf(__instance) is { } store && ReplayExplosions.Added(store, __state) is { } volume)
-                seed = (int)volume.NoiseSeed;
-            ReplaySession.ObserveExplosion(__0, __1, __2, __3, __4, __5, seed);
+            if (ReplayExplosions.StoreOf(__instance) is not { } store) return;
+            var after = new HashSet<ExplosionVolume>(ReferenceEqualityComparer.Instance);
+            ExplosionVolume? added = null, merged = null;
+            for (int i = 0; i < store.Count; i++)
+            {
+                ExplosionVolume volume = store[i];
+                after.Add(volume);
+                if (!__state.TryGetValue(volume, out float oldIntensity)) added = volume;
+                else if (oldIntensity != volume.Intensity) merged = volume;
+            }
+            ExplosionVolume? observed = added ?? merged;
+            if (observed == null) return;
+            ExplosionVolume? replaced = added != null ? __state.Keys.FirstOrDefault(volume => !after.Contains(volume)) : null;
+            ReplaySession.ObserveExplosion(__0, __1, __2, __3, __4, __5,
+                added != null ? (int)added.NoiseSeed : 0, observed, added == null, replaced);
         }
         catch (Exception ex)
         {

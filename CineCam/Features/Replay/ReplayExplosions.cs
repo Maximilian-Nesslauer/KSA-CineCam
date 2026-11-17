@@ -1,6 +1,7 @@
 using System.Reflection;
 using Brutal.Logging;
 using Brutal.Numerics;
+using CineCam.Core;
 using CineCam.Director;
 using CineCam.Director.Replay;
 using HarmonyLib;
@@ -19,6 +20,10 @@ internal sealed class ReplayExplosions : IDisposable
 {
     private static readonly FieldInfo? StoreField = AccessTools.Field(typeof(ExplosionVolumeManager), "_store");
     private static readonly FieldInfo? TemplatesField = AccessTools.Field(typeof(ModLibrary), "AllExplosionVolumeTemplates");
+    private static readonly FieldInfo? SpawnerField = AccessTools.Field(typeof(ExplosionVolumeManager), "_spawner");
+    private static readonly MethodInfo? SpawnVolume = AccessTools.DeclaredMethod(typeof(ExplosionVolumeSpawner), "SpawnVolume",
+        [typeof(ExplosionVolumeTemplate), typeof(Celestial), typeof(double3), typeof(double3), typeof(float), typeof(float),
+            typeof(ExplosionTimingProfile).MakeByRefType()]);
     private static bool _missingLogged;
 
     private readonly ExplosionVolumeManager _manager;
@@ -28,10 +33,10 @@ internal sealed class ReplayExplosions : IDisposable
     private readonly double _startTime;
     private readonly Dictionary<string, ExplosionVolumeTemplate?> _templates = new(StringComparer.Ordinal);
     private readonly List<ExplosionVolume> _live = [];
+    private readonly Dictionary<int, ExplosionVolume> _volumeIds = new();
     private readonly HashSet<string> _missing = new(StringComparer.Ordinal);
     private bool _entered;
     private double _time = double.NaN;
-    private double? _spawnClock;
 
     private ReplayExplosions(ExplosionVolumeManager manager, ExplosionVolumeStore store, ReplayFlight flight, CelestialSystem system)
     {
@@ -46,13 +51,13 @@ internal sealed class ReplayExplosions : IDisposable
     /// <summary>True when the replay patches answer the time reads of the volumes and hide the live plume trails.</summary>
     public static bool PatchesReady { get; set; }
 
-    /// <summary>The game time that the volumes read now: the recorded moment, or the start of a volume while the replay makes it.</summary>
+    /// <summary>The recorded game time used by volume maintenance and rendering.</summary>
     public double Clock { get; private set; }
 
     /// <summary>The step of the recording time since the frame before, for the motion of the volumes.</summary>
     public float Step { get; private set; }
 
-    public double Now => _spawnClock ?? Clock;
+    public double Now => Clock;
 
     /// <summary>
     /// The explosions of a replay, or null when the patches or the store of the game are missing. Without them the
@@ -62,6 +67,11 @@ internal sealed class ReplayExplosions : IDisposable
     {
         if (!PatchesReady)
             return null;
+        if (SpawnerField == null || SpawnVolume == null)
+        {
+            LogHelper.WarnOnce("replay-volume-spawn", "[CineCam] Replay explosions are disabled because ExplosionVolumeSpawner.SpawnVolume is unavailable.");
+            return null;
+        }
         try
         {
             ExplosionVolumeManager manager = Program.Instance.ExplosionVolumes;
@@ -104,51 +114,61 @@ internal sealed class ReplayExplosions : IDisposable
         _time = time;
         Clock = _startTime + time;
         if (reset)
+        {
             _manager.Clear();
+            _volumeIds.Clear();
+        }
         for (int i = from; i < to; i++)
             Spawn(_schedule[i]);
     }
 
-    // ExplosionVolumeSpawner.Spawn reads the clock for the start of the volume and for the merge into a volume
-    // that burns, so the clock is the recorded start while it runs. A new volume gets the recorded noise seed
-    // and its shape again, because the spawner picks a random seed.
+    // Merges address recorded identities rather than running the live nearest-volume search again.
+    // Births use the native SpawnVolume method with the recorded time and seed.
     private void Spawn(ReplayExplosion item)
     {
-        if (Template(item.Template) is not { } template || _system.Get<Celestial>(item.Body) is not { } body)
-            return;
-        float intensity = KSA.Rendering.ExplosionIntensity.ClampIntensity(item.Intensity);
-        if (item.Seed > 0 && Clock - (_startTime + item.Time) >= template.GetScaledLifeSeconds(intensity, item.AmbientPressure))
-            return;
-        if (item.Seed <= 0 && _store.Count == 0) return;
-        ExplosionVolume[]? mergeBefore = item.Seed <= 0 ? Enumerable.Range(0, _store.Count).Select(i => _store[i]).ToArray() : null;
-        HashSet<ExplosionVolume> before = Snapshot(_store);
-        _spawnClock = _startTime + item.Time;
-        try
+        if (item.MergeTargetId > 0)
         {
-            _manager.Spawn(template, body, ReplayCamera.Vector(item.Position), ReplayCamera.Vector(item.Velocity), item.Intensity, item.AmbientPressure);
-        }
-        finally
-        {
-            _spawnClock = null;
-        }
-
-        ExplosionVolume? volume = Added(_store, before);
-        if (item.Seed <= 0)
-        {
-            // A recorded merge must not create a new volume when its original target has expired.
-            // Restore replaced slots too, because a full store can insert without growing.
-            if (volume != null)
+            if (_volumeIds.TryGetValue(item.MergeTargetId, out ExplosionVolume? target) && Contains(target) && !target.IsExpired(Clock))
             {
-                _store.Clear();
-                foreach (ExplosionVolume original in mergeBefore!) _store.Add(original);
+                target.Intensity = KSA.Rendering.ExplosionIntensity.ClampIntensity(target.Intensity + item.Intensity);
+                target.RadiusScale = KSA.Rendering.ExplosionIntensity.CubeRootScale(target.Intensity);
             }
             return;
         }
+        // An older merge without a target cannot safely grow an arbitrary remaining fireball.
+        if (item.Seed <= 0) return;
+        if (item.ReplacesId > 0 && _volumeIds.TryGetValue(item.ReplacesId, out ExplosionVolume? replaced))
+            Remove(replaced);
+        if (Template(item.Template) is not { } template || _system.Get<Celestial>(item.Body) is not { } body)
+            return;
+        float intensity = KSA.Rendering.ExplosionIntensity.ClampIntensity(item.Intensity);
+        if (Clock - (_startTime + item.Time) >= template.GetScaledLifeSeconds(intensity, item.AmbientPressure))
+            return;
+        HashSet<ExplosionVolume> before = Snapshot(_store);
+        // Recorded births must bypass the live merge search. The native birth method keeps the
+        // game's lifetime, pressure, shape and capacity rules, with the recorded birth time.
+        SpawnVolume!.Invoke(SpawnerField!.GetValue(_manager),
+            [template, body, ReplayCamera.Vector(item.Position), ReplayCamera.Vector(item.Velocity), intensity,
+                item.AmbientPressure, new ExplosionTimingProfile(_startTime + item.Time, 0)]);
+        ExplosionVolume? volume = Added(_store, before);
         if (volume == null)
             return;
+        if (item.VolumeId > 0) _volumeIds[item.VolumeId] = volume;
         volume.NoiseSeed = item.Seed;
         volume.Shape = ExplosionVolumeShape.Build(volume.Template, volume.Parent, volume.PositionCcf,
             volume.Template.GetMaximumRadius(volume.Expansion) * volume.RadiusScale, item.Seed);
+    }
+
+    private bool Contains(ExplosionVolume volume)
+    {
+        for (int i = 0; i < _store.Count; i++) if (ReferenceEquals(_store[i], volume)) return true;
+        return false;
+    }
+
+    private void Remove(ExplosionVolume volume)
+    {
+        for (int i = _store.Count - 1; i >= 0; i--)
+            if (ReferenceEquals(_store[i], volume)) _store.RemoveAtSwapBack(i);
     }
 
     public static HashSet<ExplosionVolume> Snapshot(ExplosionVolumeStore store)
@@ -191,5 +211,6 @@ internal sealed class ReplayExplosions : IDisposable
         foreach (ExplosionVolume volume in _live)
             _store.Add(volume);
         _live.Clear();
+        _volumeIds.Clear();
     }
 }
