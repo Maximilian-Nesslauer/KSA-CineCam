@@ -229,9 +229,41 @@ public static class EventPrediction
 /// <summary>Player-facing names of events, for the window and the timeline.</summary>
 public static class EventDisplay
 {
-    /// <summary>An alias or a text that is not an event name comes back as it is.</summary>
-    public static string Name(string eventName)
+    private static readonly string[] BuiltInChoices =
+    [
+        "ignition", "ignition:2", "liftoff", "burnout", "burnout:2", "sequence:1", "sequence:2", "sequence:3",
+        "ground:100", "landed", "soi", "apoapsis", "periapsis", "docked", "undocked", "mark", "maxq", "q:20000",
+        "gimbal-limit", "explosion", "control-lost", "control-back", "reboot", "probe-failed", "power-low",
+        "life-support-low", "incapacitated", "arrival", "eva", "board",
+    ];
+
+    public static IEnumerable<(string Key, string Label)> Choices(IReadOnlyDictionary<string, string>? aliases)
     {
+        foreach (string builtIn in BuiltInChoices)
+        {
+            string key = builtIn;
+            if (aliases?.ContainsKey(key) == true)
+            {
+                // The unnumbered form of a counted event means its first occurrence.
+                key = builtIn + ":1";
+                if (aliases.ContainsKey(key) || !EventName.TryParse(builtIn, out EventName expected, out _)
+                    || !EventName.TryResolve(key, aliases, out EventName actual, out _) || actual != expected)
+                    continue;
+            }
+            yield return (key, Name(key));
+        }
+
+        if (aliases != null)
+            foreach (string key in aliases.Keys)
+                if (key == key.Trim() && EventName.TryResolve(key, aliases, out _, out _))
+                    yield return (key, Name(key, aliases));
+    }
+
+    public static string Name(string eventName, IReadOnlyDictionary<string, string>? aliases = null)
+    {
+        if (aliases != null && aliases.TryGetValue(eventName.Trim(), out string? target))
+            return UiText.Format("", $"{eventName} = {Name(target)}");
+
         if (!EventName.TryParse(eventName, out EventName name, out _))
             return eventName;
 

@@ -50,7 +50,7 @@ public static class ViewText
         string control = s.Controllable switch
         {
             true => UiText.MessageText("text.8a798890fe93", "yes"),
-            false => s.ControlReason is { Length: > 0 } reason ? UiText.Concat(UiText.Concat(UiText.MessageText("text.5c4b82f06ee6", "no ("), StoredEventText.Describe(reason)), ")") : UiText.MessageText("text.9390298f3fb0", "no"),
+            false => s.ControlReason is { Length: > 0 } reason ? UiText.Concat(UiText.Concat(UiText.MessageText("text.5c4b82f06ee6", "no ("), StoredEventText.Describe(EventKind.ControlLost, reason)), ")") : UiText.MessageText("text.9390298f3fb0", "no"),
             null => UiText.MessageText("text.7f756ecf273b", "no control module"),
         };
         string probes = s.ProbesFailed > 0 || s.ProbesRebooting > 0

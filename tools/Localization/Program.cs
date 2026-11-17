@@ -34,7 +34,12 @@ foreach (string file in Directory.GetFiles(Path.Combine(root, "CineCam"), "*.cs"
     {
         if (ui && invocation.Expression.ToString() is "ImGui.Selectable" or "ImGui.MenuItem" or "ImGui.DragFloat")
         {
-            if (invocation.ArgumentList.Arguments[0].Expression.ToString().StartsWith("UiText.Control(") == false)
+            ExpressionSyntax label = invocation.ArgumentList.Arguments[0].Expression;
+            bool hiddenId = label is InvocationExpressionSyntax
+            {
+                Expression: MemberAccessExpressionSyntax { Name.Identifier.ValueText: "AsSpan", Expression: LiteralExpressionSyntax hidden }
+            } && hidden.Token.ValueText.StartsWith("##", StringComparison.Ordinal);
+            if (!hiddenId && !label.ToString().StartsWith("UiText.Control(", StringComparison.Ordinal))
                 Fail(invocation, "A translated native control must keep a canonical ID.");
         }
         if (invocation.Expression.ToString() is not ("UiText.MessageText" or "UiText.Format")) continue;

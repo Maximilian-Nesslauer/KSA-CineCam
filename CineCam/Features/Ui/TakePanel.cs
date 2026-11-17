@@ -167,14 +167,9 @@ internal static class TakePanel
         {
             for (int i = 0; i < file.Takes.Count; i++)
             {
-                ImGui.PushID(i);
-                try
-                {
-                    string label = UiText.Concat(file.Takes[i].Name, (file.Takes[i].IsDefault ? UiText.MessageText("text.12fd6081e435", " (default)") : ""));
-                    if (ImGui.Selectable(UiText.Control(label).AsSpan(), i == session.TakeIndex))
-                        session.SelectTake(i);
-                }
-                finally { ImGui.PopID(); }
+                string label = UiText.Concat(file.Takes[i].Name, (file.Takes[i].IsDefault ? UiText.MessageText("text.12fd6081e435", " (default)") : ""));
+                if (Widgets.SelectableText(i, label, i == session.TakeIndex))
+                    session.SelectTake(i);
             }
 
             ImGui.Separator();

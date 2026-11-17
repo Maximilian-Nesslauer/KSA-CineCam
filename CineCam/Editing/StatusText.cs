@@ -71,6 +71,30 @@ public static class StatusText
         return new FooterLine(UiText.Join("  |  ", shown), tip, pending);
     }
 
+    public static string Fit(string text, double room, Func<ReadOnlySpan<char>, double> measure)
+    {
+        text = UiText.Render(text);
+        if (measure(text) <= room)
+            return text;
+
+        const string Dots = "...";
+        double available = room - measure(Dots);
+        int low = 0, high = text.Length;
+        while (low < high)
+        {
+            int mid = low + (high - low + 1) / 2;
+            if (measure(text.AsSpan(0, mid)) <= available)
+                low = mid;
+            else
+                high = mid - 1;
+        }
+
+        if (low > 0 && low < text.Length && char.IsHighSurrogate(text[low - 1]) && char.IsLowSurrogate(text[low]))
+            low--;
+        ReadOnlySpan<char> prefix = text.AsSpan(0, low).TrimEnd();
+        return prefix.IsEmpty ? "" : string.Concat(prefix, Dots);
+    }
+
     /// <summary>Cuts after a whole word and adds "...", and returns an empty text when not even one word fits.</summary>
     public static string FitWords(string text, double room, Func<string, double> measure)
     {

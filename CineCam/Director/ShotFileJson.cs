@@ -69,7 +69,7 @@ public static class ShotFileJson
                 throw new ShotFileException("formatVersion", UiText.MessageText("text.5015ab8d9d3b", "expected a whole number from 1"));
             file.FormatVersion = version.HasValue ? (int)version.Value : 1;
             if (file.FormatVersion > ShotFile.CurrentFormatVersion)
-                _warnings.Add(UiText.Format("text.b115f6453b21", $"formatVersion: the file has format version {file.FormatVersion}, and this version of CineCam knows version {ShotFile.CurrentFormatVersion}. Fields that it does not know are kept, but they have no effect"));
+                _warnings.Add(UiText.WithPrefix("formatVersion: ", UiText.Format("text.b115f6453b21", $"the file has format version {file.FormatVersion}, and this version of CineCam knows version {ShotFile.CurrentFormatVersion}. Fields that it does not know are kept, but they have no effect")));
 
             file.Site = obj.OptString("site");
             file.Fps = obj.OptNum("fps", 1.0, 1000.0) ?? 60.0;
@@ -432,7 +432,7 @@ public static class ShotFileJson
             {
                 shot.AimOffset = offset.Value;
                 if (shot.Aim != ShotAim.Vehicle)
-                    _warnings.Add(UiText.Format("text.5e55f9bd850e", $"{obj.Child("aimOffset")}: the aim offset has no effect unless \"aim\" is \"vehicle\""));
+                    _warnings.Add(UiText.WithPrefix(obj.Child("aimOffset") + ": ", UiText.MessageText("text.5e55f9bd850e", "the aim offset has no effect unless \"aim\" is \"vehicle\"")));
             }
 
             SeparatedPick? pick = obj.OptEnum<SeparatedPick>("pick");
@@ -440,7 +440,7 @@ public static class ShotFileJson
             {
                 shot.Pick = pick.Value;
                 if (shot.Subject != ShotSubject.Separated)
-                    _warnings.Add(UiText.Format("text.79e5284b0030", $"{obj.Child("pick")}: the pick has no effect unless \"target\" is \"separated\""));
+                    _warnings.Add(UiText.WithPrefix(obj.Child("pick") + ": ", UiText.MessageText("text.79e5284b0030", "the pick has no effect unless \"target\" is \"separated\"")));
             }
         }
 
@@ -451,7 +451,7 @@ public static class ShotFileJson
                 return;
             shot.FitBy = by.Value;
             if (shot.Fit == null)
-                _warnings.Add(UiText.Format("text.fd1b375ab3f7", $"{obj.Child("fitBy")}: the fit measure has no effect unless \"fit\" is on"));
+                _warnings.Add(UiText.WithPrefix(obj.Child("fitBy") + ": ", UiText.MessageText("text.fd1b375ab3f7", "the fit measure has no effect unless \"fit\" is on")));
         }
 
         // A number is the smallest angle between the view and the sun in degrees. "off" and false turn it off.
@@ -583,7 +583,7 @@ public static class ShotFileJson
                 return "";
             if (value.ValueKind == JsonValueKind.String && TakeAction.IsValidName(value.GetString()))
                 return obj.OptString("name")!;
-            _warnings.Add(UiText.Format("text.56b105fb81f1", $"{obj.Child("name")}: this is not used as the shot name, because a shot name has {TakeAction.NameRule}. The field is kept as it is"));
+            _warnings.Add(UiText.WithPrefix(obj.Child("name") + ": ", UiText.Format("text.56b105fb81f1", $"this is not used as the shot name, because a shot name has {TakeAction.NameRule}. The field is kept as it is")));
             return "";
         }
 
@@ -647,7 +647,7 @@ public static class ShotFileJson
             double delay = obj.OptNum("delay", -3600.0, 3600.0) ?? 0.0;
             if (delay < 0.0 && !resolved.IsPredictable)
             {
-                _warnings.Add(UiText.Format("text.d290a4d019c3", $"{obj.Child("delay")}: a delay below 0 works only for altitude, speed, ground, slow, q and maxq events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0"));
+                _warnings.Add(UiText.WithPrefix(obj.Child("delay") + ": ", UiText.Format("text.d290a4d019c3", $"a delay below 0 works only for altitude, speed, ground, slow, q and maxq events, so {delay.ToString("0.###", CultureInfo.InvariantCulture)} was set to 0")));
                 delay = 0.0;
             }
 
