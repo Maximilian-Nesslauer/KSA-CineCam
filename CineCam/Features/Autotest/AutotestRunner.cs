@@ -4,6 +4,7 @@ using Brutal.GlfwApi;
 using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Director;
+using CineCam.Features.Sound;
 using CineCam.Features.Takes;
 using CineCam.Patches;
 using KSA;
@@ -96,6 +97,7 @@ internal static partial class AutotestRunner
     public static void Shutdown()
     {
         _finished = true;
+        EndGrab();
         lock (Gate)
         {
             _log?.Dispose();
@@ -171,6 +173,7 @@ internal static partial class AutotestRunner
     {
         if (_phase == Phase.Exiting)
             return;
+        EndGrab();
         TakeRunner.RequestStop();
         SetPhase(Phase.Exiting);
     }
@@ -218,7 +221,7 @@ internal static partial class AutotestRunner
 
                 break;
             case Phase.Exiting:
-                if (FramesInPhase >= EndFrames)
+                if (FramesInPhase >= EndFrames && !OfflineHooks.IsBusy && !GameSoundRecorder.IsFinalizing)
                     Exit();
                 break;
         }

@@ -67,6 +67,8 @@ public sealed partial class SoundCapture
 
     public int SampleRate { get; }
 
+    internal bool IsWriting => _thread.IsAlive;
+
     /// <summary>The <see cref="Stopwatch"/> timestamp of the first block, or 0 before it came.</summary>
     public long FirstTimestamp => Volatile.Read(ref _firstTimestamp);
 

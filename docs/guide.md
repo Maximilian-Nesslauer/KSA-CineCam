@@ -156,6 +156,7 @@ Other mods lose their state when the game loads a save. Arm them again after a r
 On the **Settings** page, **Hide the game interface during a take** hides the game interface while the take records. **Hide at (event)** hides it later, for example at the ignition, so you can still work with the interface until then. A pause for an edit shows it again. **White frame at the take start** draws one white frame at the start, as a mark for the cut in the video.
 
 While CineCam hides the interface (a take, a render, or **Hide interface** in a replay), it also turns off the frame statistics of the game (the FPS and MS numbers in the corner), which the game draws even without the interface. They come back when the interface does. If you turn them on with the game key during that time, they stay on.
+If the game saves settings while the statistics are hidden, it saves your FPS preference.
 
 ### Sound and picture of a take
 
@@ -185,6 +186,10 @@ Add the music in the video editor. A picture that the game does not save is made
 **Picture grab.** Under **Video**, **Picture grab** chooses how the offline capture and the render of a replay take each picture. **Screen** (the default) copies the finished screen image, with everything that is drawn on it, also the overlays of other mods. **Clean scene** draws the scene of the main view into its own picture, without the interface and without overlays. The game hides its interface for the frame of each picture.
 
 **Stills.** **Take still** (on the **Settings** page under **Video**, and in the replay block) saves one picture of the current view, from a take, a replay or the free camera, at **Still size** times the window size (2 to 8, default 4). The game draws 30 frames at the larger size first, so a running flight moves on by about half a second; a replay pauses for it. The interface is hidden for that time. The stills go to `Documents\My Games\Kitten Space Agency\CineCam\stills\`. The console command `cinecam_still [scale]` does the same. The game lowers a size that does not fit into the video memory, and says so in its log.
+
+Stills, replay previews, offline takes and replay renders share the game's screenshot capture.
+Wait for the current capture to finish before starting another capture or taking a stock screenshot.
+A still can take time to save after the game interface returns.
 
 **Sound during a capture.** The pictures have no sound, so the game sound is muted during an offline capture and the render of a replay, and while a replay is open. **Game sound** on the **Settings** page turns each of these off.
 

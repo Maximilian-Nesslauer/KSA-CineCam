@@ -105,11 +105,12 @@ internal static class CineCamPatches
 
         PictureGuard.ExposureAvailable = GameReflection.ValidateExposure();
         PictureGuard.SaveGuarded = Group(true,
-            "[CineCam] The picture settings of a take are disabled because settings saves cannot be guarded",
+            "[CineCam] Picture overrides and frame statistics suppression are disabled because settings saves cannot be guarded",
             () => harmony.Patch(AccessTools.DeclaredMethod(typeof(GameSettings), nameof(GameSettings.Save), Type.EmptyTypes)
                     ?? throw new MissingMethodException("GameSettings.Save()"),
                 prefix: new HarmonyMethod(typeof(PictureGuard), nameof(PictureGuard.SavePrefix)),
                 finalizer: new HarmonyMethod(typeof(PictureGuard), nameof(PictureGuard.SaveFinalizer))));
+        FrameStats.SaveGuardAvailable = PictureGuard.SaveGuarded;
         if (!PictureGuard.ExposureAvailable)
             DefaultCategory.Log.Warning("[CineCam] The exposure of a take is disabled - reflection targets not found.");
         LookGuard.SettingsGuarded = Group(GameReflection.ValidateSettingsGuard(),
@@ -163,11 +164,18 @@ internal static class CineCamPatches
             return;
         }
 
-        OfflineHooks.Detects = Group(GameReflection.ValidateOfflineDetection(),
-            "[CineCam] A failed picture grab is found by a time out only",
-            () => harmony.Patch(GameReflection.ScreenshotCapture_OnPostRender,
-                prefix: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.PostRenderPrefix)),
-                finalizer: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.PostRenderFinalizer))));
+        OfflineHooks.Available = OfflineHooks.Detects = Group(GameReflection.ValidateOfflineDetection(),
+            "[CineCam] Picture capture is disabled because screenshot ownership cannot be tracked",
+            () =>
+            {
+                harmony.Patch(AccessTools.DeclaredMethod(typeof(ScreenshotCapture), nameof(ScreenshotCapture.Request), [typeof(int), typeof(string)])
+                        ?? throw new MissingMethodException("ScreenshotCapture.Request(int, string)"),
+                    prefix: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.RequestPrefix)));
+                harmony.Patch(GameReflection.ScreenshotCapture_OnPostRender,
+                    prefix: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.PostRenderPrefix)),
+                    transpiler: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.TrackPngWrite)),
+                    finalizer: new HarmonyMethod(typeof(OfflineHooks), nameof(OfflineHooks.PostRenderFinalizer)));
+            });
     }
 
     public static void Reset()

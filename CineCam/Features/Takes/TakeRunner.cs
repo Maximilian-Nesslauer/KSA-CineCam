@@ -355,6 +355,13 @@ internal static partial class TakeRunner
         if (file == null)
             return;
 
+        bool capturePictures = !dryRun && file.Capture.Mode == CaptureMode.Offline;
+        if (capturePictures && OfflineHooks.IsBusy)
+        {
+            DefaultCategory.Log.Warning($"[CineCam] {OfflineHooks.BusyText}");
+            return;
+        }
+
         Take? take = takeName == null ? file.DefaultTake : file.FindTake(takeName);
         if (take == null)
         {
@@ -423,7 +430,7 @@ internal static partial class TakeRunner
         }
 
         OfflineCapture? offline = null;
-        if (!dryRun && file.Capture.Mode == CaptureMode.Offline)
+        if (capturePictures)
         {
             offline = BeginOffline(file, take, folder);
             if (offline == null)
@@ -444,6 +451,13 @@ internal static partial class TakeRunner
             DryRun = dryRun,
             Offline = offline,
         };
+
+        if (offline != null && !OfflineHooks.TryAcquire(PictureOwner.OfflineTake))
+        {
+            log.Dispose();
+            DefaultCategory.Log.Warning($"[CineCam] {OfflineHooks.BusyText}");
+            return;
+        }
 
         _take = active;
         _pendingMarks = 0;

@@ -19,19 +19,22 @@ public sealed record ReplayCommand(ReplayOperation Operation, string? Id = null,
 
 /// <summary>What the game writes when a quit request comes, in the order of the checks.</summary>
 public readonly record struct QuitState(bool Rendering, bool PictureWrite, bool Recording, bool UnsavedFlight,
-    bool TakeRuns, bool ResetRuns);
+    bool TakeRuns, bool ResetRuns)
+{
+    public bool SoundWrite { get; init; }
+}
 
 public static class ControlRules
 {
     /// <summary>
-    /// The code and the message of the refusal of a quit, or null when the game can end now. A quit ends
-    /// nothing that writes files, so a render, an offline take, a recording, a flight that is not saved yet,
-    /// a take with its event log and a reset that loads a save all refuse it.
+    /// The code and the message of the refusal of a quit, or null when the game can end now.
+    /// Picture and sound writes can block quit after their capture ends.
     /// </summary>
     public static (string Code, string Message)? QuitBlock(QuitState state) => state switch
     {
         { Rendering: true } => ("rendering", UiText.MessageText("text.4553aacd9b1f", "A render writes pictures. Stop it first with render-stop.")),
         { PictureWrite: true } => ("capture_busy", UiText.MessageText("capture.pending_picture", "A picture is being captured or saved. Try again in a moment.")),
+        { SoundWrite: true } => ("sound_pending", UiText.MessageText("capture.pending_sound", "The previous sound recording is still being saved. Try again in a moment.")),
         { Recording: true } => ("recording", UiText.MessageText("text.bff0c5e1ebe2", "A flight recording runs. Stop it first with stop, so the flight is saved.")),
         { UnsavedFlight: true } => ("unsaved_flight", UiText.MessageText("text.b077aa2674a7", "A recorded flight is not saved yet. Save it with retry-save first.")),
         { TakeRuns: true } => ("busy", UiText.MessageText("text.7b73186bc865", "A take runs. Stop it first, so its event log and its pictures are complete.")),

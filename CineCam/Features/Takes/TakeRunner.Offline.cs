@@ -101,9 +101,9 @@ internal static partial class TakeRunner
 
             double step = offline.NextStep;
             offline.PostRenderMark = OfflineHooks.PostRenderCount;
-            if (!OfflineHooks.RequestPicture(offline.Grab))
+            if (!OfflineHooks.RequestPicture(PictureOwner.OfflineTake, offline.Grab, offline.Collector))
             {
-                // Another capture still runs, so this frame makes no picture and takes only a small step.
+                // A timed-out write can still own the screenshot folder.
                 Advance(offline, ref currentPlayerTime, ref dtPlayer, OfflineCapture.RetryStepSeconds);
                 offline.Pending = false;
                 return;
@@ -130,7 +130,8 @@ internal static partial class TakeRunner
     private static bool CollectPending(ActiveTake take, OfflineCapture offline)
     {
         int number = offline.FrameNumber;
-        CollectResult result = offline.Collector.Wait(number, CollectTimeout, () => NoPictureComing(offline));
+        CollectResult result = offline.Collector.Wait(number, CollectTimeout, () => NoPictureComing(offline),
+            static () => OfflineHooks.CanCollect);
         offline.Pending = false;
         if (result == CollectResult.Done)
         {
@@ -138,6 +139,7 @@ internal static partial class TakeRunner
             return true;
         }
 
+        OfflineHooks.AbortGrab();
         bool giveUp = offline.RecordLost(MaxFailuresInRow);
         string reason = OfflineHooks.Result == PostRenderResult.NoPicture ? UiText.MessageText("text.3f9b6f71990b", "the game made no picture of the frame") : UiText.MessageText("text.7e42b227c7d2", "no finished file came in time");
         string text = UiText.Format("text.1ad47675704f", $"Picture {number} was not saved ({reason}). The next frame makes it again.");
@@ -188,25 +190,31 @@ internal static partial class TakeRunner
         WriteRow(take, "warning", "simStep", text);
     }
 
-    // A picture of a frame that finished is still collected. One of a frame that did not finish
-    // cannot come here, and the game saves it as a normal screenshot.
+    // Collect a finished frame before releasing the slot. Abort an armed grab during release.
     private static void FinishOffline(ActiveTake take, string reason)
     {
         OfflineCapture? offline = take.Offline;
         if (offline == null)
             return;
 
-        if (offline.Pending && offline.Rendered)
+        try
         {
-            int number = offline.FrameNumber;
-            if (offline.Collector.Wait(number, CollectTimeout, () => NoPictureComing(offline)) == CollectResult.Done)
-                Saved(offline, number);
-            else
-                DefaultCategory.Log.Warning($"[CineCam] Picture {number} was not saved.");
+            if (offline.Pending && offline.Rendered)
+            {
+                int number = offline.FrameNumber;
+                if (offline.Collector.Wait(number, CollectTimeout, () => NoPictureComing(offline),
+                        static () => OfflineHooks.CanCollect) == CollectResult.Done)
+                    Saved(offline, number);
+                else
+                    DefaultCategory.Log.Warning($"[CineCam] Picture {number} was not saved.");
+            }
+        }
+        finally
+        {
+            offline.Pending = false;
+            OfflineHooks.Release(PictureOwner.OfflineTake);
         }
 
-        offline.Pending = false;
-        OfflineHooks.Reset();
         DefaultCategory.Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"[CineCam] Offline capture ended ({reason}): {offline.Count} pictures ({offline.Count / offline.Fps:F1} s of video, {offline.BytesWritten / (1024.0 * 1024.0):F0} MB), {offline.PicturesLost} lost and made again. Folder: {offline.OutputFolder}"));
     }

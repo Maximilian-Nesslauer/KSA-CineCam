@@ -4,7 +4,7 @@ using CineCam.Core;
 using CineCam.Director;
 using CineCam.Director.Replay;
 using CineCam.Editing;
-using CineCam.Features.Look;
+using CineCam.Features.Sound;
 using CineCam.Features.Takes;
 using CineCam.Features.TimeOfDay;
 using CineCam.Features.Ui;
@@ -220,8 +220,8 @@ internal static partial class ReplaySession
     // An open replay closes before, so the interface and the camera are as the player left them.
     private static string Quit()
     {
-        var state = new QuitState(_render != null, _strayCapture != null || StillCapture.IsBusy, IsRecording, HasUnsavedFlight,
-            TakeRunner.IsRunning, TakeRunner.Reset.IsActive);
+        var state = new QuitState(_render != null, OfflineHooks.IsBusy, IsRecording, HasUnsavedFlight,
+            TakeRunner.IsRunning, TakeRunner.Reset.IsActive) { SoundWrite = GameSoundRecorder.IsFinalizing };
         if (ControlRules.QuitBlock(state) is { } block)
             throw new Refusal(block.Code, block.Message);
         if (Program.Instance is not { } program)

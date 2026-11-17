@@ -226,61 +226,75 @@ internal static partial class AutotestRunner
     #region Screenshots of take A
 
     private static ScreenshotCollector? _collector;
-    private static Action<int, string>? _screenshot;
     private static int _nextShot;
     private static string? _grabName;
     private static int _grabNumber;
     private static long _grabFrame;
     private static readonly Stopwatch _grabWatch = new();
 
-    private static bool GrabIdle() => _grabName == null;
+    private static bool GrabIdle()
+    {
+        PollGrab();
+        return _grabName == null;
+    }
+
+    private static void PollGrab()
+    {
+        if (_collector == null || _grabName == null || _frame - _grabFrame < 2)
+            return;
+        if (OfflineHooks.CanCollect && _collector.TryCollect(_grabNumber, out string? moved) == CollectResult.Done && moved != null)
+        {
+            string dest = Path.Combine(_root, "takeA", _grabName + ".png");
+            File.Move(moved, dest, overwrite: true);
+            long size = new FileInfo(dest).Length;
+            _report.TakeA.Screenshots.Add(new ShotReport(_grabName, dest, size, true));
+            Log($"Screenshot {_grabName} saved ({size} bytes).");
+            EndGrab();
+        }
+        else if (_grabWatch.Elapsed.TotalSeconds > 15.0)
+        {
+            _report.TakeA.Screenshots.Add(new ShotReport(_grabName, "", 0, false));
+            Log($"Screenshot {_grabName} did not come in 15 s.");
+            EndGrab();
+        }
+    }
+
+    private static void EndGrab()
+    {
+        _grabName = null;
+        OfflineHooks.Release(PictureOwner.SelfTest);
+    }
 
     // The request runs at the end of a frame, so the picture shows the next frame.
     private static void GrabShots(ActiveTake take)
     {
-        if (_collector == null)
-            return;
         if (_grabName != null)
         {
-            if (_frame - _grabFrame < 2)
-                return;
-            if (_collector.TryCollect(_grabNumber, out string? moved) == CollectResult.Done && moved != null)
-            {
-                string dest = Path.Combine(_root, "takeA", _grabName + ".png");
-                File.Move(moved, dest, overwrite: true);
-                long size = new FileInfo(dest).Length;
-                _report.TakeA.Screenshots.Add(new ShotReport(_grabName, dest, size, true));
-                Log($"Screenshot {_grabName} saved ({size} bytes).");
-                _grabName = null;
-            }
-            else if (_grabWatch.Elapsed.TotalSeconds > 15.0)
-            {
-                _report.TakeA.Screenshots.Add(new ShotReport(_grabName, "", 0, false));
-                Log($"Screenshot {_grabName} did not come in 15 s.");
-                _grabName = null;
-            }
-
+            PollGrab();
             return;
         }
-
-        if (_nextShot >= AutotestPlan.ShotNames.Length || take.Seconds < AutotestPlan.MiddleOfShot(_nextShot))
+        if (_collector == null || _nextShot >= AutotestPlan.ShotNames.Length || take.Seconds < AutotestPlan.MiddleOfShot(_nextShot))
             return;
-        if (Program.Instance?.IsScreenshotCaptureActive == true)
-            return;
-        if (GameReflection.Program_Screenshot == null)
+        if (!OfflineHooks.Available)
         {
-            _report.TakeA.Screenshots.Add(new ShotReport("no Program.Screenshot", "", 0, false));
+            _report.TakeA.Screenshots.Add(new ShotReport("picture capture unavailable", "", 0, false));
             _nextShot = int.MaxValue;
             return;
         }
 
-        _screenshot ??= GameReflection.Program_Screenshot.CreateDelegate<Action<int, string>>();
+        if (!OfflineHooks.TryAcquire(PictureOwner.SelfTest))
+            return;
+        if (!OfflineHooks.RequestPicture(PictureOwner.SelfTest, CaptureGrab.Clean, _collector))
+        {
+            EndGrab();
+            return;
+        }
+
         _grabName = string.Create(CultureInfo.InvariantCulture, $"{_nextShot + 1:00}-{AutotestPlan.ShotNames[_nextShot]}");
         _grabNumber = _nextShot + 1;
         _grabFrame = _frame;
         _grabWatch.Restart();
         _nextShot++;
-        _screenshot(1, "");
         Log(Inv($"Screenshot {_grabName} requested at take time {take.Seconds:F2} s."));
     }
 

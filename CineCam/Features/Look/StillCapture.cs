@@ -5,7 +5,7 @@ using CineCam.Core;
 using CineCam.Director;
 using CineCam.Features.Replay;
 using CineCam.Features.Takes;
-using KSA;
+using GameProgram = KSA.Program;
 
 namespace CineCam.Features.Look;
 
@@ -23,19 +23,14 @@ internal static class StillCapture
     // the window size takes a while.
     private static readonly TimeSpan SaveTimeout = TimeSpan.FromSeconds(180);
 
-    // A request that waits for another capture of the game gives up after this many frames.
-    private const int MaxWaitFrames = 600;
-
-    private sealed class Pending(ScreenshotCollector collector, string target, int scale)
+    private sealed class Pending(ScreenshotCollector collector, string target)
     {
         public ScreenshotCollector Collector { get; } = collector;
         public string Target { get; } = target;
-        public int Scale { get; } = scale;
         public Stopwatch SinceCaptureEnd { get; } = new();
     }
 
     private static int? _requested;
-    private static int _waitFrames;
     private static Pending? _pending;
 
     /// <summary>The result of the last still, for the window and the console.</summary>
@@ -46,11 +41,10 @@ internal static class StillCapture
     /// <summary>Why a still cannot be taken now, or null.</summary>
     public static string? BlockReason =>
         !OfflineHooks.Available ? UiText.MessageText("text.becfff7f1cea", "This game build does not support the capture of pictures, see the log at the start of the game.")
-        : !Program.IsLoaded ? UiText.MessageText("text.07c6c7d4f9c8", "Load a game first.")
-        : Program.Editor != null ? UiText.MessageText("text.ac074ef53330", "The game takes no pictures in the vehicle editor.")
+        : !GameProgram.IsLoaded ? UiText.MessageText("text.07c6c7d4f9c8", "Load a game first.")
+        : GameProgram.Editor != null ? UiText.MessageText("text.ac074ef53330", "The game takes no pictures in the vehicle editor.")
         : IsBusy ? UiText.MessageText("text.fa0012315d0f", "A still is being taken.")
-        : TakeRunner.Current is { Offline: not null } ? UiText.MessageText("text.b0541343ea75", "An offline capture runs.")
-        : ReplaySession.IsRendering ? UiText.MessageText("text.c07fcb0ae3ea", "A render runs.")
+        : OfflineHooks.IsBusy ? OfflineHooks.BusyText
         : null;
 
     /// <summary>Queues a still at the given scale, or at the scale of the settings. Returns the message for the player.</summary>
@@ -58,9 +52,10 @@ internal static class StillCapture
     {
         if (BlockReason is { } block)
             return UiText.Concat(UiText.MessageText("text.6ac65cf3265a", "No still: "), block);
+        if (!OfflineHooks.TryAcquire(PictureOwner.Still))
+            return UiText.Concat(UiText.MessageText("text.6ac65cf3265a", "No still: "), OfflineHooks.BusyText);
         int wanted = Math.Clamp(scale ?? CineCamSettings.StillScale, CineCamSettings.MinStillScale, CineCamSettings.MaxStillScale);
         _requested = wanted;
-        _waitFrames = 0;
         Status = UiText.Format("text.58827d7491ef", $"Taking a still at {wanted} times the window size.");
         return Status;
     }
@@ -79,6 +74,7 @@ internal static class StillCapture
         {
             _requested = null;
             _pending = null;
+            OfflineHooks.Release(PictureOwner.Still);
             Status = UiText.Format("text.2f0e19275cca", $"The still failed: {ex.Message}");
             LogHelper.ErrorOnce("still", $"[CineCam] Error in the still capture: {ex}");
         }
@@ -86,14 +82,10 @@ internal static class StillCapture
 
     private static void Begin(int scale)
     {
-        if (Program.Instance?.IsScreenshotCaptureActive != false)
+        if (!GameProgram.IsLoaded || GameProgram.Editor != null)
         {
-            if (++_waitFrames > MaxWaitFrames)
-            {
-                _requested = null;
-                Finish(UiText.MessageText("text.1cccedf493a5", "No still: the game is busy with another picture."));
-            }
-
+            _requested = null;
+            Finish(UiText.MessageText("text.744a647943e9", "The scene changed."));
             return;
         }
 
@@ -106,21 +98,21 @@ internal static class StillCapture
         var collector = new ScreenshotCollector(CineCamPaths.ScreenshotsFolder, folder);
         string name = TakeFolders.Unique(OfflineOutput.StillName(DateTime.Now, scale), n => File.Exists(Path.Combine(folder, n)));
         OfflineHooks.RequestStill(scale, WarmFrames);
-        _pending = new Pending(collector, Path.Combine(folder, name), scale);
+        _pending = new Pending(collector, Path.Combine(folder, name));
         DefaultCategory.Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"[CineCam] Still at {scale} times the window size requested, with {WarmFrames} warm-up frames."));
     }
 
     private static void Poll(Pending pending)
     {
-        if (pending.Collector.TryCollectAs(pending.Target) == CollectResult.Done)
+        if (OfflineHooks.CanCollect && pending.Collector.TryCollectAs(pending.Target) == CollectResult.Done)
         {
             _pending = null;
             Finish(UiText.Format("text.2e6b5489ed96", $"Still saved: {pending.Target}"));
             return;
         }
 
-        if (Program.Instance?.IsScreenshotCaptureActive == true)
+        if (GameProgram.Instance?.IsScreenshotCaptureActive == true)
             return;
         if (!pending.SinceCaptureEnd.IsRunning)
             pending.SinceCaptureEnd.Start();
@@ -133,6 +125,7 @@ internal static class StillCapture
 
     private static void Finish(string text)
     {
+        OfflineHooks.Release(PictureOwner.Still);
         Status = text;
         DefaultCategory.Log.Info($"[CineCam] {text}");
     }
@@ -141,7 +134,7 @@ internal static class StillCapture
     {
         _requested = null;
         _pending = null;
-        _waitFrames = 0;
+        OfflineHooks.Release(PictureOwner.Still);
         Status = "";
     }
 }

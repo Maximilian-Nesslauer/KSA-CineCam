@@ -136,13 +136,15 @@ public sealed class ScreenshotCollector
     public CollectResult TryCollectAs(string targetPath) => TryMove(targetPath, out _);
 
     /// <summary>Waits for a new finished picture and deletes it, for a picture that the game saves after the capture ended.</summary>
-    public bool Discard(TimeSpan timeout, Func<bool>? giveUp = null)
+    public bool Discard(TimeSpan timeout, Func<bool>? giveUp = null) => Discard(timeout, giveUp, null);
+
+    internal bool Discard(TimeSpan timeout, Func<bool>? giveUp, Func<bool>? ready)
     {
         string target = Path.Combine(_framesFolder, "discarded-" + Guid.NewGuid().ToString("N") + ".png");
         var watch = System.Diagnostics.Stopwatch.StartNew();
         while (true)
         {
-            if (TryMove(target, out _) == CollectResult.Done)
+            if (ready?.Invoke() != false && TryMove(target, out _) == CollectResult.Done)
             {
                 File.Delete(target);
                 return true;
@@ -199,12 +201,15 @@ public sealed class ScreenshotCollector
     }
 
     /// <summary>The give-up function can end the wait early, for example when the game reports that it saved no picture.</summary>
-    public CollectResult Wait(int frameNumber, TimeSpan timeout, Func<bool>? giveUp = null)
+    public CollectResult Wait(int frameNumber, TimeSpan timeout, Func<bool>? giveUp = null) =>
+        Wait(frameNumber, timeout, giveUp, null);
+
+    internal CollectResult Wait(int frameNumber, TimeSpan timeout, Func<bool>? giveUp, Func<bool>? ready)
     {
         var watch = System.Diagnostics.Stopwatch.StartNew();
         while (true)
         {
-            if (TryCollect(frameNumber, out _) == CollectResult.Done)
+            if (ready?.Invoke() != false && TryCollect(frameNumber, out _) == CollectResult.Done)
                 return CollectResult.Done;
             if (watch.Elapsed >= timeout || giveUp?.Invoke() == true)
                 return CollectResult.Waiting;

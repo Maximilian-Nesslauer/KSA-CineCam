@@ -3,7 +3,6 @@ using CineCam.Core;
 using CineCam.Director;
 using CineCam.Director.Replay;
 using CineCam.Features.Takes;
-using KSA;
 
 namespace CineCam.Features.Replay;
 
@@ -51,23 +50,23 @@ internal static partial class ReplaySession
         ReplayScene scene = NeedScene();
         if (!OfflineHooks.Available)
             throw new Refusal("preview_unavailable", UiText.MessageText("text.eabc60e29da3", "This game build does not support replay preview capture."));
-        if (Program.Instance?.IsScreenshotCaptureActive != false)
-            throw new Refusal("capture_busy", UiText.MessageText("text.bffd32c59546", "Wait for the current game screenshot to finish."));
-
-        CleanPreviews();
-        string folder = Path.Combine(PreviewRoot, Guid.NewGuid().ToString("N"));
-        var collector = new ScreenshotCollector(CineCamPaths.ScreenshotsFolder, folder);
         bool visible = OfflineHooks.DrawUi;
-        scene.SetPlaying(false);
-        OfflineHooks.SetDrawUi(false);
+        if (!OfflineHooks.TryAcquire(PictureOwner.Preview))
+            throw new Refusal("capture_busy", OfflineHooks.BusyText);
         try
         {
-            if (!OfflineHooks.RequestPicture(CaptureGrab.Swapchain))
-                throw new Refusal("capture_busy", UiText.MessageText("text.bffd32c59546", "Wait for the current game screenshot to finish."));
+            CleanPreviews();
+            string folder = Path.Combine(PreviewRoot, Guid.NewGuid().ToString("N"));
+            var collector = new ScreenshotCollector(CineCamPaths.ScreenshotsFolder, folder);
+            scene.SetPlaying(false);
+            OfflineHooks.SetDrawUi(false);
+            if (!OfflineHooks.RequestPicture(PictureOwner.Preview, CaptureGrab.Swapchain, collector))
+                throw new Refusal("capture_busy", OfflineHooks.BusyText);
             _preview = new PendingPreview(collector, Stopwatch.GetTimestamp(), visible, completion);
         }
         catch
         {
+            OfflineHooks.Release(PictureOwner.Preview);
             OfflineHooks.SetDrawUi(visible);
             throw;
         }
@@ -79,7 +78,7 @@ internal static partial class ReplaySession
             return;
         try
         {
-            if (pending.Collector.TryCollect(1, out string? path) == CollectResult.Done)
+            if (OfflineHooks.CanCollect && pending.Collector.TryCollect(1, out string? path) == CollectResult.Done)
                 FinishPreview(true, UiText.MessageText("text.2689367b205c", "ok"), UiText.MessageText("text.8855c826bcff", "Preview saved."), path);
             else if (Stopwatch.GetElapsedTime(pending.Started) > TimeSpan.FromSeconds(6))
                 FinishPreview(false, "preview_timeout", UiText.MessageText("text.474cb78829cb", "KSA did not save the preview frame in time."));
@@ -98,6 +97,7 @@ internal static partial class ReplaySession
         if (_preview is not { } pending)
             return;
         _preview = null;
+        OfflineHooks.Release(PictureOwner.Preview);
         OfflineHooks.SetDrawUi(pending.InterfaceVisible);
         Complete(pending.Completion, ok, code, message, path);
     }
