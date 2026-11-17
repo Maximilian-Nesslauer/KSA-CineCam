@@ -6,18 +6,19 @@ namespace CineCam.Features.Look;
 
 // Program.DrawFps draws the frame statistics (GameSettings.ShowFrameStatistics) in every frame, also
 // while Program.DrawUI is false, so they would be in every picture and screen recording of a take
-// that hides the interface. The setting is turned off for that time and on again after it. The file
-// of the settings is never written. A player who turns the statistics on again during the hide (the
-// stock key) keeps them.
+// that hides the interface. The setting is turned off for that time. The save guard gives the player
+// value to GameSettings.Save. The stock key can show the statistics again and release the override.
 internal static class FrameStats
 {
     private static GameSettings? _owner;
     private static bool _released;
     private static bool _broken;
 
+    public static bool SaveGuardAvailable { get; set; } = true;
+
     public static void Update(bool hide)
     {
-        if (_broken)
+        if (_broken || !SaveGuardAvailable)
             return;
         try
         {
@@ -29,6 +30,21 @@ internal static class FrameStats
             _owner = null;
             LogHelper.WarnOnce("frame-stats", $"[CineCam] The frame statistics of the game could not be hidden: {ex.Message}");
         }
+    }
+
+    public static Action? BeforeSave(GameSettings owner)
+    {
+        if (!ReferenceEquals(_owner, owner) || owner.Interface.FrameStatistics)
+            return null;
+
+        GameSettings.InterfaceSettings settings = owner.Interface;
+        settings.FrameStatistics = true;
+        return () =>
+        {
+            if (ReferenceEquals(_owner, owner) && ReferenceEquals(GameSettings.Current, owner)
+                && ReferenceEquals(owner.Interface, settings))
+                settings.FrameStatistics = false;
+        };
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -90,5 +106,6 @@ internal static class FrameStats
         _owner = null;
         _released = false;
         _broken = false;
+        SaveGuardAvailable = true;
     }
 }

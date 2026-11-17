@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- A plain console test runner. It compiles only the game-free director and editing files, so it never
-       loads KSA.dll. It exits with 0 when every test passes. -->
+  <!-- A console test runner for the game-free code and capture hooks with stand-ins for KSA. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -12,6 +11,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <Compile Include="..\CineCam.ControlTests\ControlGameStubs.cs" Link="Capture\ControlGameStubs.cs" />
+    <Compile Include="..\CineCam\Features\Look\FrameStats.cs" Link="Capture\FrameStats.cs" />
+    <Compile Include="..\CineCam\Features\Look\PictureGuard.cs" Link="Capture\PictureGuard.cs" />
+    <Compile Include="..\CineCam\Features\Look\StillCapture.cs" Link="Capture\StillCapture.cs" />
+    <Compile Include="..\CineCam\Features\Takes\OfflineHooks.cs" Link="Capture\OfflineHooks.cs" />
     <Using Include="CineCam.Localization" />
     <None Include="..\tools\LocalizationCheck\shots.json" Link="LocalizationShots.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\CineCam\Localization\*.cs" Link="Localization\%(Filename)%(Extension)" />

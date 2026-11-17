@@ -3,7 +3,9 @@ using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Director;
 using CineCam.Features.Look;
+using HarmonyLib;
 using KSA;
+using GameProgram = KSA.Program;
 
 namespace CineCam.Features.Takes;
 
@@ -21,8 +23,10 @@ internal enum PostRenderResult
 
 internal static class OfflineHooks
 {
+    private static readonly PictureCaptureOwnership Ownership = new();
     private static Action<int, string>? _screenshot;
     private static bool _expecting;
+    private static bool _requesting;
     private static ScreenshotCapture? _cleanCapture;
     private static bool? _drawUiAfterGrab;
 
@@ -36,48 +40,97 @@ internal static class OfflineHooks
     /// <summary>Counts the calls of ScreenshotCapture.OnPostRender. A frame that returns early never calls it.</summary>
     public static long PostRenderCount { get; private set; }
 
+    private static bool NativeActive => GameProgram.Instance?.IsScreenshotCaptureActive == true;
+
+    public static bool IsBusy => Ownership.IsBusy(NativeActive);
+
+    public static bool CanCollect => !NativeActive && !Ownership.IsWriting;
+
+    public static string BusyText => UiText.MessageText("capture.pending_picture", "A picture is being captured or saved. Try again in a moment.");
+
+    public static bool TryAcquire(PictureOwner owner) =>
+        GameProgram.Instance != null && Ownership.TryAcquire(owner, NativeActive);
+
+    public static void Release(PictureOwner owner)
+    {
+        if (!Ownership.Owns(owner))
+            return;
+        try
+        {
+            AbortGrab();
+        }
+        finally
+        {
+            Ownership.Release(owner);
+            Reset();
+        }
+    }
+
     public static bool DrawUi => _cleanCapture?.IsActive == true && _drawUiAfterGrab is bool shown
-        ? shown : Program.DrawUI;
+        ? shown : GameProgram.DrawUI;
 
     // The flag "ui" is the swapchain grab, which copies the image of this frame after the interface
     // is drawn, and scale 1 keeps the window size. Without the flag, ScreenshotCapture.Request at scale
     // 1 takes the CaptureFrame path: ScreenshotCapture.OnRenderGameCapture draws the scene of the main
     // view through the composite pass into its own 8 bit image, without the interface, the overlays and
-    // the sync flash, and without a renderer rebuild. Returns false while another capture runs, because
-    // the game refuses a second request then.
-    public static bool RequestPicture(CaptureGrab grab)
+    // the sync flash, and without a renderer rebuild. A timed-out write can keep this slot busy
+    // after KSA accepts another request again.
+    public static bool RequestPicture(PictureOwner owner, CaptureGrab grab, ScreenshotCollector collector)
     {
-        _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
-        WaitForIdleCapture();
-        if (Program.Instance?.IsScreenshotCaptureActive == true)
+        if (!Ownership.CanRequest(owner, NativeActive))
             return false;
+        // An earlier picture may have timed out and finished during the retry. Exclude it before
+        // the next grab starts.
+        collector.Snapshot();
         AfterGrab();
         Result = PostRenderResult.Unknown;
         _expecting = true;
         _cleanCapture = grab == CaptureGrab.Clean ? Capture() : null;
-        _drawUiAfterGrab = grab == CaptureGrab.Clean ? Program.DrawUI : null;
-        _screenshot(1, grab == CaptureGrab.Clean ? "" : "ui");
+        _drawUiAfterGrab = grab == CaptureGrab.Clean ? GameProgram.DrawUI : null;
+        Request(1, grab == CaptureGrab.Clean ? "" : "ui");
         return true;
     }
 
     public static void RequestStill(int scale, int warmFrames)
     {
         AfterGrab();
-        _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
         _cleanCapture = Capture();
-        _drawUiAfterGrab = Program.DrawUI;
-        _screenshot(scale, FormattableString.Invariant($"warm={warmFrames}"));
+        _drawUiAfterGrab = GameProgram.DrawUI;
+        Request(scale, FormattableString.Invariant($"warm={warmFrames}"));
+    }
+
+    private static void Request(int scale, string flags)
+    {
+        _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
+        _requesting = true;
+        try
+        {
+            _screenshot(scale, flags);
+        }
+        finally
+        {
+            _requesting = false;
+        }
+    }
+
+    // The stock key and console command both call ScreenshotCapture.Request.
+    public static bool RequestPrefix()
+    {
+        if (_requesting || !Ownership.IsBusy(nativeActive: false))
+            return true;
+        DefaultCategory.Log.Warning($"[CineCam] {BusyText}");
+        return false;
     }
 
     private static ScreenshotCapture? Capture() =>
-        GameReflection.Program_ScreenshotCapture!.GetValue(Program.Instance) as ScreenshotCapture;
+        GameReflection.Program_ScreenshotCapture!.GetValue(GameProgram.Instance) as ScreenshotCapture;
 
     // A clean grab hides the interface in ScreenshotCapture.OnPrepareFrame and sets the value from
     // that moment back in ScreenshotCapture.OnPostRender, so a change of Program.DrawUI in between
     // would be undone. This sets it now and again after the grab.
     public static void SetDrawUi(bool shown)
     {
-        Program.DrawUI = shown;
+        GameProgram.DrawUI = shown;
         FrameStats.Update(!shown);
         if (_cleanCapture?.IsActive == true)
             _drawUiAfterGrab = shown;
@@ -98,7 +151,10 @@ internal static class OfflineHooks
     public static void Shutdown()
     {
         // ScreenshotCapture.Abort restores its saved interface value before the hooks are removed.
-        _cleanCapture?.Abort();
+        if (Ownership.Owner is { } owner)
+            Release(owner);
+        else
+            _cleanCapture?.Abort();
         AfterGrab();
         Reset();
         _cleanCapture = null;
@@ -107,15 +163,21 @@ internal static class OfflineHooks
 
     public static string GrabName(CaptureGrab grab) => grab == CaptureGrab.Clean ? "clean" : "swapchain";
 
-    private static void WaitForIdleCapture()
+    public static void AbortGrab()
     {
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        while (Program.Instance?.IsScreenshotCaptureActive == true && watch.ElapsedMilliseconds < 3000)
-            Thread.Sleep(5);
+        try
+        {
+            if (NativeActive)
+                Capture()?.Abort();
+            AfterGrab();
+        }
+        catch (Exception ex)
+        {
+            LogHelper.ErrorOnce("offline-abort", $"[CineCam] The screenshot capture could not be aborted: {ex.Message}");
+        }
     }
 
-    // The end of a capture calls this while its last clean grab can still be in flight, so the
-    // interface restore of SetDrawUi stays armed. Shutdown clears it too.
+    // The clean grab can still own the interface when a caller resets detection.
     public static void Reset()
     {
         _expecting = false;
@@ -150,5 +212,26 @@ internal static class OfflineHooks
     {
         AfterGrab();
         return __exception;
+    }
+
+    // OnPostRender sets the native state to Idle and then schedules SaveToPng. Keep the task so a
+    // later request cannot race with that write, including screenshots started by the stock key.
+    public static IEnumerable<CodeInstruction> TrackPngWrite(IEnumerable<CodeInstruction> instructions)
+    {
+        MethodInfo run = AccessTools.DeclaredMethod(typeof(Task), nameof(Task.Run), [typeof(Action)]);
+        MethodInfo trackedRun = AccessTools.DeclaredMethod(typeof(OfflineHooks), nameof(RunPngWriter));
+        var code = instructions.ToList();
+        CodeInstruction[] calls = code.Where(instruction => instruction.Calls(run)).ToArray();
+        if (calls.Length != 1)
+            throw new InvalidOperationException("Expected one PNG task in ScreenshotCapture.OnPostRender.");
+        calls[0].operand = trackedRun;
+        return code;
+    }
+
+    private static Task RunPngWriter(Action save)
+    {
+        Task writer = Task.Run(save);
+        Ownership.TrackWrite(writer);
+        return writer;
     }
 }

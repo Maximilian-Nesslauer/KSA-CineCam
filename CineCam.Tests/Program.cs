@@ -6595,6 +6595,7 @@ CineCam.Tests.BacklogTests.RunControl(Check, Expect);
 OldRecordingTests.Run(Check, Expect);
 CineCam.Tests.ReplayWorldTests.Run(Check, Expect);
 CineCam.Tests.SoundTests.Run(Check, Expect);
+CineCam.Tests.CaptureOwnershipTests.Run(Check, Expect);
 ReplayCrewTests.Run(Check, Expect);
 ReplayFxTests.Run(Check, Expect);
 CineCam.Tests.IntegrationTests.Run(Check, Expect);

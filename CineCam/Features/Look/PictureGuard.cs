@@ -4,6 +4,7 @@ using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Director;
 using KSA;
+using GameProgram = KSA.Program;
 
 namespace CineCam.Features.Look;
 
@@ -39,8 +40,14 @@ internal static class PictureGuard
 
     public static bool SaveGuarded { get; set; }
 
-    public static void SavePrefix(GameSettings __instance, out Action? __state) =>
-        __state = BeforeSave(__instance);
+    public static void SavePrefix(GameSettings __instance, out Action? __state)
+    {
+        Action? resumeStats = FrameStats.BeforeSave(__instance);
+        __state = resumeStats;
+        Action? resumePicture = BeforeSave(__instance);
+        if (resumePicture != null)
+            __state = resumeStats == null ? resumePicture : resumeStats + resumePicture;
+    }
 
     public static Exception? SaveFinalizer(Exception? __exception, Action? __state)
     {
@@ -199,7 +206,7 @@ internal static class PictureGuard
 
     private static void ApplyTonemap()
     {
-        if (Program.Instance is { } program)
+        if (GameProgram.Instance is { } program)
             GameReflection.Program_SetTonemapperSettings?.Invoke(program, null);
     }
 

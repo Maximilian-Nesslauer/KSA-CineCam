@@ -21,17 +21,19 @@ internal static unsafe class GameSoundRecorder
     // FMOD_PLUGIN_SDK_VERSION of the FMOD 2 headers that match the DspDescription layout of Brutal.Fmod.
     private const uint PluginSdkVersion = 110;
 
-    private static SoundCapture? _capture;
+    private static readonly SoundWriterSlot Writer = new();
     private static Dsp _dsp;
     private static ChannelGroup _master;
     private static bool _attached;
 
     public static bool IsRecording => _attached;
 
+    public static bool IsFinalizing => Writer.IsFinalizing;
+
     /// <summary>The take time of the first recorded sample, once the mixer delivered it.</summary>
     public static double? FirstSampleSeconds(double clockStartSeconds)
     {
-        long first = Volatile.Read(ref _capture)?.FirstTimestamp ?? 0;
+        long first = Writer.Active?.FirstTimestamp ?? 0;
         return first == 0 ? null : first / (double)Stopwatch.Frequency - clockStartSeconds;
     }
 
@@ -40,6 +42,8 @@ internal static unsafe class GameSoundRecorder
     {
         sampleRate = 0;
         Stop();
+        if (Writer.IsFinalizing)
+            return UiText.MessageText("capture.pending_sound", "The previous sound recording is still being saved. Try again in a moment.");
         FmodSystem system = GameAudio.System;
         if (system.IsNull())
             return UiText.MessageText("text.dfd1722783d3", "the game sound system is not ready");
@@ -60,6 +64,7 @@ internal static unsafe class GameSoundRecorder
             return UiText.Format("text.166ff01d50e2", $"the file could not be made: {ex.Message}");
         }
 
+        Writer.Attach(capture);
         DspDescription description = default;
         description.PluginSdkVersion = PluginSdkVersion;
         ReadOnlySpan<byte> name = "CineCam sound capture"u8;
@@ -75,19 +80,15 @@ internal static unsafe class GameSoundRecorder
         result = system.TryCreateDsp(in description, out Dsp dsp);
         if (result != Result.Ok)
         {
-            capture.Stop();
-            TryDelete(path);
+            StopFailedStart(path);
             return UiText.Format("text.90ecd68036f5", $"the sound capture could not be made ({result})");
         }
 
-        Volatile.Write(ref _capture, capture);
         result = master.TryAddDsp((int)ChannelControlDspIndex.ChannelControlDspHead, dsp);
         if (result != Result.Ok)
         {
-            Volatile.Write(ref _capture, null);
             dsp.TryRelease();
-            capture.Stop();
-            TryDelete(path);
+            StopFailedStart(path);
             return UiText.Format("text.8a6a586ee171", $"the sound capture could not be added to the mix ({result})");
         }
 
@@ -98,22 +99,30 @@ internal static unsafe class GameSoundRecorder
         return null;
     }
 
-    /// <summary>Takes the DSP out of the mix, ends the writer thread and closes the file. Null when nothing recorded.</summary>
+    /// <summary>Takes the DSP out of the mix and asks the writer to finish the file. Null when nothing recorded.</summary>
     public static SoundCaptureResult? Stop()
     {
         if (!_attached)
-            return null;
+            return Writer.Stop();
         _attached = false;
-        // ChannelControl.RemoveDSP changes the DSP network under the mixer lock of FMOD, so no read
-        // of this DSP runs after it returns. The capture also refuses blocks once it stops.
-        Result removed = _master.TryRemoveDsp(_dsp);
-        Result released = removed == Result.Ok ? _dsp.TryRelease() : removed;
-        if (removed != Result.Ok || released != Result.Ok)
-            DefaultCategory.Log.Warning($"[CineCam] The sound capture could not be taken out of the mix cleanly (remove {removed}, release {released}).");
-        SoundCapture? capture = Interlocked.Exchange(ref _capture, null);
-        _dsp = default;
-        _master = default;
-        return capture?.Stop();
+        SoundCaptureResult? result;
+        try
+        {
+            // ChannelControl.RemoveDSP changes the DSP network under the mixer lock of FMOD, so no
+            // read of this DSP runs after a successful removal.
+            Result removed = _master.TryRemoveDsp(_dsp);
+            Result released = removed == Result.Ok ? _dsp.TryRelease() : removed;
+            if (removed != Result.Ok || released != Result.Ok)
+                DefaultCategory.Log.Warning($"[CineCam] The sound capture could not be taken out of the mix cleanly (remove {removed}, release {released}).");
+        }
+        finally
+        {
+            _dsp = default;
+            _master = default;
+            result = Writer.Stop();
+        }
+
+        return result;
     }
 
     // FMOD calls this on its mixer thread for every block. It copies the input to the output and
@@ -140,7 +149,7 @@ internal static unsafe class GameSoundRecorder
                 }
             }
 
-            Volatile.Read(ref _capture)?.Push(new ReadOnlySpan<float>(inBuffer, frames * inChannels), inChannels, frames,
+            Writer.Active?.Push(new ReadOnlySpan<float>(inBuffer, frames * inChannels), inChannels, frames,
                 Stopwatch.GetTimestamp());
         }
         catch
@@ -151,8 +160,11 @@ internal static unsafe class GameSoundRecorder
         return Result.Ok;
     }
 
-    private static void TryDelete(string path)
+    private static void StopFailedStart(string path)
     {
+        Writer.Stop();
+        if (Writer.IsFinalizing)
+            return;
         try
         {
             File.Delete(path);

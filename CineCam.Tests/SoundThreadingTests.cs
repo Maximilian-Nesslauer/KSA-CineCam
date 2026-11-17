@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using CineCam.Director.Replay;
 using CineCam.Director.Sound;
 
 namespace CineCam.Tests;
@@ -66,10 +67,12 @@ static class SoundThreadingTests
         {
             string path = Temp();
             using var blocked = new ReadGate();
+            var slot = new SoundWriterSlot();
             SoundCapture? capture = null;
             try
             {
                 capture = new SoundCapture(path, 8000, ringSeconds: 0.01);
+                slot.Attach(capture);
                 capture.BeforeReadForTest = (_, _) => blocked.Wait();
                 expect(blocked.Entered.Wait(WaitMilliseconds), "the writer stopped before reading");
                 const int beforeFrames = SoundCapture.ChunkFrames * 4;
@@ -77,14 +80,22 @@ static class SoundThreadingTests
                 capture.Push(Samples(beforeFrames, 1), 1, beforeFrames, 1);
                 capture.Push(Samples(tailFrames, beforeFrames + 1), 1, tailFrames, 2);
 
-                SoundCaptureResult pending = capture.Stop(0);
+                SoundCaptureResult pending = slot.Stop(0)!;
                 expect(pending.Error == "the sound writer did not end in time", "the first stop reports a timeout");
+                expect(slot.Active == null, "the mixer no longer sees the stopped capture");
+                expect(QuitBlock() == "sound_pending", "quit is refused while the stopped writer still owns the WAV");
+                expect(slot.Stop(0) == null && slot.IsFinalizing, "another stop leaves the pending writer alone");
+                bool refused = false;
+                try { slot.Attach(capture); }
+                catch (InvalidOperationException) { refused = true; }
+                expect(refused, "the slot cannot be reused while the file is open");
                 expect(!CanOpenExclusively(path), "the live writer still owns its stream after a timeout");
                 expect(capture.Stop(0).Error == pending.Error, "a second stop can time out while cleanup is pending");
                 capture.Push([999], 1, 1, 3);
                 blocked.Release.Set();
                 expect(capture.JoinWriterForTest(WaitMilliseconds), "the writer finishes without another stop call");
                 expect(CanOpenExclusively(path), "the writer closed the stream on its own");
+                expect(QuitBlock() == null, "quit becomes available after the WAV is closed");
 
                 SoundCaptureResult result = capture.Stop();
                 expect(result.Error == null && !result.Full, result.Error ?? "the file is not full");
@@ -99,6 +110,9 @@ static class SoundThreadingTests
                 Finish(capture);
                 File.Delete(path);
             }
+
+            string? QuitBlock() => ControlRules.QuitBlock(new QuitState(false, false, false, false, false, false)
+                { SoundWrite = slot.IsFinalizing })?.Code;
         });
 
         check("sound capture: a writer failure still closes and finalizes the stream", () =>

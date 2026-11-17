@@ -108,6 +108,7 @@ internal static partial class ReplaySession
         : IsRendering ? UiText.MessageText("text.c07fcb0ae3ea", "A render runs.")
         : _strayCapture != null ? UiText.MessageText("text.fe6b8c257796", "Wait for the last render to end.")
         : !OfflineHooks.Available ? UiText.MessageText("text.8ccd246616d6", "This game build does not support the capture of pictures.")
+        : OfflineHooks.IsBusy ? OfflineHooks.BusyText
         : CineCamWindow.EditorSession is not { Document: not null, Take: not null } ? UiText.MessageText("text.70ee0b527edc", "The editor has no take. Make one on the Editor page.")
         : Plan?.Take == null || _takeName == null || Scene.Player.Problem.Length > 0
             ? (_takeProblem.Length > 0 ? UiText.Format("text.77947cd5eb5a", $"{_takeProblem} Fix the take to render it.") : UiText.MessageText("text.124ffea30baa", "The replay plays no take."))
@@ -143,12 +144,12 @@ internal static partial class ReplaySession
     {
         if (!OfflineHooks.Available)
             throw new Refusal("render_unavailable", UiText.MessageText("text.becfff7f1cea", "This game build does not support the capture of pictures, see the log at the start of the game."));
-        if (Program.Instance?.IsScreenshotCaptureActive != false)
-            throw new Refusal("capture_busy", UiText.MessageText("text.bffd32c59546", "Wait for the current game screenshot to finish."));
         if (GameMenuOpen)
             throw new Refusal("menu_open", UiText.MessageText("text.d2ba51704812", "Close the game menu before the render."));
         if (_strayCapture != null)
             throw new Refusal("capture_busy", UiText.MessageText("text.fe6b8c257796", "Wait for the last render to end."));
+        if (OfflineHooks.IsBusy)
+            throw new Refusal("capture_busy", OfflineHooks.BusyText);
 
         EditSession session = CineCamWindow.EditorSession;
         if (session.Document == null || session.Take == null)
@@ -217,6 +218,12 @@ internal static partial class ReplaySession
 
         // From here the run is the render, so FinishRender gives back all that the start changed,
         // whatever fails.
+        if (!OfflineHooks.TryAcquire(PictureOwner.ReplayRender))
+        {
+            log.Dispose();
+            throw new Refusal("capture_busy", OfflineHooks.BusyText);
+        }
+
         _render = run;
         try
         {
@@ -335,9 +342,9 @@ internal static partial class ReplaySession
 
             double step = capture.NextStep;
             capture.PostRenderMark = OfflineHooks.PostRenderCount;
-            if (!OfflineHooks.RequestPicture(capture.Grab))
+            if (!OfflineHooks.RequestPicture(PictureOwner.ReplayRender, capture.Grab, capture.Collector))
             {
-                // Another capture still runs. This frame makes no picture and stays small.
+                // A timed-out write can still own the screenshot folder.
                 RenderStep(capture, ref currentPlayerTime, ref dtPlayer, OfflineCapture.RetryStepSeconds);
                 capture.Pending = false;
                 return;
@@ -402,7 +409,8 @@ internal static partial class ReplaySession
     {
         OfflineCapture capture = run.Capture;
         int number = capture.FrameNumber;
-        CollectResult result = capture.Collector.Wait(number, RenderCollectTimeout, () => NoRenderPicture(capture));
+        CollectResult result = capture.Collector.Wait(number, RenderCollectTimeout, () => NoRenderPicture(capture),
+            static () => OfflineHooks.CanCollect);
         capture.Pending = false;
         if (result == CollectResult.Done)
         {
@@ -410,6 +418,7 @@ internal static partial class ReplaySession
             return true;
         }
 
+        OfflineHooks.AbortGrab();
         bool giveUp = capture.RecordLost(RenderMaxFailuresInRow);
         string reason = OfflineHooks.Result == PostRenderResult.NoPicture ? UiText.MessageText("text.3f9b6f71990b", "the game made no picture of the frame") : UiText.MessageText("text.7e42b227c7d2", "no finished file came in time");
         string text = UiText.Format("text.1ad47675704f", $"Picture {number} was not saved ({reason}). The next frame makes it again.");
@@ -510,7 +519,8 @@ internal static partial class ReplaySession
             else if (capture.Pending)
             {
                 int number = capture.FrameNumber;
-                if (capture.Collector.Wait(number, RenderCollectTimeout, () => NoRenderPicture(capture)) == CollectResult.Done)
+                if (capture.Collector.Wait(number, RenderCollectTimeout, () => NoRenderPicture(capture),
+                        static () => OfflineHooks.CanCollect) == CollectResult.Done)
                     RenderSaved(run, number);
                 else
                     DefaultCategory.Log.Warning($"[CineCam] Picture {number} was not saved.");
@@ -530,7 +540,7 @@ internal static partial class ReplaySession
             else
             {
                 capture.Pending = false;
-                OfflineHooks.Reset();
+                OfflineHooks.Release(PictureOwner.ReplayRender);
             }
         }
 
@@ -589,7 +599,8 @@ internal static partial class ReplaySession
         try
         {
             if (frameEnded && OfflineHooks.Result != PostRenderResult.NoPicture
-                && capture.Collector.Discard(StrayTimeout, () => OfflineHooks.Detects && OfflineHooks.Result == PostRenderResult.NoPicture))
+                && capture.Collector.Discard(StrayTimeout, () => OfflineHooks.Detects && OfflineHooks.Result == PostRenderResult.NoPicture,
+                    static () => OfflineHooks.CanCollect))
                 DefaultCategory.Log.Info("[CineCam] The picture of the frame in which the render ended was removed from the screenshot folder.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -599,7 +610,7 @@ internal static partial class ReplaySession
         finally
         {
             capture.Pending = false;
-            OfflineHooks.Reset();
+            OfflineHooks.Release(PictureOwner.ReplayRender);
         }
     }
 
@@ -609,7 +620,7 @@ internal static partial class ReplaySession
         if (_strayCapture is { } capture)
         {
             capture.Pending = false;
-            OfflineHooks.Reset();
+            OfflineHooks.Release(PictureOwner.ReplayRender);
         }
 
         _strayCapture = null;
