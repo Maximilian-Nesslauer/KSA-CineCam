@@ -62,10 +62,25 @@ public static class ReplayChannelKind
     /// <summary>1 for on and 0 for off.</summary>
     public const string Light = "l";
 
-    public static bool IsKnown(string? kind) => kind is Animation or AnimationTracking or Tracker or GimbalY or GimbalZ
-        or Heat or ThinFilm or Wetness or Light;
+    /// <summary>The power status of a power consumer with a status light, as the number of the game enum.</summary>
+    public const string PowerStatus = "p";
 
-    public static bool IsStep(string kind) => kind == Light;
+    /// <summary>The charge of a battery with a status light, a fraction from 0 to 1.</summary>
+    public const string Charge = "c";
+
+    public static bool IsKnown(string? kind) => kind is Animation or AnimationTracking or Tracker or GimbalY or GimbalZ
+        or Heat or ThinFilm or Wetness or Light or PowerStatus or Charge;
+
+    public static bool IsStep(string kind) => kind is Light or PowerStatus;
+
+    /// <summary>
+    /// The kinds of the status lights. A recording made before they were recorded has none of them, so the
+    /// replay matches its channels against the part tree without them.
+    /// </summary>
+    public static bool IsStatusLight(string kind) => kind is PowerStatus or Charge;
+
+    /// <summary>The largest stored power status. The game enum has 7 values.</summary>
+    public const int PowerStatusLimit = 255;
 
     // SolarTrackingExtension.Update keeps its angle in the range of half a turn with
     // Math.IEEERemainder, so the recorded value jumps by a full turn where the panel turns past it.
@@ -76,13 +91,13 @@ public static class ReplayChannelKind
     {
         Animation => 1e-3,
         AnimationTracking or Tracker or GimbalY or GimbalZ => 1e-4,
-        Light => 1.0,
+        Light or PowerStatus => 1.0,
         _ => 1e-3,
     };
 
     private static double Tolerance(string kind) => kind switch
     {
-        Heat or ThinFilm or Wetness => 4e-3,
+        Heat or ThinFilm or Wetness or Charge => 4e-3,
         _ => Quantum(kind) * 0.5,
     };
 
@@ -92,6 +107,8 @@ public static class ReplayChannelKind
             return 0f;
         if (kind == Light)
             return value > 0.5f ? 1f : 0f;
+        if (kind == PowerStatus)
+            return Math.Clamp(MathF.Round(value), 0f, PowerStatusLimit);
         double quantum = Quantum(kind);
         return (float)(Math.Round(value / quantum) * quantum);
     }

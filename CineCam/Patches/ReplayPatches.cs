@@ -7,7 +7,9 @@ using CineCam.Features.Replay;
 using HarmonyLib;
 using KSA;
 using KSA.Atmosphere.Rendering;
+using KSA.Atmosphere.Rendering.ShaderStructs;
 using KSA.Rendering.Particles;
+using KSA.Rendering.Water.Rendering;
 
 namespace CineCam.Patches;
 
@@ -79,6 +81,22 @@ internal static class ReplayPatches
                 [typeof(int), typeof(int), typeof(double), typeof(double4x4)], transpiler: true);
             PatchOptional(typeof(CloudShadowVolume), "GetPlanetToCloudRotation", nameof(ReplayCloudTime),
                 [typeof(CloudLayerRenderData)], transpiler: true);
+            // The waves and the aurora move with the game time. These patches give them the recorded
+            // moment. Without them they stay as they were when the replay opened.
+            PatchOptional(typeof(OceanFFT), "EvolveSpectrums", nameof(ReplayWaveTime),
+                Shape(typeof(OceanFFT), "EvolveSpectrums", "CommandBuffer", nameof(IViewport), "int2", "BarrierBatch&"), transpiler: true);
+            PatchOptional(typeof(OceanRenderData), nameof(OceanRenderData.UpdateTangentFrameData), nameof(ReplayWaveTime),
+                [typeof(double3), typeof(int), typeof(doubleQuat), typeof(doubleQuat), typeof(float4x4)], transpiler: true);
+            PatchOptional(typeof(AuroraRenderer), nameof(AuroraRenderer.FillAuroraData), nameof(ReplayAuroraTime),
+                [typeof(AtmosphereData).MakeByRefType(), typeof(AtmosphericBody), typeof(float3)], transpiler: true);
+            // The small cloud detail moves by the last sim step, which is 0 while the replay holds the
+            // game. This patch moves it by the step of the replay, so it moves while the replay plays.
+            PatchOptional(typeof(CloudRenderer), nameof(CloudRenderer.RenderWithCompute), nameof(ReplayCloudStep),
+                Shape(typeof(CloudRenderer), nameof(CloudRenderer.RenderWithCompute), nameof(AtmosphericBody), "CommandBuffer", nameof(IViewport),
+                    "Int32", "Int32", "VkDescriptorSet", "VkDescriptorSet", "ByteSize", "Boolean&"), transpiler: true);
+            // The status lights of the probe cores show the recorded status. Without this patch they
+            // show the status that the game computes from the decoded vehicle.
+            PatchOptional(typeof(PowerConsumer), nameof(PowerConsumer.ComputeStatus), nameof(BeforePowerStatus), [typeof(PartTree)]);
             // The ground clutter picks its shadow casters by the sun direction. Without this patch the
             // replay culls them by the sun of the live moment.
             PatchOptional(typeof(GroundClutterRenderer), "UpdateShadowCullingData", nameof(ReplaySun),
@@ -139,6 +157,7 @@ internal static class ReplayPatches
     {
         ReplaySession.Shutdown();
         _harmony?.UnpatchAll(_harmony.Id);
+        ReplayPartState.ReleaseAll();
         _harmony = null;
         _worldChangeDepth = 0;
         _pausedAlert = null;
@@ -222,6 +241,23 @@ internal static class ReplayPatches
         ReplaceCall(instructions, AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetElapsedSeconds)),
             AccessTools.DeclaredMethod(typeof(ReplayPatches), nameof(CloudTime)));
 
+    // OceanFFT.EvolveSpectrums and OceanRenderData.UpdateTangentFrameData give the game time to the
+    // wave shaders.
+    private static IEnumerable<CodeInstruction> ReplayWaveTime(IEnumerable<CodeInstruction> instructions) =>
+        ReplaceCall(instructions, AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetElapsedSeconds)),
+            AccessTools.DeclaredMethod(typeof(ReplayPatches), nameof(CloudTime)));
+
+    // AuroraRenderer.FillAuroraData reads the game time once for StormState.Get and once for the phase.
+    private static IEnumerable<CodeInstruction> ReplayAuroraTime(IEnumerable<CodeInstruction> instructions) =>
+        ReplaceCall(instructions, AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetElapsedSeconds)),
+            AccessTools.DeclaredMethod(typeof(ReplayPatches), nameof(CloudTime)), expected: 2);
+
+    // CloudRenderer.RenderWithCompute reads Universe.GetLastSimStep().DeltaTime once for the flow map
+    // phases and the noise scroll of all cloud layers.
+    private static IEnumerable<CodeInstruction> ReplayCloudStep(IEnumerable<CodeInstruction> instructions) =>
+        ReplaceCall(instructions, AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetLastSimStep)),
+            AccessTools.DeclaredMethod(typeof(ReplayPatches), nameof(CloudSimStep)));
+
     // Each patched method calls the original exactly once. Another count means that the game method
     // changed, so the throw leaves an optional target unchanged and turns the replay off for a
     // required one.
@@ -247,6 +283,22 @@ internal static class ReplayPatches
     private static double VisualTime() => ReplaySession.Scene?.VisualTime ?? Universe.GetElapsedSeconds();
 
     private static double CloudTime() => ReplaySession.Scene?.GameTime ?? Universe.GetElapsedSeconds();
+
+    private static SimStep CloudSimStep()
+    {
+        SimStep last = Universe.GetLastSimStep();
+        return ReplaySession.Scene is { } scene
+            ? new SimStep { PreviousTime = last.PreviousTime, NextTime = last.NextTime, DeltaTime = scene.CloudStep }
+            : last;
+    }
+
+    private static bool BeforePowerStatus(PowerConsumer __instance, ref PowerStatus __result)
+    {
+        if (!ReplayPartState.TryRecordedStatus(__instance, out PowerStatus status))
+            return true;
+        __result = status;
+        return false;
+    }
 
     private static void BeforeWorldChange(out bool __state)
     {

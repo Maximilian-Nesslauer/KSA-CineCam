@@ -27,6 +27,7 @@ internal sealed class ReplayScene : IDisposable
     private readonly ReplayLiveState _liveState = new();
     private readonly ReplayCamera _camera;
     private double _lastFrameTime;
+    private readonly ReplayFrameStep _cloudStep = new();
     private bool _partStateFailed;
 
     private static Camera Camera => Program.MainViewport.BaseCamera;
@@ -55,6 +56,13 @@ internal sealed class ReplayScene : IDisposable
 
     /// <summary>The game time of the recorded moment that the replay shows.</summary>
     public double GameTime => Flight.StartTime + Time;
+
+    /// <summary>
+    /// The recording time that passed since the last rendered frame, for the small cloud detail that the
+    /// game advances by the last sim step. It cannot give the detail of the recorded moment, because the
+    /// game keeps only the sum of the steps.
+    /// </summary>
+    public double CloudStep => _cloudStep.Step(Program.FrameNumber, Time);
     public int? FollowActorId => _camera.FollowActorId;
     public double FieldOfView => _camera.FieldOfView;
     public bool IsPlaying => Player.IsPlaying;
@@ -108,6 +116,7 @@ internal sealed class ReplayScene : IDisposable
     {
         _liveState.Enter();
         _camera.Follow(World.FollowedAt(Time).Id);
+        _cloudStep.Jump(Time);
         Update(0);
     }
 
@@ -120,7 +129,10 @@ internal sealed class ReplayScene : IDisposable
         finally
         {
             foreach (Model model in _models.Values)
+            {
+                model.PartState?.Release();
                 model.Parts.Dispose();
+            }
             _models.Clear();
         }
     }
@@ -273,6 +285,7 @@ internal sealed class ReplayScene : IDisposable
     private void AfterJump(bool moved = true)
     {
         _lastFrameTime = Time;
+        _cloudStep.Jump(Time);
         if (moved)
             ResetPlumes();
         if (CameraMode == ReplayCameraMode.Take)
@@ -333,7 +346,7 @@ internal sealed class ReplayScene : IDisposable
     {
         if (segment.Channels is not { Count: > 0 })
             return null;
-        ReplayPartState state = ReplayPartState.Of(parts);
+        ReplayPartState state = ReplayPartState.Of(parts, segment.Channels.Exists(channel => ReplayChannelKind.IsStatusLight(channel.Kind)));
         if (state.Matches(segment))
             return state;
         DefaultCategory.Log.Warning($"[CineCam] The replay shows the parts of a segment at {segment.Start:0.###} s without their recorded state, because the part modules differ from the recording.");
@@ -363,6 +376,7 @@ internal sealed class ReplayScene : IDisposable
         }
         catch (Exception ex)
         {
+            model.PartState?.Release();
             model.PartState = null;
             if (!_partStateFailed)
                 DefaultCategory.Log.Warning($"[CineCam] The replay shows the parts of a segment at {model.Segment.Start:0.###} s without their recorded state after an error: {ex.Message}");

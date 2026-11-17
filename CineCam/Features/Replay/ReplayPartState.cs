@@ -11,14 +11,21 @@ namespace CineCam.Features.Replay;
 internal sealed class ReplayPartState
 {
     private readonly PartTree _tree;
+    private readonly bool _statusLights;
     private readonly List<Binding> _bindings = [];
     private readonly List<string> _kinds = [];
     private float[] _applied = [];
     private float[] _values = [];
 
-    private ReplayPartState(PartTree tree)
+    // The recorded status of the power consumers of the decoded trees, which the prefix of
+    // PowerConsumer.ComputeStatus gives back. Only the main thread writes it, before the render
+    // data of the tree reads it.
+    private static readonly Dictionary<PowerConsumer, PowerStatus> RecordedStatus = new(ReferenceEqualityComparer.Instance);
+
+    private ReplayPartState(PartTree tree, bool statusLights)
     {
         _tree = tree;
+        _statusLights = statusLights;
         var iterator = new PartTreeIterator(tree.Root);
         while (iterator.GetNextNode() is { } part)
             Visit(part);
@@ -37,7 +44,30 @@ internal sealed class ReplayPartState
     /// <summary>The <see cref="ReplayPartKey"/> of the parts that own the channels.</summary>
     public uint Key { get; }
 
-    public static ReplayPartState Of(PartTree tree) => new(tree);
+    /// <summary>
+    /// The part state of a tree. Without <paramref name="statusLights"/> it has no channels of the status
+    /// lights, as in a recording made before they were recorded.
+    /// </summary>
+    public static ReplayPartState Of(PartTree tree, bool statusLights = true) => new(tree, statusLights);
+
+    /// <summary>The recorded power status of a consumer of a decoded tree that a replay shows.</summary>
+    public static bool TryRecordedStatus(PowerConsumer consumer, out PowerStatus status)
+    {
+        status = default;
+        return RecordedStatus.Count != 0 && RecordedStatus.TryGetValue(consumer, out status);
+    }
+
+    /// <summary>The consumers of this tree compute their status again from the tree.</summary>
+    public void Release()
+    {
+        foreach (Binding binding in _bindings)
+        {
+            if (binding is StatusBinding status)
+                RecordedStatus.Remove(status.Module);
+        }
+    }
+
+    public static void ReleaseAll() => RecordedStatus.Clear();
 
     /// <summary>The part of the first module whose state the last <see cref="Read"/> did not find, or null.</summary>
     public string? Missed { get; private set; }
@@ -107,7 +137,12 @@ internal sealed class ReplayPartState
         {
             if (module.LightSwitch)
                 _bindings.Add(new LightBinding(module));
+            if (_statusLights && module.HasStatusLight)
+                _bindings.Add(new StatusBinding(module));
         }
+        // PartTreeRenderData.ResolveStatusLightBattery takes only the first battery of a part.
+        if (_statusLights && part.Modules.Get<Battery>() is { Length: > 0 } batteries && batteries[0].HasStatusLight)
+            _bindings.Add(new ChargeBinding(batteries[0]));
         foreach (Part subpart in part.SubParts)
             Visit(subpart);
     }
@@ -288,6 +323,48 @@ internal sealed class ReplayPartState
             bool on = values[0] > 0.5f;
             module.LightIsActive = on;
             SetState(tree, module, (ref PowerConsumerState state) => state.Active = on);
+        }
+    }
+
+    // PartTreeRenderData colours the status light of a power consumer by PowerConsumer.ComputeStatus,
+    // which reads the hold, the switch, the power and the forecast of the live simulation. The decoded
+    // tree has none of them, so the replay gives the recorded status back through a prefix.
+    private sealed class StatusBinding(PowerConsumer module) : Binding(module.Parent, 0, ReplayChannelKind.PowerStatus)
+    {
+        public PowerConsumer Module => module;
+
+        public override bool Read(PartTree tree, Span<float> values)
+        {
+            values[0] = (byte)module.ComputeStatus(tree);
+            return true;
+        }
+
+        public override void Apply(PartTree tree, ReadOnlySpan<float> values)
+        {
+            var status = (PowerStatus)(byte)Math.Clamp(MathF.Round(values[0]), 0f, ReplayChannelKind.PowerStatusLimit);
+            if (Enum.IsDefined(status))
+                RecordedStatus[module] = status;
+            else
+                RecordedStatus.Remove(module);
+        }
+    }
+
+    // PartTreeRenderData colours the status light of a battery by Battery.FilledFraction of the
+    // battery state in the tree.
+    private sealed class ChargeBinding(Battery module) : Binding(module.Parent, 0, ReplayChannelKind.Charge)
+    {
+        public override bool Read(PartTree tree, Span<float> values)
+        {
+            if (!TryState(tree, module, out BatteryState state))
+                return false;
+            values[0] = module.FilledFraction(state).Value();
+            return true;
+        }
+
+        public override void Apply(PartTree tree, ReadOnlySpan<float> values)
+        {
+            Joules charge = module.MaximumCapacity * Math.Clamp(values[0], 0f, 1f);
+            SetState(tree, module, (ref BatteryState state) => state.Charge = charge);
         }
     }
 }
