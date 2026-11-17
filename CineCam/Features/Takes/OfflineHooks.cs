@@ -1,6 +1,7 @@
 using System.Reflection;
 using Brutal.Logging;
 using CineCam.Core;
+using CineCam.Director;
 using KSA;
 
 namespace CineCam.Features.Takes;
@@ -21,6 +22,8 @@ internal static class OfflineHooks
 {
     private static Action<int, string>? _screenshot;
     private static bool _expecting;
+    private static bool _cleanInFlight;
+    private static bool? _drawUiAfterGrab;
 
     public static bool Available { get; set; }
 
@@ -33,9 +36,12 @@ internal static class OfflineHooks
     public static long PostRenderCount { get; private set; }
 
     // The flag "ui" is the swapchain grab, which copies the image of this frame after the interface
-    // is drawn, and scale 1 keeps the window size. Returns false while another capture runs, because
+    // is drawn, and scale 1 keeps the window size. Without the flag, ScreenshotCapture.Request at scale
+    // 1 takes the CaptureFrame path: ScreenshotCapture.OnRenderGameCapture draws the scene of the main
+    // view through the composite pass into its own 8 bit image, without the interface, the overlays and
+    // the sync flash, and without a renderer rebuild. Returns false while another capture runs, because
     // the game refuses a second request then.
-    public static bool RequestPicture()
+    public static bool RequestPicture(CaptureGrab grab)
     {
         _screenshot ??= GameReflection.Program_Screenshot!.CreateDelegate<Action<int, string>>();
         WaitForIdleCapture();
@@ -43,9 +49,39 @@ internal static class OfflineHooks
             return false;
         Result = PostRenderResult.Unknown;
         _expecting = true;
-        _screenshot(1, "ui");
+        _cleanInFlight = grab == CaptureGrab.Clean;
+        _screenshot(1, grab == CaptureGrab.Clean ? "" : "ui");
         return true;
     }
+
+    // A clean grab hides the interface in ScreenshotCapture.OnPrepareFrame and sets the value from
+    // that moment back in ScreenshotCapture.OnPostRender, so a change of Program.DrawUI in between
+    // would be undone. This sets it now and again after the grab.
+    public static void SetDrawUi(bool shown)
+    {
+        Program.DrawUI = shown;
+        if (_cleanInFlight && Program.Instance?.IsScreenshotCaptureActive == true)
+            _drawUiAfterGrab = shown;
+    }
+
+    // Runs at the start of each frame. A run that started since then owns the interface.
+    public static void AfterGrab(bool runActive)
+    {
+        if (_drawUiAfterGrab is not bool shown || Program.Instance?.IsScreenshotCaptureActive == true)
+            return;
+        _drawUiAfterGrab = null;
+        if (!runActive)
+            Program.DrawUI = shown;
+    }
+
+    public static void Shutdown()
+    {
+        Reset();
+        _cleanInFlight = false;
+        _drawUiAfterGrab = null;
+    }
+
+    public static string GrabName(CaptureGrab grab) => grab == CaptureGrab.Clean ? "clean" : "swapchain";
 
     private static void WaitForIdleCapture()
     {
@@ -54,6 +90,8 @@ internal static class OfflineHooks
             Thread.Sleep(5);
     }
 
+    // The end of a capture calls this while its last clean grab can still be in flight, so the
+    // interface restore of SetDrawUi stays armed. Shutdown clears it too.
     public static void Reset()
     {
         _expecting = false;
@@ -66,6 +104,7 @@ internal static class OfflineHooks
     public static void PostRenderPrefix(ScreenshotCapture __instance)
     {
         PostRenderCount++;
+        _cleanInFlight = false;
         if (!_expecting)
             return;
         _expecting = false;

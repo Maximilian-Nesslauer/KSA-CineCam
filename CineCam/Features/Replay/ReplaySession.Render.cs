@@ -85,6 +85,9 @@ internal static partial class ReplaySession
 
     public static bool IsRendering => _render != null;
 
+    /// <summary>The take that the render plays, or null.</summary>
+    public static Take? RenderTake => _render?.Plan.Take;
+
     /// <summary>The render that runs, or the last render since the mod loaded, or null.</summary>
     public static ReplayRenderStatus? RenderStatus => _render?.Status(null) ?? _lastRender;
 
@@ -187,7 +190,7 @@ internal static partial class ReplaySession
             log = EventLogCsv.Create(Path.Combine(folder, "events.csv"));
             var collector = new ScreenshotCollector(CineCamPaths.ScreenshotsFolder, frames);
             OfflineOutput.WriteHelpers(output, folder, take.Name, job.Fps);
-            var capture = new OfflineCapture(job.Fps, output, frames, collector);
+            var capture = new OfflineCapture(job.Fps, output, frames, collector) { Grab = file.Capture.Grab };
             run = new RenderRun(job, capture, log, folder, plan, scene.Flight.StartTime)
             {
                 EventRows = ReplayRenderLog.EventRows(plan.EventTimes, job, EventDetails(scene.Flight)),
@@ -219,7 +222,7 @@ internal static partial class ReplaySession
             if (file.Capture.Scale != 1)
                 DefaultCategory.Log.Warning("[CineCam] The capture scale is ignored. The pictures have the size of the game window.");
             ReplayRenderRow start = new(0.0, job.Start, 1, "take", "start", string.Create(CultureInfo.InvariantCulture,
-                $"take={take.Name}; source=replay; recording={_replayId}; range={(range == ReplayRenderRange.FromCurrent ? "current" : "whole")}; takeStart={job.Start:F3}; takeEnd={job.End:F3}; fps={job.Fps}; pictures={job.Total}"));
+                $"take={take.Name}; source=replay; recording={_replayId}; range={(range == ReplayRenderRange.FromCurrent ? "current" : "whole")}; takeStart={job.Start:F3}; takeEnd={job.End:F3}; fps={job.Fps}; pictures={job.Total}; grab={OfflineHooks.GrabName(file.Capture.Grab)}"));
             ReplayRenderLog.Write(log, start, plan, run.FlightStart);
             ReplayRenderLog.Write(log, start with { Kind = "take", Name = "offline", Detail = $"fps={OfflineOutput.FormatFps(job.Fps)}; frames={frames}" },
                 plan, run.FlightStart);
@@ -333,7 +336,7 @@ internal static partial class ReplaySession
 
             double step = capture.NextStep;
             capture.PostRenderMark = OfflineHooks.PostRenderCount;
-            if (!OfflineHooks.RequestPicture())
+            if (!OfflineHooks.RequestPicture(capture.Grab))
             {
                 // Another capture still runs. This frame makes no picture and stays small.
                 RenderStep(capture, ref currentPlayerTime, ref dtPlayer, OfflineCapture.RetryStepSeconds);
@@ -544,7 +547,7 @@ internal static partial class ReplaySession
         {
             if (run.SavedTitle != null && Program.GetWindow() is { } window)
                 window.Title = run.SavedTitle;
-            Program.DrawUI = run.SavedDrawUi;
+            OfflineHooks.SetDrawUi(run.SavedDrawUi);
             Program.ConsoleWindow?.EnableMessageFading();
             RenderAlerts.RemoveNew(run.SavedAlerts);
             if (restoreScene && Scene is { } scene)

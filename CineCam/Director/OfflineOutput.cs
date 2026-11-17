@@ -29,6 +29,10 @@ public static class OfflineOutput
 
     public static string FormatFps(double fps) => fps.ToString("0.###", CultureInfo.InvariantCulture);
 
+    /// <summary>The file name of a supersampled still, for example still-20261117-120501-x4.png.</summary>
+    public static string StillName(DateTime time, int scale) =>
+        string.Create(CultureInfo.InvariantCulture, $"still-{time:yyyyMMdd-HHmmss}-x{scale}.png");
+
     // The percent sign of the picture pattern is doubled in a Windows batch file.
     public static string MakeVideoCmd(double fps) =>
         "@echo off\r\n" +
@@ -127,6 +131,9 @@ public sealed class ScreenshotCollector
     /// <summary>Other new files, such as a screenshot of the player, are ignored from then on.</summary>
     public CollectResult TryCollect(int frameNumber, out string? movedTo) =>
         TryMove(Path.Combine(_framesFolder, OfflineOutput.FrameName(frameNumber)), out movedTo);
+
+    /// <summary>Moves the newest new finished picture to <paramref name="targetPath"/>, without a wait.</summary>
+    public CollectResult TryCollectAs(string targetPath) => TryMove(targetPath, out _);
 
     /// <summary>Waits for a new finished picture and deletes it, for a picture that the game saves after the capture ended.</summary>
     public bool Discard(TimeSpan timeout, Func<bool>? giveUp = null)

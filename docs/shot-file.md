@@ -34,7 +34,7 @@ Top level fields:
 | `keepOut` | Boxes the camera must stay out of, see the keep-out boxes. A take can set its own `keepOut`, and then the take wins |
 | `takes` | The list of takes. A file with one take can keep `camera` and `speed` at the top level |
 
-A take has `name`, `default` (the take that starts without a name), `site`, `anchor`, `checkpoint`, `autoStart`, `autoStartDelay`, `preRoll`, `camera` (a list of shots, at least one), `speed` (a list of speed keys) and `actions` (a list of actions).
+A take has `name`, `default` (the take that starts without a name), `site`, `anchor`, `checkpoint`, `autoStart`, `autoStartDelay`, `preRoll`, `sound`, `picture`, `exactApsides`, `camera` (a list of shots, at least one), `speed` (a list of speed keys) and `actions` (a list of actions). A file with one take and no `takes` list has these fields at the top level.
 
 `anchor` is a point on a body that is the origin of the site frame when no Landmark is named: `{ "body": "Earth", "latitude": 28.6, "longitude": -80.6, "altitude": 0 }`. Latitude and longitude are in degrees (north and east are positive, longitude 0 is the 0 meridian of the body), and `altitude` is in meters above the terrain (default 0). When a take names a `site` too, the Landmark wins and the anchor has no effect.
 
@@ -142,6 +142,31 @@ A `stage` action sends the staging key of the game for the controlled vehicle. T
 
 A sequence whose parts all leave the vehicle when it fires, for example a fairing, is removed by the game inside the same call. The mod therefore watches every call of `SequenceList.ActivateNextSequence` and reports the sequence that was next before the call. The watch only reads.
 
+## Sound and picture of a take
+
+`sound` sets the game sound while the take runs, as a share of the volumes of the game settings from 0 (off) to 1 (as set). A missing field keeps the volume.
+
+| Field | Meaning |
+| --- | --- |
+| `music` | The music of the game |
+| `effects` | The sound effects: engines, wind, alerts and the other sounds of the world |
+
+`picture` replaces graphics settings of the player while the take runs, while a replay renders it and while a replay shows it with the take camera. A missing field keeps the setting of the player. The settings of the player come back after it, and CineCam never writes the settings file of the game.
+
+| Field | Meaning |
+| --- | --- |
+| `exposure` | The exposure of the tonemapper (Tonemap Exposure in the game settings), 0.01 to 100. The game default is 1.25 |
+| `cloudAmbientLight` | `true` or `false`: the light of the clouds on the vehicle and the ground |
+| `cloudShadows` | `true` or `false`: the shadows of the clouds. `true` works only when they are on in the game settings, because the game sets their quality at its start |
+| `reflections` | `true` or `false`: the reflections and the ambient light on the vehicle (Vessel Ambient Lighting in the debug menu of the game) |
+
+```json
+"sound": { "music": 0, "effects": 0.5 },
+"picture": { "exposure": 1.8, "cloudShadows": false }
+```
+
+`"exactApsides": true` makes an offline capture land a picture exactly on each apoapsis and periapsis that the orbit of the vehicle forecasts, in the same free flight as the `apoapsis` and `periapsis` events: no ground contact, outside the atmosphere, a closed orbit, and on a body without an atmosphere a periapsis above the terrain. When an apsis is less than two pictures ahead, the two pictures before it share the way, so no picture steps less than half of the normal step, and the game time after the apsis is a little behind the speed track (less than one picture step). The log gets an `info` row `exactTime` that names the picture and the game time. A realtime take ignores the field.
+
 ## Capture options
 
 The capture options:
@@ -151,7 +176,8 @@ The capture options:
 | `mode` | `realtime` (default) or `offline` |
 | `fps` | Pictures per second of the offline mode. Default is the `fps` of the file |
 | `folder` | Output folder of the offline mode. A relative path is relative to the folder of the take |
-| `scale` | Only 1 works. The pictures have the size of the game window |
+| `scale` | Only 1 works. The pictures have the size of the game window. A supersampled still is made with **Take still** or `cinecam_still` |
+| `grab` | `swapchain` (default) copies the finished screen image with all that is drawn on it, also the overlays of other mods. `clean` draws the scene of the main view into its own picture without the interface and the overlays. Both work for the offline capture and the render of a replay |
 
 ## Keep-out boxes
 

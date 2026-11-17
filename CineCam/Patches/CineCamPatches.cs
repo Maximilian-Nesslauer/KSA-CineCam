@@ -4,6 +4,7 @@ using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Features;
 using CineCam.Features.Autotest;
+using CineCam.Features.Look;
 using CineCam.Features.Quick;
 using CineCam.Features.Replay;
 using CineCam.Features.Takes;
@@ -41,8 +42,8 @@ internal static class CineCamPatches
         if (FrameAvailable)
         {
             PatchOffline(harmony);
-            Group(true,
-                "[CineCam] When the game sets the sim speed by itself (an uncrewed vehicle that runs low on probe power), a take can run one frame at that speed and a reset can stop holding the sim",
+            SunWarp.ExactArrival = Group(true,
+                "[CineCam] When the game sets the sim speed by itself (an uncrewed vehicle that runs low on probe power), a take can run one frame at that speed and a reset can stop holding the sim. The sun move ends up to one step past its target, and an offline take does not land pictures on the apsides",
                 () => harmony.Patch(AccessTools.DeclaredMethod(typeof(Universe), nameof(Universe.GetJobSimStep), [typeof(double)])
                         ?? throw new MissingMethodException("Universe.GetJobSimStep(double)"),
                     prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(SimStepPrefix)),
@@ -101,6 +102,14 @@ internal static class CineCamPatches
             "[CineCam] Console lines may show in the pictures of a take",
             () => harmony.Patch(GameReflection.ConsoleWindow_Draw,
                 prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(ConsoleDrawPrefix))));
+
+        PictureGuard.ExposureAvailable = GameReflection.ValidateExposure();
+        if (!PictureGuard.ExposureAvailable)
+            DefaultCategory.Log.Warning("[CineCam] The exposure of a take is disabled - reflection targets not found.");
+        LookGuard.SettingsGuarded = Group(GameReflection.ValidateSettingsGuard(),
+            "[CineCam] The picture settings of a take apply only while the game interface is hidden",
+            () => harmony.Patch(GameReflection.GameSettings_SetShow,
+                prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(SettingsShowPrefix))));
 
         Group(GameReflection.ValidateSyncFlash(),
             "[CineCam] The sync flash is disabled",
@@ -166,8 +175,11 @@ internal static class CineCamPatches
         VehicleReader.ResetReflection();
         OfflineHooks.Available = false;
         OfflineHooks.Detects = false;
-        OfflineHooks.Reset();
+        OfflineHooks.Shutdown();
         GameUiGuard.Reset();
+        LookGuard.Reset();
+        SunWarp.ExactArrival = false;
+        StillCapture.Reset();
     }
 
     private static void FramePrefix()
@@ -176,6 +188,7 @@ internal static class CineCamPatches
         {
             QuickCamera.OnFrameStart();
             TakeRunner.OnFrameStart();
+            LookGuard.Update();
         }
         catch (Exception ex)
         {
@@ -192,6 +205,7 @@ internal static class CineCamPatches
         {
             TakeRunner.OnOfflineFrame(ref currentPlayerTime, ref dtPlayer);
             ReplaySession.OnRenderFrame(ref currentPlayerTime, ref dtPlayer);
+            StillCapture.OnFrame();
         }
         catch (Exception ex)
         {
@@ -317,7 +331,36 @@ internal static class CineCamPatches
         }
     }
 
-    private static void SimStepPrefix() => TakeRunner.BeforeSimStep();
+    // __0 is the dtPlayer parameter of Universe.GetJobSimStep.
+    private static void SimStepPrefix(double __0)
+    {
+        try
+        {
+            SunWarp.BeforeSimStep();
+        }
+        catch (Exception ex)
+        {
+            LogHelper.ErrorOnce("sim-step-sun", $"[CineCam] Error in the step limit of the sun move: {ex}");
+        }
+
+        TakeRunner.BeforeSimStep(__0);
+    }
+
+    // The settings window copies GameSettings.Current when it opens (the setter of GameSettings.Show),
+    // so the values of the player go back before that copy.
+    private static void SettingsShowPrefix(bool value)
+    {
+        if (!value || GameSettings.Show)
+            return;
+        try
+        {
+            LookGuard.BeforeSettingsOpen();
+        }
+        catch (Exception ex)
+        {
+            LogHelper.ErrorOnce("settings-show", $"[CineCam] Error before the settings window opened: {ex}");
+        }
+    }
 
     // __0 is the dtPlayer parameter of Universe.GetJobSimStep.
     private static void SimStepPostfix(SimStep __result, double __0) => TakeRunner.AfterSimStep(__result.DeltaTime, __0);

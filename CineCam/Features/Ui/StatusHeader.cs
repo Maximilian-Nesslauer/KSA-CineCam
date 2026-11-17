@@ -26,7 +26,8 @@ internal static class StatusHeader
         float4 color = state == RunState.Resetting ? Widgets.GoodColor : Widgets.StateColor(state);
         if (state == RunState.Idle && session.Take != null)
             color = ConsoleStyle.TextPrimary;
-        Widgets.StatusLine(text, color, FactsTip(session, running));
+        bool problem = state is RunState.Idle or RunState.Ready && session.Take != null && !session.Validation.IsValid;
+        Widgets.StatusLine(text, problem ? Widgets.WarnColor : color, FactsTip(session, running), warning: problem);
         if (running is { Preview: null })
             DrawShotLine(running);
     }
@@ -116,7 +117,8 @@ internal static class StatusHeader
         double rate = (ReplaySession.Plan?.RecordingRate(ReplaySession.Time) ?? 0.0) * ReplaySession.Speed;
         string tip = string.Create(CultureInfo.InvariantCulture,
             $"Recording: {ReplaySession.ReplayId}\nFlight time: {ReplaySession.RecordingTime:F1} of {ReplaySession.RecordingDuration:F1} s\nFlight speed now: {rate:0.###}x, preview speed {ReplaySession.Speed:0.##}x\nPlay, pause and move the replay in the timeline at the bottom of the screen.");
-        Widgets.StatusLine(text, playing ? Widgets.GoodColor : Widgets.WarnColor, tip);
+        bool problem = ReplayProblem(session).Length > 0;
+        Widgets.StatusLine(text, playing && !problem ? Widgets.GoodColor : Widgets.WarnColor, tip, warning: problem);
     }
 
     // The vehicle and the date of the open recording, else its id.

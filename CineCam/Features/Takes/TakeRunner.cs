@@ -105,7 +105,14 @@ internal static partial class TakeRunner
         try
         {
             ApplyPendingSpeed();
+            OfflineHooks.AfterGrab(_take != null);
             ProcessRequests();
+            if (_take is { HideUiNextFrame: true, IsPaused: false } hiding)
+            {
+                hiding.HideUiNextFrame = false;
+                HideInterface(hiding);
+                WriteRow(hiding, "marker", "hideUi", "the game interface is hidden");
+            }
         }
         catch (Exception ex)
         {
@@ -453,7 +460,7 @@ internal static partial class TakeRunner
         DefaultCategory.Log.Info($"[CineCam] {(dryRun ? "Dry run of take" : "Take")} \"{take.Name}\" started. Site: {siteNote}. {siteText}. Log folder: {(folder.Length == 0 ? "none" : folder)}");
         WriteRow(active, "take", "start", $"take={take.Name}; dryRun={dryRun}; site={siteText}; rule={siteNote}; file={path}{(fromEditor ? " (unsaved copy)" : "")}; hideUi={file.HideUi}; syncFlash={file.SyncFlash}{(dryRun ? "" : $"; run={run}")}{ResetNoteFor(take)}");
         if (offline != null)
-            WriteRow(active, "take", "offline", string.Create(CultureInfo.InvariantCulture, $"fps={offline.Fps}; frames={offline.FramesFolder}"));
+            WriteRow(active, "take", "offline", string.Create(CultureInfo.InvariantCulture, $"fps={offline.Fps}; frames={offline.FramesFolder}; grab={OfflineHooks.GrabName(offline.Grab)}; exactApsides={take.ExactApsides}"));
 
         if (!dryRun && CineCamSettings.ExperimentalReplay && CineCamSettings.RecordWithTake && !ReplaySession.IsRecording)
         {
@@ -592,7 +599,7 @@ internal static partial class TakeRunner
         {
             if (take.HidUi)
             {
-                Program.DrawUI = take.SavedDrawUi;
+                OfflineHooks.SetDrawUi(take.SavedDrawUi);
                 Program.ConsoleWindow?.EnableMessageFading();
                 TimedAlert.ClearAll();
             }
@@ -873,6 +880,15 @@ internal static partial class TakeRunner
                 if (take.IsPaused)
                 {
                     take.HideUiDeferred = true;
+                    continue;
+                }
+
+                // A clean grab hides the interface from ScreenshotCapture.OnPrepareFrame to its
+                // OnPostRender and then sets the value from before back, which would undo a hide in
+                // this frame and make the end of the take restore a hidden interface.
+                if (take.Offline is { Grab: CaptureGrab.Clean })
+                {
+                    take.HideUiNextFrame = true;
                     continue;
                 }
 

@@ -46,6 +46,18 @@ internal static class CineCamSettings
 
     public static bool DeveloperMode { get; private set; }
 
+    // Mutes the game sound while an offline capture or the render of a replay saves pictures, which have no sound.
+    public static bool MuteOfflineCapture { get; private set; } = true;
+
+    // Mutes the game sound while a replay is open, because the live flight under it is paused.
+    public static bool MuteReplay { get; private set; } = true;
+
+    public const int MinStillScale = 2;
+    public const int MaxStillScale = 8;
+
+    // The size of a supersampled still as a multiple of the window size.
+    public static int StillScale { get; private set; } = 4;
+
     // Empty when the last write succeeded.
     public static string SaveError { get; private set; } = "";
 
@@ -67,6 +79,9 @@ internal static class CineCamSettings
         ExperimentalReplay = false;
         RecordWithTake = false;
         DeveloperMode = false;
+        MuteOfflineCapture = true;
+        MuteReplay = true;
+        StillScale = 4;
         LoadError = "";
         SaveError = "";
         string path = CineCamPaths.SettingsFile;
@@ -96,6 +111,9 @@ internal static class CineCamSettings
             ExperimentalReplay = ReadBool(document.RootElement, "experimentalReplay", ExperimentalReplay);
             RecordWithTake = ReadBool(document.RootElement, "recordWithTake", RecordWithTake);
             DeveloperMode = ReadBool(document.RootElement, "developerMode", DeveloperMode);
+            MuteOfflineCapture = ReadBool(document.RootElement, "muteOfflineCapture", MuteOfflineCapture);
+            MuteReplay = ReadBool(document.RootElement, "muteReplay", MuteReplay);
+            StillScale = ReadInt(document.RootElement, "stillScale", StillScale, MinStillScale, MaxStillScale);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -171,6 +189,24 @@ internal static class CineCamSettings
         Save();
     }
 
+    public static void SetMuteOfflineCapture(bool value)
+    {
+        MuteOfflineCapture = value;
+        Save();
+    }
+
+    public static void SetMuteReplay(bool value)
+    {
+        MuteReplay = value;
+        Save();
+    }
+
+    public static void SetStillScale(int value)
+    {
+        StillScale = Math.Clamp(value, MinStillScale, MaxStillScale);
+        Save();
+    }
+
     // The text goes to a temporary file first, so a failed write never leaves half a file.
     public static bool Save()
     {
@@ -243,6 +279,15 @@ internal static class CineCamSettings
   // Records the flight with each take that is not a dry run, for a replay. Needs experimentalReplay.
   "recordWithTake": {{Bool(RecordWithTake)}},
 
+  // Mutes the game sound while an offline capture or the render of a replay saves pictures.
+  "muteOfflineCapture": {{Bool(MuteOfflineCapture)}},
+
+  // Mutes the game sound while a replay is open.
+  "muteReplay": {{Bool(MuteReplay)}},
+
+  // The size of a supersampled still (cinecam_still) as a multiple of the window size, 2 to 8.
+  "stillScale": {{StillScale}},
+
   // Shows the items for mod developers in the window: file paths, the local control and the autotest.
   "developerMode": {{Bool(DeveloperMode)}},
 
@@ -260,6 +305,17 @@ internal static class CineCamSettings
             return value.GetBoolean();
 
         DefaultCategory.Log.Warning($"[CineCam] Setting \"{name}\" must be true or false. The default stays.");
+        return fallback;
+    }
+
+    private static int ReadInt(JsonElement root, string name, int fallback, int min, int max)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty(name, out JsonElement value))
+            return fallback;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number) && number >= min && number <= max)
+            return number;
+
+        DefaultCategory.Log.Warning($"[CineCam] Setting \"{name}\" must be a whole number from {min} to {max}. The default stays.");
         return fallback;
     }
 

@@ -213,7 +213,7 @@ internal static class Widgets
             ShowTip(text);
     }
 
-    public static void StatusLine(string text, float4 color, string? tip = null)
+    public static void StatusLine(string text, float4 color, string? tip = null, bool warning = false)
     {
         _afterRow = false;
         _sameLine = false;
@@ -224,9 +224,10 @@ internal static class Widgets
         string shown;
         try
         {
-            shown = FitWords(text, width);
-            ImGui.GetWindowDrawList().AddText(new float2(at.X, at.Y + (h - ImGui.GetFontSize()) * 0.5f),
-                ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in color)), shown);
+            uint ink = ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in color));
+            float icon = warning ? WarningIcon(ImGui.GetWindowDrawList(), at, h, ink) : 0f;
+            shown = FitWords(text, Math.Max(0f, width - icon));
+            ImGui.GetWindowDrawList().AddText(new float2(at.X + icon, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, shown);
         }
         finally { ConsoleStyle.PopFont(); }
 
@@ -238,7 +239,7 @@ internal static class Widgets
             ShowTip(full);
     }
 
-    public static bool LinkLine(string id, string text, float4 color, string? tip = null)
+    public static bool LinkLine(string id, string text, float4 color, string? tip = null, bool warning = false)
     {
         _afterRow = false;
         _sameLine = false;
@@ -256,9 +257,10 @@ internal static class Widgets
         try
         {
             float inset = ConsoleWidgets.RowLabelInsetPx;
-            shown = FitWords(text, Math.Max(0f, width - inset * 2f));
-            dl.AddText(new float2(at.X + inset, at.Y + (h - ImGui.GetFontSize()) * 0.5f),
-                ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in color)), shown);
+            uint ink = ConsoleStyle.ApplyAlpha(ImGui.ColorConvertFloat4ToU32(in color));
+            float icon = warning ? WarningIcon(dl, at + new float2(inset, 0f), h, ink) : 0f;
+            shown = FitWords(text, Math.Max(0f, width - inset * 2f - icon));
+            dl.AddText(new float2(at.X + inset + icon, at.Y + (h - ImGui.GetFontSize()) * 0.5f), ink, shown);
         }
         finally { ConsoleStyle.PopFont(); }
 
@@ -268,6 +270,15 @@ internal static class Widgets
         if (hovered && full.Length > 0)
             ShowTip(full);
         return clicked;
+    }
+
+    // Draws the warning triangle of the console kit at the left of a line of the height h and returns
+    // the width it takes, with a gap to the text.
+    private static float WarningIcon(ImDrawListPtr dl, float2 at, float h, uint ink)
+    {
+        float size = ImGui.GetFontSize() * 0.8f;
+        ConsoleStyle.DrawWarningTriangle(dl, new float2(at.X + size * 0.5f, at.Y + h * 0.5f), size, ink);
+        return size + ImGui.CalcTextSize(" ").X;
     }
 
     #endregion

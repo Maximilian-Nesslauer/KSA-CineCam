@@ -20,6 +20,11 @@ internal static class SunWarp
     private const double RetryDelaySeconds = 2.0;
     private const int MaxWarpTries = 20;
 
+    // Without the step limit the last step of the warp can pass the target by up to one step, so the
+    // move counts as done half a second early.
+    private const double LooseArrivalSeconds = 0.5;
+    private const double ExactArrivalSeconds = 1e-3;
+
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
 
     private static bool _running;
@@ -30,6 +35,9 @@ internal static class SunWarp
     private static int _tries;
 
     public static bool IsRunning => _running;
+
+    /// <summary>True when the prefix of Universe.GetJobSimStep is in place, so the warp can stop exactly on the target.</summary>
+    public static bool ExactArrival { get; set; }
 
     #region Start and stop
 
@@ -110,7 +118,7 @@ internal static class SunWarp
         double now = Clock.Elapsed.TotalSeconds;
         double elapsed = Universe.GetElapsedTime().Seconds();
         double target = _target.Seconds();
-        if (elapsed >= target - 0.5)
+        if (elapsed >= target - (ExactArrival ? ExactArrivalSeconds : LooseArrivalSeconds))
         {
             _running = false;
             DefaultCategory.Log.Info(string.Create(CultureInfo.InvariantCulture,
@@ -145,6 +153,16 @@ internal static class SunWarp
 
             IssueWarp(now);
         }
+    }
+
+    // Runs in the prefix of Universe.GetJobSimStep. The automatic warp of the game (Universe.ProcessAutoWarp)
+    // runs at 1x or faster up to its end, so its last step passes the target. Universe.LimitNextStep cuts
+    // that step at the target, and the next Universe.ProcessAutoWarp ends the warp there. The limit must
+    // be set here, because Universe.ApplyVehicleSolvers clears it earlier in the frame.
+    public static void BeforeSimStep()
+    {
+        if (_running)
+            Universe.LimitNextStep(_target);
     }
 
     private static void IssueWarp(double now)

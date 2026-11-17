@@ -47,7 +47,7 @@ internal static partial class TakeRunner
             ReportDiskSpace(outputFolder);
             if (1.0 / fps > 1.0 / GameSettings.Current.Simulation.MinTargetFrameRate)
                 DefaultCategory.Log.Warning($"[CineCam] The picture rate {fps} is below the minimum frame rate of the game ({GameSettings.Current.Simulation.MinTargetFrameRate}), so the sim step of one picture is longer than the game normally allows.");
-            return new OfflineCapture(fps, outputFolder, framesFolder, collector);
+            return new OfflineCapture(fps, outputFolder, framesFolder, collector) { Grab = file.Capture.Grab };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -101,7 +101,7 @@ internal static partial class TakeRunner
 
             double step = offline.NextStep;
             offline.PostRenderMark = OfflineHooks.PostRenderCount;
-            if (!OfflineHooks.RequestPicture())
+            if (!OfflineHooks.RequestPicture(offline.Grab))
             {
                 // Another capture still runs, so this frame makes no picture and takes only a small step.
                 Advance(offline, ref currentPlayerTime, ref dtPlayer, OfflineCapture.RetryStepSeconds);
@@ -110,6 +110,7 @@ internal static partial class TakeRunner
             }
 
             Advance(offline, ref currentPlayerTime, ref dtPlayer, step);
+            offline.StepFrame = _frame;
             offline.Pending = true;
             offline.Rendered = false;
         }

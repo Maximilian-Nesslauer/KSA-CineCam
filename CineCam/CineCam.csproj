@@ -24,6 +24,10 @@
       <HintPath>..\..\..\refs\game\Brutal.Logging.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Brutal.Fmod">
+      <HintPath>..\..\..\refs\game\Brutal.Fmod.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Brutal.ImGui">
       <HintPath>..\..\..\refs\game\Brutal.ImGui.dll</HintPath>
       <Private>false</Private>

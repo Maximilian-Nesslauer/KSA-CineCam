@@ -6553,6 +6553,7 @@ Check("replay file: the height over the ground is optional and must be finite", 
 #endregion
 
 CineCam.Tests.FlightEventTests.Run(Check, Expect);
+TakeRenderTests.Run(Check, (condition, message) => Expect(condition, message));
 
 Console.WriteLine(failures == 0 ? "All tests passed." : $"{failures} test(s) failed.");
 return failures == 0 ? 0 : 1;

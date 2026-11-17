@@ -68,6 +68,22 @@ internal static class GameReflection
 
     #endregion
 
+    #region Picture and settings
+
+    // Program.SetTonemapperSettings (private, instance) copies the tonemapper settings, among them
+    // GraphicsSettings.TonemapExposure, into the data of the composite pass. The game calls it only at a
+    // renderer rebuild, so a changed exposure shows only after this call.
+    public static readonly MethodInfo? Program_SetTonemapperSettings =
+        AccessTools.Method(typeof(Program), "SetTonemapperSettings", Type.EmptyTypes);
+
+    // The setter of GameSettings.Show copies GameSettings.Current into the settings window when it
+    // opens, and the window saves that copy on Apply. A prefix gives the settings of the player back
+    // first, so a value that a take pinned is never saved.
+    public static readonly MethodInfo? GameSettings_SetShow =
+        AccessTools.PropertySetter(typeof(GameSettings), nameof(GameSettings.Show));
+
+    #endregion
+
     #region Save and load
 
     // The method of a finished load. A postfix compares UniverseData by reference to see whether the load happened.
@@ -243,6 +259,27 @@ internal static class GameReflection
             ("SequenceList.ActivateNextSequence parameter \"vehicle\" (Vehicle)", hasVehicle ? SequenceList_ActivateNextSequence : null),
         };
         return ValidateTargets("SequenceWatch", targets);
+    }
+
+    public static bool ValidateExposure()
+    {
+        var targets = new (string name, object? target)[]
+        {
+            ("Program.SetTonemapperSettings()", Program_SetTonemapperSettings),
+        };
+        return ValidateTargets("Exposure", targets);
+    }
+
+    // The prefix reads the parameter "value" by name.
+    public static bool ValidateSettingsGuard()
+    {
+        bool hasValue = GameSettings_SetShow?.GetParameters().Any(p => p.Name == "value" && p.ParameterType == typeof(bool)) ?? false;
+        var targets = new (string name, object? target)[]
+        {
+            ("GameSettings.Show (setter)", GameSettings_SetShow),
+            ("GameSettings.Show setter parameter \"value\" (bool)", hasValue ? GameSettings_SetShow : null),
+        };
+        return ValidateTargets("SettingsGuard", targets);
     }
 
     public static bool ValidateConsoleHide()

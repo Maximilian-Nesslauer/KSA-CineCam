@@ -2,6 +2,7 @@ using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Features;
 using CineCam.Features.Autotest;
+using CineCam.Features.Look;
 using CineCam.Features.Quick;
 using CineCam.Features.Replay;
 using CineCam.Features.Takes;
@@ -101,6 +102,8 @@ public sealed class Mod
         QuickCamera.Shutdown();
         CineCamWindow.Shutdown();
         CineCamCommands.Unregister();
+        // After the take and the replay ended, so nothing wants the sound or the picture settings any more.
+        LookGuard.Shutdown();
 
         _harmony?.UnpatchAll(_harmony.Id);
         _harmony = null;

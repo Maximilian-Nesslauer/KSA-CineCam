@@ -100,6 +100,9 @@ internal sealed class ActiveTake
 
     public bool HideUiDeferred { get; set; }
 
+    /// <summary>Set when the event that hides the interface came during a clean picture grab, so the hide waits for the start of the next frame.</summary>
+    public bool HideUiNextFrame { get; set; }
+
     /// <summary>True for a real take that records, during which the window stays hidden.</summary>
     public bool IsRecording => !DryRun && Preview == null;
 }

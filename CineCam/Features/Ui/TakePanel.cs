@@ -37,6 +37,7 @@ internal static class TakePanel
 
         Widgets.Section("Take");
         DrawTakeManage(session);
+        LookPanel.DrawTake(session);
         if (replay)
         {
             Widgets.Section("Events of the recording");

@@ -221,8 +221,33 @@ public static class ShotFileJson
                 capture.Scale = (int)scale.Value;
             }
 
+            capture.Grab = obj.OptEnum<CaptureGrab>("grab") ?? CaptureGrab.Swapchain;
             obj.CollectExtras(capture.Extras);
             return capture;
+        }
+
+        private static TakeSound ReadSound(Obj obj)
+        {
+            var sound = new TakeSound
+            {
+                Music = obj.OptNum("music", 0.0, 1.0),
+                Effects = obj.OptNum("effects", 0.0, 1.0),
+            };
+            obj.CollectExtras(sound.Extras);
+            return sound;
+        }
+
+        private static TakePicture ReadPicture(Obj obj)
+        {
+            var picture = new TakePicture
+            {
+                Exposure = obj.OptNum("exposure", TakePicture.MinExposure, TakePicture.MaxExposure),
+                CloudAmbientLight = obj.OptBool("cloudAmbientLight"),
+                CloudShadows = obj.OptBool("cloudShadows"),
+                Reflections = obj.OptBool("reflections"),
+            };
+            obj.CollectExtras(picture.Extras);
+            return picture;
         }
 
         private Take ReadTake(Obj obj, bool requireName)
@@ -259,6 +284,11 @@ public static class ShotFileJson
 
             take.AutoStart = obj.OptBool("autoStart") ?? false;
             take.AutoStartDelay = obj.OptNum("autoStartDelay", 0.0, 600.0) ?? Take.DefaultAutoStartDelay;
+            if (obj.TryGet("sound", out JsonElement sound))
+                take.Sound = ReadSound(new Obj(sound, obj.Child("sound")));
+            if (obj.TryGet("picture", out JsonElement picture))
+                take.Picture = ReadPicture(new Obj(picture, obj.Child("picture")));
+            take.ExactApsides = obj.OptBool("exactApsides") ?? false;
 
             if (!obj.TryGet("camera", out JsonElement camera) || camera.ValueKind != JsonValueKind.Array)
                 throw new ShotFileException(obj.Child("camera"), "expected a list of shots");
@@ -757,6 +787,8 @@ public static class ShotFileJson
                 json.Key("folder").Str(capture.Folder);
             if (capture.Scale != 1)
                 json.Key("scale").Num(capture.Scale);
+            if (capture.Grab != CaptureGrab.Swapchain)
+                json.Key("grab").Str(Lower(capture.Grab.ToString()));
             WriteExtras(json, capture.Extras);
             json.EndObject();
         }
@@ -844,6 +876,39 @@ public static class ShotFileJson
             json.Key("autoStart").Bool(true);
         if (take.AutoStartDelay != Take.DefaultAutoStartDelay)
             json.Key("autoStartDelay").Num(take.AutoStartDelay);
+        WriteLook(json, take);
+    }
+
+    private static void WriteLook(JsonOut json, Take take)
+    {
+        if (take.Sound is { IsEmpty: false } sound)
+        {
+            json.Key("sound").BeginObject();
+            if (sound.Music.HasValue)
+                json.Key("music").Num(sound.Music.Value);
+            if (sound.Effects.HasValue)
+                json.Key("effects").Num(sound.Effects.Value);
+            WriteExtras(json, sound.Extras);
+            json.EndObject();
+        }
+
+        if (take.Picture is { IsEmpty: false } picture)
+        {
+            json.Key("picture").BeginObject();
+            if (picture.Exposure.HasValue)
+                json.Key("exposure").Num(picture.Exposure.Value);
+            if (picture.CloudAmbientLight.HasValue)
+                json.Key("cloudAmbientLight").Bool(picture.CloudAmbientLight.Value);
+            if (picture.CloudShadows.HasValue)
+                json.Key("cloudShadows").Bool(picture.CloudShadows.Value);
+            if (picture.Reflections.HasValue)
+                json.Key("reflections").Bool(picture.Reflections.Value);
+            WriteExtras(json, picture.Extras);
+            json.EndObject();
+        }
+
+        if (take.ExactApsides)
+            json.Key("exactApsides").Bool(true);
     }
 
     private static void WriteTrack(JsonOut json, Take take)
