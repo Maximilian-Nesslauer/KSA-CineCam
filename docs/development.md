@@ -18,7 +18,7 @@ dotnet run --project CineCam.ControlTests --no-build -maxcpucount:4 -p:DeployToM
 dotnet run --project CineCam.ApiTests --no-build -maxcpucount:4 -p:DeployToMods=false
 ```
 
-`-p:DeployToMods=false` stops the build from copying the mod into the game folder. A build without it deploys the mod and fails while the game runs.
+A command-line build only compiles. It copies the mod into a game folder only with `-p:ModDeployDir=<folder>\mods\CineCam\` or `-p:DeployToMods=true` (the profile in Documents), and then fails while the game runs. A build inside Visual Studio deploys into the profile in Documents. `-p:DeployToMods=false` keeps a build compile-only in every case.
 
 `CineCam.Tests` is a console program that runs without the game. It tests the shot file reader and writer, the timeline layout, the presets, the pose math, the event detector, the speed rules, the actions and the stage guard, the local horizon frame, the fired sequence detection, the offline frame bookkeeping and the picture collector. It exits with 0 when all tests pass. The Python tools have their own tests: `python -I scripts/test_events_to_markers.py` and `python -I scripts/test_cinecam.py`.
 
