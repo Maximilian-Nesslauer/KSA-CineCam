@@ -26,6 +26,7 @@ namespace CineCam.Tests
                 foreach (string system in new[] { "same", "contained" })
                 {
                     var save = new UncompressedSave("checkpoint") { PayloadSystem = system };
+                    var previous = save.UniverseData;
                     int prepared = 0;
                     string? refusal = CheckpointLoadGuard.Load(save, save.Application().Method, () =>
                     {
@@ -34,8 +35,28 @@ namespace CineCam.Tests
                     });
                     expect(refusal == null && prepared == 1 && SaveSystemSwap.Applied == 1 && SaveSystemSwap.Pending == null,
                         "the exact checkpoint applies once and does not queue a swap");
+                    expect(!ReferenceEquals(save.UniverseData, previous) && ReferenceEquals(save.AppliedPayload, save.UniverseData),
+                        "an admitted load retains and applies the new payload");
                     SaveSystemSwap.Reset();
                 }
+            }));
+
+            check("checkpoint guard: refusal preserves the payload of a stock swap already queued for the same save", () => WithGuard(() =>
+            {
+                var save = new UncompressedSave("checkpoint") { PayloadSystem = "swap" };
+                save.Load();
+                UniverseData original = save.UniverseData;
+                Action queued = SaveSystemSwap.Pending ?? throw new InvalidOperationException("stock did not queue its swap");
+                expect(ReferenceEquals(queued.Target, save), "stock queued the callback for the exact same save instance");
+
+                save.PayloadSystem = "missing";
+                string? refusal = CheckpointLoadGuard.Load(save, save.Application().Method, UnexpectedLoad);
+                expect(refusal?.Contains("not installed", StringComparison.Ordinal) == true, "the replacement payload is refused");
+                expect(ReferenceEquals(SaveSystemSwap.Pending, queued), "the original stock callback remains pending");
+                expect(ReferenceEquals(save.UniverseData, original), "restore the exact previous payload object");
+
+                queued();
+                expect(ReferenceEquals(save.AppliedPayload, original), "the earlier stock callback still applies its original payload");
             }));
 
             check("checkpoint guard: swap, missing, empty and unknown plans refuse before stock or reset preparation", () => WithGuard(() =>

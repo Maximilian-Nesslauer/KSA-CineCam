@@ -158,6 +158,11 @@ namespace CineCam.Tests
 
 namespace KSA
 {
+    internal sealed class UniverseData(string systemId)
+    {
+        public string SystemId { get; } = systemId;
+    }
+
     internal abstract class GameSave(string id)
     {
         public string Id { get; } = id;
@@ -171,11 +176,14 @@ namespace KSA
         public bool Fail { get; set; }
         public string PayloadSystem { get; set; } = "same";
         public Action? BeforeRequest { get; set; }
+        public UniverseData UniverseData = new("");
+        public UniverseData? AppliedPayload { get; private set; }
 
         public void Load()
         {
             BeforeRequest?.Invoke();
-            SaveSystemSwap.RequestLoad(Id, PayloadSystem, ApplyLoaded);
+            UniverseData = new UniverseData(PayloadSystem);
+            SaveSystemSwap.RequestLoad(Id, UniverseData.SystemId, ApplyLoaded);
         }
 
         public Action Application() => ApplyLoaded;
@@ -186,6 +194,7 @@ namespace KSA
         {
             if (Fail)
                 throw new IOException("test failure applying the save");
+            AppliedPayload = UniverseData;
         }
     }
 }

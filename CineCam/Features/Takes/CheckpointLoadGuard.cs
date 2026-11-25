@@ -25,6 +25,7 @@ internal static class CheckpointLoadGuard
             return Unavailable;
 
         var request = new Request(save, applyLoaded, beforeApply);
+        UniverseData previousData = save.UniverseData;
         Request? previous = _request;
         _request = request;
         try
@@ -34,6 +35,8 @@ internal static class CheckpointLoadGuard
         }
         catch (Refused ex)
         {
+            // An earlier stock swap can still hold ApplyLoaded, which reads this field when it runs.
+            save.UniverseData = previousData;
             return ex.Message;
         }
         finally
