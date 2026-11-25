@@ -89,6 +89,9 @@ internal static class GameReflection
 
     #region Save and load
 
+    public static readonly MethodInfo? GameSaves_Find =
+        typeof(GameSaves).GetMethod(nameof(GameSaves.Find), BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
+
     public static readonly MethodInfo? UncompressedSave_ApplyLoaded =
         AccessTools.DeclaredMethod(typeof(UncompressedSave), "ApplyLoaded", Type.EmptyTypes);
 
@@ -254,6 +257,7 @@ internal static class GameReflection
     {
         var targets = new (string name, object? target)[]
         {
+            ("GameSaves.Find(string)", GameSaves_Find),
             ("UncompressedSave.ApplyLoaded()", UncompressedSave_ApplyLoaded),
         };
         return ValidateTargets("LoadWatch", targets);

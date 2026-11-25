@@ -21,7 +21,7 @@ internal static partial class TakeRunner
     private static string? _checkpointTake;
     private static bool _resetRequested;
     private static string? _resetTake;
-    private static (string SaveId, int Before)? _resetLoad;
+    private static (UncompressedSave Save, int Before)? _resetLoad;
     private static Vehicle? _resetNewVehicle;
     private static bool _resetHoldsSim;
 
@@ -256,7 +256,10 @@ internal static partial class TakeRunner
         }
 
         if (!Flow.IsActive)
+        {
+            _resetLoad = null;
             ReleaseSimHold();
+        }
     }
 
     private static bool NewVehicleIsReady()
@@ -275,12 +278,29 @@ internal static partial class TakeRunner
         if (Universe.IsAutoWarpActive)
             Universe.AutoWarpStop(false);
 
-        if (SaveLoadWatch.Available && FindCheckpointId(Flow.SaveName) is { } saveId)
-            _resetLoad = (saveId, SaveLoadWatch.Completed);
         Vehicle? oldVehicle = Program.ControlledVehicle;
         try
         {
-            GameSaves.LoadSaveGame(Flow.SaveName);
+            if (GameReflection.GameSaves_Find != null)
+            {
+                // GameSaves.Find uses only the registry hash, which can identify a different save.
+                GameSave? entry = FindCheckpoint(Flow.SaveName);
+                if (SaveLoadWatch.ExactCheckpoint(Flow.SaveName, entry) is not { } save)
+                {
+                    DefaultCategory.Log.Error(entry == null
+                        ? $"[CineCam] The save registry has no entry for checkpoint \"{Flow.SaveName}\"."
+                        : $"[CineCam] Checkpoint \"{Flow.SaveName}\" does not match the registered uncompressed save (resolved ID: \"{entry.Id}\").");
+                    LogReset(Flow.LoadFinished(false, ClockSeconds));
+                    return;
+                }
+                if (SaveLoadWatch.Available)
+                    _resetLoad = (save, SaveLoadWatch.Completed);
+                save.Load();
+            }
+            else
+            {
+                GameSaves.LoadSaveGame(Flow.SaveName);
+            }
         }
         catch (Exception ex)
         {
@@ -302,13 +322,13 @@ internal static partial class TakeRunner
             LogReset(Flow.LoadFinished(false, ClockSeconds));
     }
 
-    // Builds without ApplyLoaded can also lack GameSaves.Find, so keep this lookup out of the fallback's JIT path.
+    // Older builds lack GameSaves.Find, so keep this lookup out of the fallback's JIT path.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static string? FindCheckpointId(string saveName) => GameSaves.Find(saveName)?.Id;
+    private static GameSave? FindCheckpoint(string saveName) => GameSaves.Find(saveName);
 
     private static bool TryCompleteWatchedLoad()
     {
-        if (_resetLoad is not { } load || !SaveLoadWatch.AppliedSince(load.SaveId, load.Before))
+        if (_resetLoad is not { } load || !SaveLoadWatch.AppliedSince(load.Save, load.Before))
             return false;
         CompleteCheckpointLoad();
         return true;
@@ -352,6 +372,7 @@ internal static partial class TakeRunner
 
     private static void CancelReset(string reason)
     {
+        _resetLoad = null;
         LogReset(Flow.Cancel(reason));
         ReleaseSimHold();
     }

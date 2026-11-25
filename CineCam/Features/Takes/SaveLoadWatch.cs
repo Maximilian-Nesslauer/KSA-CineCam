@@ -7,23 +7,27 @@ internal static class SaveLoadWatch
     public static bool Available { get; set; }
 
     public static int Completed { get; private set; }
-    private static string? _lastAppliedId;
+    private static WeakReference<UncompressedSave>? _lastAppliedSave;
 
     public static void Reset()
     {
         Available = false;
         Completed = 0;
-        _lastAppliedId = null;
+        _lastAppliedSave = null;
     }
 
-    public static bool AppliedSince(string saveId, int before) =>
-        Completed != before && string.Equals(_lastAppliedId, saveId, StringComparison.Ordinal);
+    public static UncompressedSave? ExactCheckpoint(string saveId, GameSave? entry) =>
+        entry is UncompressedSave save && string.Equals(save.Id, saveId, StringComparison.Ordinal) ? save : null;
+
+    public static bool AppliedSince(UncompressedSave save, int before) =>
+        Completed != before && _lastAppliedSave != null && _lastAppliedSave.TryGetTarget(out var applied)
+        && ReferenceEquals(applied, save);
 
     public static void Postfix(UncompressedSave __instance, bool __runOriginal)
     {
         if (!__runOriginal)
             return;
-        _lastAppliedId = __instance.Id;
+        _lastAppliedSave = new WeakReference<UncompressedSave>(__instance);
         Completed++;
     }
 }
