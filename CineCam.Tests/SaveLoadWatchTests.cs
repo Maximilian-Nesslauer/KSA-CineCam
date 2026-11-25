@@ -8,15 +8,35 @@ namespace CineCam.Tests
     {
         public static void Run(Action<string, Action> check, Action<bool, string> expect)
         {
-            check("checkpoint watch: exact ID validation rejects a stock hash collision and a case alias", () =>
+            check("checkpoint watch: folder and ID casing follow the platform", () =>
+            {
+                string root = Path.GetTempPath();
+                string folder = Path.Combine(root, "CineCam Pad");
+                var save = new KSA.UncompressedSave("CineCam Pad", Path.Combine(folder, ".") + Path.DirectorySeparatorChar);
+                expect(ReferenceEquals(SaveLoadWatch.ExactCheckpoint("CineCam Pad", folder, save), save), "normalize the backing folder");
+
+                string alias = "cinecam pad";
+                string aliasFolder = Path.Combine(root, alias);
+                expect(ReferenceEquals(SaveLoadWatch.ExactCheckpoint(alias, aliasFolder, save), save) == OperatingSystem.IsWindows(),
+                    "accept a case-only alias on Windows and require ordinal identity on Unix");
+            });
+
+            check("checkpoint watch: a copy with the same metadata ID cannot stand in for the checked folder", () =>
+            {
+                var original = new KSA.UncompressedSave("CineCam Pad");
+                var copy = new KSA.UncompressedSave(original.Id, Path.Combine(Path.GetTempPath(), "CineCam Pad copy"));
+                expect(SaveLoadWatch.ExactCheckpoint(original.Id, original.Directory.FullName, copy) == null,
+                    "equal IDs do not make the copied directory the checked directory");
+            });
+
+            check("checkpoint watch: ID validation rejects a stock hash collision even in the checked folder", () =>
             {
                 // Both IDs have KSA KeyHash 0x2ca1e958, so the registry can return either for the other.
-                var first = new KSA.UncompressedSave("CineCam mDUtmdIq43UM");
-                var second = new KSA.UncompressedSave("CineCam ESASvj5V3lB3");
-                expect(ReferenceEquals(SaveLoadWatch.ExactCheckpoint(first.Id, first), first), "keep the exact registry entry");
-                expect(SaveLoadWatch.ExactCheckpoint(first.Id, second) == null, "reject the colliding registry entry");
-                expect(SaveLoadWatch.ExactCheckpoint(second.Id, first) == null, "reject the reverse collision");
-                expect(SaveLoadWatch.ExactCheckpoint(first.Id.ToLowerInvariant(), first) == null, "reject a differently cased ID");
+                string folder = Path.Combine(Path.GetTempPath(), "CineCam mDUtmdIq43UM");
+                var first = new KSA.UncompressedSave("CineCam mDUtmdIq43UM", folder);
+                var second = new KSA.UncompressedSave("CineCam ESASvj5V3lB3", folder);
+                expect(SaveLoadWatch.ExactCheckpoint(first.Id, folder, second) == null, "reject the colliding registry entry");
+                expect(SaveLoadWatch.ExactCheckpoint(second.Id, folder, first) == null, "reject the reverse collision");
             });
 
             check("checkpoint watch: immediate and deferred applications count for the requested save", () =>
@@ -98,8 +118,10 @@ namespace KSA
         public string Id { get; } = id;
     }
 
-    internal sealed class UncompressedSave(string id) : GameSave(id)
+    internal sealed class UncompressedSave(string id, string? folder = null) : GameSave(id)
     {
+        public readonly DirectoryInfo Directory = new(folder ?? Path.Combine(Path.GetTempPath(), id));
+
         public bool Skip { get; set; }
         public bool Fail { get; set; }
 

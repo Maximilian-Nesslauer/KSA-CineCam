@@ -16,8 +16,14 @@ internal static class SaveLoadWatch
         _lastAppliedSave = null;
     }
 
-    public static UncompressedSave? ExactCheckpoint(string saveId, GameSave? entry) =>
-        entry is UncompressedSave save && string.Equals(save.Id, saveId, StringComparison.Ordinal) ? save : null;
+    public static UncompressedSave? ExactCheckpoint(string saveId, string checkpointFolder, GameSave? entry)
+    {
+        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return entry is UncompressedSave save
+            && string.Equals(save.Id, saveId, comparison)
+            && string.Equals(Path.TrimEndingDirectorySeparator(save.Directory.FullName), checkpointFolder, comparison)
+            ? save : null;
+    }
 
     public static bool AppliedSince(UncompressedSave save, int before) =>
         Completed != before && _lastAppliedSave != null && _lastAppliedSave.TryGetTarget(out var applied)

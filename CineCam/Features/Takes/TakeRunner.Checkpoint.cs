@@ -21,6 +21,7 @@ internal static partial class TakeRunner
     private static string? _checkpointTake;
     private static bool _resetRequested;
     private static string? _resetTake;
+    private static string _resetSaveFolder = "";
     private static (UncompressedSave Save, int Before)? _resetLoad;
     private static Vehicle? _resetNewVehicle;
     private static bool _resetHoldsSim;
@@ -212,13 +213,14 @@ internal static partial class TakeRunner
             return;
         }
 
-        string folder = Path.Combine(GameSaves.SaveFolderPath, take.Checkpoint);
+        string folder = Path.GetFullPath(Path.Combine(GameSaves.SaveFolderPath, take.Checkpoint));
         if (!File.Exists(Path.Combine(folder, "universe.xml")))
         {
             DefaultCategory.Log.Error($"[CineCam] The save \"{take.Checkpoint}\" of take \"{take.Name}\" does not exist in {GameSaves.SaveFolderPath}.");
             return;
         }
 
+        _resetSaveFolder = folder;
         _resetLoad = null;
         _resetNewVehicle = null;
         _resetHoldsSim = false;
@@ -283,13 +285,14 @@ internal static partial class TakeRunner
         {
             if (GameReflection.GameSaves_Find != null)
             {
-                // GameSaves.Find uses only the registry hash, which can identify a different save.
+                // A registry hash can identify a different ID, and copied folders can share a metadata ID.
                 GameSave? entry = FindCheckpoint(Flow.SaveName);
-                if (SaveLoadWatch.ExactCheckpoint(Flow.SaveName, entry) is not { } save)
+                if (SaveLoadWatch.ExactCheckpoint(Flow.SaveName, _resetSaveFolder, entry) is not { } save)
                 {
-                    DefaultCategory.Log.Error(entry == null
-                        ? $"[CineCam] The save registry has no entry for checkpoint \"{Flow.SaveName}\"."
-                        : $"[CineCam] Checkpoint \"{Flow.SaveName}\" does not match the registered uncompressed save (resolved ID: \"{entry.Id}\").");
+                    string detail = entry is UncompressedSave registered
+                        ? $"resolved ID \"{registered.Id}\" in \"{registered.Directory.FullName}\""
+                        : "no registered uncompressed save";
+                    DefaultCategory.Log.Error($"[CineCam] Checkpoint \"{Flow.SaveName}\" in \"{_resetSaveFolder}\" does not match the save registry ({detail}).");
                     LogReset(Flow.LoadFinished(false, ClockSeconds));
                     return;
                 }
@@ -402,6 +405,7 @@ internal static partial class TakeRunner
         if (Flow.IsActive)
             CancelReset(UiText.MessageText("text.980de862a114", "the mod unloaded"));
         ReleaseSimHold();
+        _resetSaveFolder = "";
         _resetLoad = null;
         _resetNewVehicle = null;
         _resetLoadMark = -1;
