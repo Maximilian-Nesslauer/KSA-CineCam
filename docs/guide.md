@@ -151,6 +151,8 @@ A checkpoint is a game save that lets you fly the same take again and again from
 
 Other mods lose their state when the game loads a save. Arm them again after a reset. A good loop: fly the take, pause where a shot needs a change, edit, resume, and reset for the next run.
 
+On KSA build 2026.11.25.5949, the reset loads the checkpoint only when KSA can apply it in the running star system. This includes saves from a system whose required bodies are present in the running system. If the save needs a system switch or its system is unavailable, CineCam refuses the reset and leaves the current take and simulation speed as they are. Start the checkpoint's system before resetting the take.
+
 ### Hide the interface, sync flash
 
 On the **Settings** page, **Hide the game interface during a take** hides the game interface while the take records. **Hide at (event)** hides it later, for example at the ignition, so you can still work with the interface until then. A pause for an edit shows it again. **White frame at the take start** draws one white frame at the start, as a mark for the cut in the video.
