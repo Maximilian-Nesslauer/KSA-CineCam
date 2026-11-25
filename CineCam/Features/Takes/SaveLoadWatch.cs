@@ -16,13 +16,43 @@ internal static class SaveLoadWatch
         _lastAppliedSave = null;
     }
 
-    public static UncompressedSave? ExactCheckpoint(string saveId, string checkpointFolder, GameSave? entry)
+    public static UncompressedSave? ExactCheckpoint(string saveId, string checkpointFolder, GameSave? entry,
+        Func<string, IEnumerable<string>>? enumerateChildren = null)
     {
-        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        return entry is UncompressedSave save
-            && string.Equals(save.Id, saveId, comparison)
-            && string.Equals(Path.TrimEndingDirectorySeparator(save.Directory.FullName), checkpointFolder, comparison)
-            ? save : null;
+        if (entry is not UncompressedSave save)
+            return null;
+
+        string registeredFolder = Path.TrimEndingDirectorySeparator(save.Directory.FullName);
+        if (save.Id == saveId && registeredFolder == checkpointFolder)
+            return save;
+
+        if (!OperatingSystem.IsWindows()
+            || !string.Equals(save.Id, saveId, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(registeredFolder, checkpointFolder, StringComparison.OrdinalIgnoreCase)
+            || Path.GetDirectoryName(checkpointFolder) is not { } parent
+            || parent != Path.GetDirectoryName(registeredFolder))
+            return null;
+
+        // Windows can allow multiple casing variants in one directory, so require one actual child.
+        string name = Path.GetFileName(checkpointFolder);
+        try
+        {
+            IEnumerable<string> children = enumerateChildren?.Invoke(parent) ?? Directory.EnumerateDirectories(parent);
+            string? match = null;
+            foreach (string child in children)
+            {
+                if (!string.Equals(Path.GetFileName(child), name, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (match != null)
+                    return null;
+                match = child;
+            }
+            return match == registeredFolder ? save : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     public static bool AppliedSince(UncompressedSave save, int before) =>

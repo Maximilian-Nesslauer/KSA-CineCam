@@ -13,12 +13,48 @@ namespace CineCam.Tests
                 string root = Path.GetTempPath();
                 string folder = Path.Combine(root, "CineCam Pad");
                 var save = new KSA.UncompressedSave("CineCam Pad", Path.Combine(folder, ".") + Path.DirectorySeparatorChar);
-                expect(ReferenceEquals(SaveLoadWatch.ExactCheckpoint("CineCam Pad", folder, save), save), "normalize the backing folder");
+                expect(ReferenceEquals(SaveLoadWatch.ExactCheckpoint("CineCam Pad", folder, save, UnexpectedEnumeration), save),
+                    "normalize the backing folder and accept an exact match without enumeration");
 
                 string alias = "cinecam pad";
                 string aliasFolder = Path.Combine(root, alias);
-                expect(ReferenceEquals(SaveLoadWatch.ExactCheckpoint(alias, aliasFolder, save), save) == OperatingSystem.IsWindows(),
+                expect(ReferenceEquals(SaveLoadWatch.ExactCheckpoint(alias, aliasFolder, save, parent =>
+                {
+                    expect(parent == Path.GetDirectoryName(folder), "enumerate the common parent only");
+                    return [Path.Combine(parent, "Other checkpoint"), folder];
+                }), save) == OperatingSystem.IsWindows(),
                     "accept a case-only alias on Windows and require ordinal identity on Unix");
+            });
+
+            check("checkpoint watch: case-only siblings and a different listed folder refuse a Windows alias", () =>
+            {
+                const string id = "CineCam Pad";
+                const string alias = "cinecam pad";
+                string root = Path.Combine(Path.GetTempPath(), "Save Folders");
+                string folder = Path.Combine(root, id);
+                string aliasFolder = Path.Combine(root, alias);
+                var save = new KSA.UncompressedSave(id, folder);
+
+                expect(SaveLoadWatch.ExactCheckpoint(alias, aliasFolder, save, _ => [folder, aliasFolder]) == null,
+                    "both casing variants may exist on Windows");
+                expect(SaveLoadWatch.ExactCheckpoint(alias, folder, save, _ => [folder, aliasFolder]) == null,
+                    "an alias in the ID alone also needs a unique child");
+                expect(SaveLoadWatch.ExactCheckpoint(alias, aliasFolder, save, _ => [aliasFolder]) == null,
+                    "the only listed child must match the registered directory exactly");
+                expect(SaveLoadWatch.ExactCheckpoint(alias, aliasFolder, save, _ => []) == null,
+                    "the alias needs a listed child");
+
+                string differentParent = Path.Combine(Path.GetTempPath(), "save folders", alias);
+                expect(SaveLoadWatch.ExactCheckpoint(alias, differentParent, save, UnexpectedEnumeration) == null,
+                    "different parent spelling refuses the alias before enumeration");
+            });
+
+            check("checkpoint watch: an incomplete child listing refuses a Windows alias", () =>
+            {
+                var save = new KSA.UncompressedSave("CineCam Pad");
+                string aliasFolder = Path.Combine(Path.GetTempPath(), "cinecam pad");
+                expect(SaveLoadWatch.ExactCheckpoint("cinecam pad", aliasFolder, save, _ => UnreadableChildren(save.Directory.FullName)) == null,
+                    "a partial listing cannot establish that the alias is unique");
             });
 
             check("checkpoint watch: a copy with the same metadata ID cannot stand in for the checked folder", () =>
@@ -88,6 +124,15 @@ namespace CineCam.Tests
                     expect(threw && SaveLoadWatch.Completed == before, "a failed application leaves the count unchanged");
                 });
             });
+        }
+
+        private static IEnumerable<string> UnexpectedEnumeration(string parent) =>
+            throw new InvalidOperationException($"Unexpected directory enumeration of {parent}");
+
+        private static IEnumerable<string> UnreadableChildren(string first)
+        {
+            yield return first;
+            throw new IOException("The rest of the child listing is unavailable.");
         }
 
         private static void WithWatch(Action exercise)
