@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Director;
@@ -20,7 +21,7 @@ internal static partial class TakeRunner
     private static string? _checkpointTake;
     private static bool _resetRequested;
     private static string? _resetTake;
-    private static Vehicle? _resetOldVehicle;
+    private static (string SaveId, int Before)? _resetLoad;
     private static Vehicle? _resetNewVehicle;
     private static bool _resetHoldsSim;
 
@@ -218,7 +219,7 @@ internal static partial class TakeRunner
             return;
         }
 
-        _resetOldVehicle = Program.ControlledVehicle;
+        _resetLoad = null;
         _resetNewVehicle = null;
         _resetHoldsSim = false;
         // Without the camera hook the reset only loads the save, so the sim is not held for a start that cannot come.
@@ -229,6 +230,9 @@ internal static partial class TakeRunner
     private static void StepReset()
     {
         if (!Flow.IsActive)
+            return;
+
+        if (Flow.Phase == ResetPhase.Loading && TryCompleteWatchedLoad())
             return;
 
         ResetStep step = Flow.Step(new ResetInput(ClockSeconds, _take != null, NewVehicleIsReady()));
@@ -271,26 +275,49 @@ internal static partial class TakeRunner
         if (Universe.IsAutoWarpActive)
             Universe.AutoWarpStop(false);
 
-        int before = SaveLoadWatch.Completed;
-        bool completed;
+        if (SaveLoadWatch.Available && FindCheckpointId(Flow.SaveName) is { } saveId)
+            _resetLoad = (saveId, SaveLoadWatch.Completed);
+        Vehicle? oldVehicle = Program.ControlledVehicle;
         try
         {
             GameSaves.LoadSaveGame(Flow.SaveName);
-            Vehicle? now = Program.ControlledVehicle;
-            completed = SaveLoadWatch.Available
-                ? SaveLoadWatch.Completed != before
-                : now != null && !now.IsDisposed && !ReferenceEquals(now, _resetOldVehicle);
         }
         catch (Exception ex)
         {
             DefaultCategory.Log.Error($"[CineCam] The load of the save \"{Flow.SaveName}\" threw an exception: {ex}");
-            completed = false;
+            LogReset(Flow.LoadFinished(false, ClockSeconds));
+            return;
         }
 
-        LogReset(Flow.LoadReturned(completed, ClockSeconds));
-        if (!completed)
+        if (_resetLoad.HasValue)
+        {
+            TryCompleteWatchedLoad();
             return;
+        }
 
+        Vehicle? now = Program.ControlledVehicle;
+        if (!SaveLoadWatch.Available && now != null && !now.IsDisposed && !ReferenceEquals(now, oldVehicle))
+            CompleteCheckpointLoad();
+        else
+            LogReset(Flow.LoadFinished(false, ClockSeconds));
+    }
+
+    // Builds without ApplyLoaded can also lack GameSaves.Find, so keep this lookup out of the fallback's JIT path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static string? FindCheckpointId(string saveName) => GameSaves.Find(saveName)?.Id;
+
+    private static bool TryCompleteWatchedLoad()
+    {
+        if (_resetLoad is not { } load || !SaveLoadWatch.AppliedSince(load.SaveId, load.Before))
+            return false;
+        CompleteCheckpointLoad();
+        return true;
+    }
+
+    private static void CompleteCheckpointLoad()
+    {
+        _resetLoad = null;
+        LogReset(Flow.LoadFinished(true, ClockSeconds));
         _resetNewVehicle = Program.ControlledVehicle;
         _resetLoadMark = SaveLoadWatch.Completed;
         _resetLoadedTake = Flow.TakeName;
@@ -354,7 +381,7 @@ internal static partial class TakeRunner
         if (Flow.IsActive)
             CancelReset(UiText.MessageText("text.980de862a114", "the mod unloaded"));
         ReleaseSimHold();
-        _resetOldVehicle = null;
+        _resetLoad = null;
         _resetNewVehicle = null;
         _resetLoadMark = -1;
         _ready = new ReadyLatch();

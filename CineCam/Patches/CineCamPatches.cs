@@ -61,9 +61,8 @@ internal static class CineCamPatches
                 prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(SwitchOnPrefix))));
 
         SaveLoadWatch.Available = Group(GameReflection.ValidateLoadWatch(),
-            "[CineCam] A reset finds the end of the load by the new vehicle only",
-            () => harmony.Patch(GameReflection.UncompressedSave_Load,
-                prefix: new HarmonyMethod(typeof(SaveLoadWatch), nameof(SaveLoadWatch.Prefix)),
+            "[CineCam] A reset can only detect a new vehicle during a synchronous load",
+            () => harmony.Patch(GameReflection.UncompressedSave_ApplyLoaded,
                 postfix: new HarmonyMethod(typeof(SaveLoadWatch), nameof(SaveLoadWatch.Postfix))));
 
         SequenceWatch.Available = Group(GameReflection.ValidateSequenceWatch(),

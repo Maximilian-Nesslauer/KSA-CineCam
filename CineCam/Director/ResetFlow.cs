@@ -35,7 +35,7 @@ public readonly record struct ResetStep(ResetAction Action, string Message)
 
 /// <summary>
 /// The steps of a reset to a checkpoint, with no game access. The caller calls <see cref="Step"/>
-/// once per frame, and <see cref="LoadReturned"/> right after it did <see cref="ResetAction.LoadSave"/>.
+/// once per frame, and <see cref="LoadFinished"/> when the requested save applies or the request fails.
 /// </summary>
 public sealed class ResetFlow
 {
@@ -43,6 +43,8 @@ public sealed class ResetFlow
     public const int ReadyFrames = 3;
 
     public const double EndTimeoutSeconds = 5.0;
+
+    public const double LoadTimeoutSeconds = 20.0;
 
     public const double VehicleTimeoutSeconds = 20.0;
 
@@ -112,6 +114,11 @@ public sealed class ResetFlow
                     return Fail(UiText.MessageText("text.1df402967a54", "the running take did not end"));
                 return ResetStep.Nothing;
 
+            case ResetPhase.Loading:
+                if (input.Now - _phaseStart > LoadTimeoutSeconds)
+                    return new ResetStep(ResetAction.None, LoadFinished(false, input.Now));
+                return ResetStep.Nothing;
+
             case ResetPhase.WaitingVehicle:
                 _readyCount = input.VehicleReady ? _readyCount + 1 : 0;
                 if (_readyCount >= ReadyFrames)
@@ -137,8 +144,7 @@ public sealed class ResetFlow
         }
     }
 
-    /// <summary>A false value means the game refused the load or could not read the save.</summary>
-    public string LoadReturned(bool completed, double now)
+    public string LoadFinished(bool completed, double now)
     {
         if (Phase != ResetPhase.Loading)
             return "";

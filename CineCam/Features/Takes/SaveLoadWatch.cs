@@ -2,28 +2,28 @@ using KSA;
 
 namespace CineCam.Features.Takes;
 
-// Counts finished save loads. UncompressedSave.Load also returns normally when the game refuses
-// the load, for example with the vehicle editor open, or cannot read the save, and only a finished
-// load replaces UniverseData.
 internal static class SaveLoadWatch
 {
-    /// <summary>True when the patch is applied, else a reset compares the controlled vehicle instead.</summary>
     public static bool Available { get; set; }
 
     public static int Completed { get; private set; }
+    private static string? _lastAppliedId;
 
     public static void Reset()
     {
         Available = false;
         Completed = 0;
+        _lastAppliedId = null;
     }
 
-    public static void Prefix(UncompressedSave __instance, out UniverseData __state) =>
-        __state = __instance.UniverseData;
+    public static bool AppliedSince(string saveId, int before) =>
+        Completed != before && string.Equals(_lastAppliedId, saveId, StringComparison.Ordinal);
 
-    public static void Postfix(UncompressedSave __instance, UniverseData __state)
+    public static void Postfix(UncompressedSave __instance, bool __runOriginal)
     {
-        if (!ReferenceEquals(__instance.UniverseData, __state))
-            Completed++;
+        if (!__runOriginal)
+            return;
+        _lastAppliedId = __instance.Id;
+        Completed++;
     }
 }

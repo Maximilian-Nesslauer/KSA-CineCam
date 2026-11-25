@@ -89,12 +89,8 @@ internal static class GameReflection
 
     #region Save and load
 
-    // The method of a finished load. A postfix compares UniverseData by reference to see whether the load happened.
-    public static readonly MethodInfo? UncompressedSave_Load =
-        AccessTools.Method(typeof(UncompressedSave), "Load", Type.EmptyTypes);
-
-    public static readonly FieldInfo? GameSave_UniverseData =
-        AccessTools.Field(typeof(GameSave), "UniverseData");
+    public static readonly MethodInfo? UncompressedSave_ApplyLoaded =
+        AccessTools.DeclaredMethod(typeof(UncompressedSave), "ApplyLoaded", Type.EmptyTypes);
 
     #endregion
 
@@ -258,8 +254,7 @@ internal static class GameReflection
     {
         var targets = new (string name, object? target)[]
         {
-            ("UncompressedSave.Load()", UncompressedSave_Load),
-            ("GameSave.UniverseData", GameSave_UniverseData),
+            ("UncompressedSave.ApplyLoaded()", UncompressedSave_ApplyLoaded),
         };
         return ValidateTargets("LoadWatch", targets);
     }
