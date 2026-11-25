@@ -7,7 +7,7 @@ A camera mod for [Kitten Space Agency](https://ahwoo.com/app/100000/kitten-space
 Requirements:
 
 - [StarMap](https://github.com/StarMapLoader/StarMap) 0.5.3 or later
-- KSA build 2026.11.16.5901. The mod is tested against this build only.
+- KSA build 2026.11.25.5949. The mod is tested against this build only.
 
 ## Features
 
@@ -63,7 +63,7 @@ enabled = true
 - Parachutes use the recorded deploy state and target shape. Cloth flutter, dents, plume trails, smoke and particles are outside the recording.
 - A replay needs the same star system and the recorded parts. You can confirm an older game build recording after reading the warning. Part changes can affect how it looks.
 - A recording holds 20 minutes of game time at 1x speed and follows the controlled vehicle and a limited number of other vehicles.
-- The mod is tested against KSA build 2026.11.16.5901 only. It patches game methods that are not a public modding interface, so a game update can break a feature until the mod is updated. It writes a warning in the log on another build.
+- The mod is tested against KSA build 2026.11.25.5949 only. It patches game methods that are not a public modding interface, so a game update can break a feature until the mod is updated. It writes a warning in the log on another build.
 - The import of the marker file into DaVinci Resolve has not been tested.
 
 ## How this mod was made
