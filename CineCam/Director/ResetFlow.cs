@@ -89,12 +89,14 @@ public sealed class ResetFlow
         return UiText.Format("text.a8506a046f62", $"Reset of take \"{takeName}\" to the checkpoint \"{saveName}\" requested.");
     }
 
-    public ResetStep Step(ResetInput input)
+    public ResetStep Step(ResetInput input) => Step(input, admitBeforeEndingTake: false);
+
+    internal ResetStep Step(ResetInput input, bool admitBeforeEndingTake)
     {
         switch (Phase)
         {
             case ResetPhase.Requested:
-                if (input.TakeRunning)
+                if (input.TakeRunning && !admitBeforeEndingTake)
                 {
                     Enter(ResetPhase.EndingTake, input.Now);
                     return new ResetStep(ResetAction.EndTake, UiText.MessageText("text.03205a6b2683", "Reset: the running take ends first."));
@@ -149,10 +151,12 @@ public sealed class ResetFlow
         if (Phase != ResetPhase.Loading)
             return "";
         if (!completed)
-            return Fail(UiText.MessageText("text.84e195da7aca", "the game did not load the save (see the lines above in the log)")).Message;
+            return LoadRefused(UiText.MessageText("text.84e195da7aca", "the game did not load the save (see the lines above in the log)"));
         Enter(ResetPhase.WaitingVehicle, now);
         return UiText.Format("text.63cc34029942", $"Reset: the save \"{SaveName}\" is loaded, waiting for the vehicle.");
     }
+
+    internal string LoadRefused(string reason) => Phase == ResetPhase.Loading ? Fail(reason).Message : "";
 
     public string StartFailed(string reason)
     {

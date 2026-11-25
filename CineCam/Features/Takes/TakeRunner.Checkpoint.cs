@@ -237,7 +237,8 @@ internal static partial class TakeRunner
         if (Flow.Phase == ResetPhase.Loading && TryCompleteWatchedLoad())
             return;
 
-        ResetStep step = Flow.Step(new ResetInput(ClockSeconds, _take != null, NewVehicleIsReady()));
+        ResetStep step = Flow.Step(new ResetInput(ClockSeconds, _take != null, NewVehicleIsReady()),
+            admitBeforeEndingTake: CheckpointLoadGuard.Required);
         LogReset(step.Message);
         switch (step.Action)
         {
@@ -274,11 +275,14 @@ internal static partial class TakeRunner
 
     private static void LoadCheckpoint()
     {
-        // A stale automatic warp would carry on in the new universe, and a speed that waits for a
-        // menu to close would overwrite the speed of the load.
-        _pendingSpeed = null;
-        if (Universe.IsAutoWarpActive)
-            Universe.AutoWarpStop(false);
+        bool guardRequired = CheckpointLoadGuard.Required;
+        if (guardRequired && GameReflection.GameSaves_Find == null)
+        {
+            LogReset(Flow.LoadRefused(CheckpointLoadGuard.Unavailable));
+            return;
+        }
+        if (!guardRequired)
+            PrepareCheckpointLoad();
 
         Vehicle? oldVehicle = Program.ControlledVehicle;
         try
@@ -298,7 +302,23 @@ internal static partial class TakeRunner
                 }
                 if (SaveLoadWatch.Available)
                     _resetLoad = (save, SaveLoadWatch.Completed);
-                save.Load();
+                if (guardRequired)
+                {
+                    string? refusal = CheckpointLoadGuard.Load(save, GameReflection.UncompressedSave_ApplyLoaded, () =>
+                    {
+                        End("reset to the checkpoint");
+                        PrepareCheckpointLoad();
+                    });
+                    if (refusal != null)
+                    {
+                        LogReset(Flow.LoadRefused(refusal));
+                        return;
+                    }
+                }
+                else
+                {
+                    save.Load();
+                }
             }
             else
             {
@@ -323,6 +343,14 @@ internal static partial class TakeRunner
             CompleteCheckpointLoad();
         else
             LogReset(Flow.LoadFinished(false, ClockSeconds));
+    }
+
+    private static void PrepareCheckpointLoad()
+    {
+        // A stale warp would carry on after the load, and a deferred speed would overwrite the loaded speed.
+        _pendingSpeed = null;
+        if (Universe.IsAutoWarpActive)
+            Universe.AutoWarpStop(false);
     }
 
     // Older builds lack GameSaves.Find, so keep this lookup out of the fallback's JIT path.

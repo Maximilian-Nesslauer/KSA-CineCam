@@ -18,6 +18,7 @@
     <Compile Include="..\CineCam\Features\Look\StillCapture.cs" Link="Capture\StillCapture.cs" />
     <Compile Include="..\CineCam\Features\Takes\OfflineHooks.cs" Link="Capture\OfflineHooks.cs" />
     <Compile Include="..\CineCam\Features\Takes\SaveLoadWatch.cs" Link="SaveLoadWatch.cs" />
+    <Compile Include="..\CineCam\Features\Takes\CheckpointLoadGuard.cs" Link="CheckpointLoadGuard.cs" />
     <Using Include="CineCam.Localization" />
     <None Include="..\tools\LocalizationCheck\shots.json" Link="LocalizationShots.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\CineCam\Localization\*.cs" Link="Localization\%(Filename)%(Extension)" />

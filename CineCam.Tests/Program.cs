@@ -1620,6 +1620,7 @@ Check("the run counter counts earlier folders of the same take", () =>
 ResetStep Run(ResetFlow flow, double now, bool take, bool ready) => flow.Step(new ResetInput(now, take, ready));
 
 CineCam.Tests.SaveLoadWatchTests.Run(Check, Expect);
+CineCam.Tests.CheckpointLoadGuardTests.Run(Check, Expect);
 
 Check("a reset without a running take loads at once, waits for the vehicle and then waits for the player", () =>
 {

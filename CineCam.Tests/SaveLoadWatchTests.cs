@@ -169,6 +169,14 @@ namespace KSA
 
         public bool Skip { get; set; }
         public bool Fail { get; set; }
+        public string PayloadSystem { get; set; } = "same";
+        public Action? BeforeRequest { get; set; }
+
+        public void Load()
+        {
+            BeforeRequest?.Invoke();
+            SaveSystemSwap.RequestLoad(Id, PayloadSystem, ApplyLoaded);
+        }
 
         public Action Application() => ApplyLoaded;
         public void Apply() => ApplyLoaded();
