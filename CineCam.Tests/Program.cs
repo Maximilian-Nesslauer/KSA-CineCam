@@ -1619,6 +1619,9 @@ Check("the run counter counts earlier folders of the same take", () =>
 
 ResetStep Run(ResetFlow flow, double now, bool take, bool ready) => flow.Step(new ResetInput(now, take, ready));
 
+CineCam.Tests.SaveLoadWatchTests.Run(Check, Expect);
+CineCam.Tests.CheckpointLoadGuardTests.Run(Check, Expect);
+
 Check("a reset without a running take loads at once, waits for the vehicle and then waits for the player", () =>
 {
     var flow = new ResetFlow();
@@ -1627,7 +1630,7 @@ Check("a reset without a running take loads at once, waits for the vehicle and t
     Expect(flow.IsActive && !flow.HoldsSim, "active");
     Expect(Run(flow, 0.1, false, false).Action == ResetAction.LoadSave, "load");
     Expect(Run(flow, 0.2, false, false).Action == ResetAction.None && flow.Phase == ResetPhase.Loading, "waits for the report of the load");
-    Expect(flow.LoadReturned(true, 0.3).Length > 0 && flow.Phase == ResetPhase.WaitingVehicle, "load reported");
+    Expect(flow.LoadFinished(true, 0.3).Length > 0 && flow.Phase == ResetPhase.WaitingVehicle, "load reported");
     Expect(Run(flow, 0.4, false, true).Action == ResetAction.None && flow.Phase == ResetPhase.WaitingVehicle, "frame 1");
     Run(flow, 0.5, false, true);
     ResetStep ready = Run(flow, 0.6, false, true);
@@ -1658,9 +1661,33 @@ Check("a refused load fails the reset", () =>
     var flow = new ResetFlow();
     flow.Begin("t", "s", false, 2.0, 0.0);
     Run(flow, 0.0, false, false);
-    string message = flow.LoadReturned(false, 0.1);
+    string message = flow.LoadFinished(false, 0.1);
     Expect(flow.Phase == ResetPhase.Failed && message.Contains("did not load"), message);
-    Expect(flow.LoadReturned(true, 0.2).Length == 0 && flow.Phase == ResetPhase.Failed, "a late report changes nothing");
+    Expect(flow.LoadFinished(true, 0.2).Length == 0 && flow.Phase == ResetPhase.Failed, "a late report changes nothing");
+});
+
+Check("a deferred checkpoint has a separate load timeout and gets a full vehicle wait after application", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", true, 0.0, 0.0);
+    Run(flow, 0.0, false, false);
+    Run(flow, ResetFlow.LoadTimeoutSeconds - 1, false, true);
+    Expect(flow.Phase == ResetPhase.Loading, "a ready vehicle cannot complete a pending load");
+    double applied = ResetFlow.LoadTimeoutSeconds - 0.5;
+    flow.LoadFinished(true, applied);
+    Run(flow, applied + ResetFlow.VehicleTimeoutSeconds - 1, false, false);
+    Expect(flow.Phase == ResetPhase.WaitingVehicle, "vehicle wait starts at application");
+});
+
+Check("a checkpoint that never applies times out and a late application cannot resume the reset", () =>
+{
+    var flow = new ResetFlow();
+    flow.Begin("t", "s", true, 0.0, 0.0);
+    Run(flow, 0.0, false, false);
+    ResetStep timeout = Run(flow, ResetFlow.LoadTimeoutSeconds + 1, false, true);
+    Expect(timeout.Action == ResetAction.None && flow.Phase == ResetPhase.Failed && !flow.HoldsSim, timeout.Message);
+    Expect(flow.LoadFinished(true, ResetFlow.LoadTimeoutSeconds + 2).Length == 0, "ignore late application");
+    Expect(flow.Phase == ResetPhase.Failed, "stay failed");
 });
 
 Check("a vehicle that is not ready fails the reset after the time out and a gap restarts the frame count", () =>
@@ -1668,7 +1695,7 @@ Check("a vehicle that is not ready fails the reset after the time out and a gap 
     var flow = new ResetFlow();
     flow.Begin("t", "s", false, 2.0, 0.0);
     Run(flow, 0.0, false, false);
-    flow.LoadReturned(true, 0.0);
+    flow.LoadFinished(true, 0.0);
     Run(flow, 0.1, false, true);
     Run(flow, 0.2, false, true);
     Run(flow, 0.3, false, false);
@@ -1684,7 +1711,7 @@ Check("an automatic start waits for the delay and holds the sim", () =>
     flow.Begin("t", "s", autoStart: true, delaySeconds: 2.0, now: 0.0);
     Expect(flow.HoldsSim, "holds");
     Run(flow, 0.0, false, false);
-    flow.LoadReturned(true, 1.0);
+    flow.LoadFinished(true, 1.0);
     for (int i = 0; i < ResetFlow.ReadyFrames; i++)
         Run(flow, 1.1 + i * 0.1, false, true);
     Expect(flow.IsCountingDown && flow.HoldsSim, "counting");
@@ -1700,7 +1727,7 @@ Check("a failed automatic start turns the outcome into a failure", () =>
     var flow = new ResetFlow();
     flow.Begin("t", "s", true, 0.0, 0.0);
     Run(flow, 0.0, false, false);
-    flow.LoadReturned(true, 0.0);
+    flow.LoadFinished(true, 0.0);
     for (int i = 0; i < ResetFlow.ReadyFrames; i++)
         Run(flow, 0.1, false, true);
     Expect(Run(flow, 0.1, false, true).Action == ResetAction.StartTake, "start asked");
@@ -1714,7 +1741,7 @@ Check("a delay of zero starts at the next step and a changed vehicle cancels the
     var zero = new ResetFlow();
     zero.Begin("t", "s", true, 0.0, 0.0);
     Run(zero, 0.0, false, false);
-    zero.LoadReturned(true, 0.0);
+    zero.LoadFinished(true, 0.0);
     for (int i = 0; i < ResetFlow.ReadyFrames; i++)
         Run(zero, 0.1, false, true);
     Expect(Run(zero, 0.1, false, true).Action == ResetAction.StartTake, "zero delay");
@@ -1722,7 +1749,7 @@ Check("a delay of zero starts at the next step and a changed vehicle cancels the
     var gone = new ResetFlow();
     gone.Begin("t", "s", true, 5.0, 0.0);
     Run(gone, 0.0, false, false);
-    gone.LoadReturned(true, 0.0);
+    gone.LoadFinished(true, 0.0);
     for (int i = 0; i < ResetFlow.ReadyFrames; i++)
         Run(gone, 0.1, false, true);
     Run(gone, 0.2, false, false);

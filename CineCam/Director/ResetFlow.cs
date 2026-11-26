@@ -35,7 +35,7 @@ public readonly record struct ResetStep(ResetAction Action, string Message)
 
 /// <summary>
 /// The steps of a reset to a checkpoint, with no game access. The caller calls <see cref="Step"/>
-/// once per frame, and <see cref="LoadReturned"/> right after it did <see cref="ResetAction.LoadSave"/>.
+/// once per frame, and <see cref="LoadFinished"/> when the requested save applies or the request fails.
 /// </summary>
 public sealed class ResetFlow
 {
@@ -43,6 +43,8 @@ public sealed class ResetFlow
     public const int ReadyFrames = 3;
 
     public const double EndTimeoutSeconds = 5.0;
+
+    public const double LoadTimeoutSeconds = 20.0;
 
     public const double VehicleTimeoutSeconds = 20.0;
 
@@ -87,12 +89,14 @@ public sealed class ResetFlow
         return UiText.Format("text.a8506a046f62", $"Reset of take \"{takeName}\" to the checkpoint \"{saveName}\" requested.");
     }
 
-    public ResetStep Step(ResetInput input)
+    public ResetStep Step(ResetInput input) => Step(input, admitBeforeEndingTake: false);
+
+    internal ResetStep Step(ResetInput input, bool admitBeforeEndingTake)
     {
         switch (Phase)
         {
             case ResetPhase.Requested:
-                if (input.TakeRunning)
+                if (input.TakeRunning && !admitBeforeEndingTake)
                 {
                     Enter(ResetPhase.EndingTake, input.Now);
                     return new ResetStep(ResetAction.EndTake, UiText.MessageText("text.03205a6b2683", "Reset: the running take ends first."));
@@ -110,6 +114,11 @@ public sealed class ResetFlow
 
                 if (input.Now - _phaseStart > EndTimeoutSeconds)
                     return Fail(UiText.MessageText("text.1df402967a54", "the running take did not end"));
+                return ResetStep.Nothing;
+
+            case ResetPhase.Loading:
+                if (input.Now - _phaseStart > LoadTimeoutSeconds)
+                    return new ResetStep(ResetAction.None, LoadFinished(false, input.Now));
                 return ResetStep.Nothing;
 
             case ResetPhase.WaitingVehicle:
@@ -137,16 +146,17 @@ public sealed class ResetFlow
         }
     }
 
-    /// <summary>A false value means the game refused the load or could not read the save.</summary>
-    public string LoadReturned(bool completed, double now)
+    public string LoadFinished(bool completed, double now)
     {
         if (Phase != ResetPhase.Loading)
             return "";
         if (!completed)
-            return Fail(UiText.MessageText("text.84e195da7aca", "the game did not load the save (see the lines above in the log)")).Message;
+            return LoadRefused(UiText.MessageText("text.84e195da7aca", "the game did not load the save (see the lines above in the log)"));
         Enter(ResetPhase.WaitingVehicle, now);
         return UiText.Format("text.63cc34029942", $"Reset: the save \"{SaveName}\" is loaded, waiting for the vehicle.");
     }
+
+    internal string LoadRefused(string reason) => Phase == ResetPhase.Loading ? Fail(reason).Message : "";
 
     public string StartFailed(string reason)
     {

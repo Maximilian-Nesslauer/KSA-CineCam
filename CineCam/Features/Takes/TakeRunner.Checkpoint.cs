@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Brutal.Logging;
 using CineCam.Core;
 using CineCam.Director;
@@ -20,7 +21,8 @@ internal static partial class TakeRunner
     private static string? _checkpointTake;
     private static bool _resetRequested;
     private static string? _resetTake;
-    private static Vehicle? _resetOldVehicle;
+    private static string _resetSaveFolder = "";
+    private static (UncompressedSave Save, int Before)? _resetLoad;
     private static Vehicle? _resetNewVehicle;
     private static bool _resetHoldsSim;
 
@@ -211,14 +213,15 @@ internal static partial class TakeRunner
             return;
         }
 
-        string folder = Path.Combine(GameSaves.SaveFolderPath, take.Checkpoint);
+        string folder = Path.GetFullPath(Path.Combine(GameSaves.SaveFolderPath, take.Checkpoint));
         if (!File.Exists(Path.Combine(folder, "universe.xml")))
         {
             DefaultCategory.Log.Error($"[CineCam] The save \"{take.Checkpoint}\" of take \"{take.Name}\" does not exist in {GameSaves.SaveFolderPath}.");
             return;
         }
 
-        _resetOldVehicle = Program.ControlledVehicle;
+        _resetSaveFolder = folder;
+        _resetLoad = null;
         _resetNewVehicle = null;
         _resetHoldsSim = false;
         // Without the camera hook the reset only loads the save, so the sim is not held for a start that cannot come.
@@ -231,7 +234,11 @@ internal static partial class TakeRunner
         if (!Flow.IsActive)
             return;
 
-        ResetStep step = Flow.Step(new ResetInput(ClockSeconds, _take != null, NewVehicleIsReady()));
+        if (Flow.Phase == ResetPhase.Loading && TryCompleteWatchedLoad())
+            return;
+
+        ResetStep step = Flow.Step(new ResetInput(ClockSeconds, _take != null, NewVehicleIsReady()),
+            admitBeforeEndingTake: CheckpointLoadGuard.Required);
         LogReset(step.Message);
         switch (step.Action)
         {
@@ -252,7 +259,10 @@ internal static partial class TakeRunner
         }
 
         if (!Flow.IsActive)
+        {
+            _resetLoad = null;
             ReleaseSimHold();
+        }
     }
 
     private static bool NewVehicleIsReady()
@@ -265,32 +275,100 @@ internal static partial class TakeRunner
 
     private static void LoadCheckpoint()
     {
-        // A stale automatic warp would carry on in the new universe, and a speed that waits for a
-        // menu to close would overwrite the speed of the load.
-        _pendingSpeed = null;
-        if (Universe.IsAutoWarpActive)
-            Universe.AutoWarpStop(false);
+        bool guardRequired = CheckpointLoadGuard.Required;
+        if (guardRequired && GameReflection.GameSaves_Find == null)
+        {
+            LogReset(Flow.LoadRefused(CheckpointLoadGuard.Unavailable));
+            return;
+        }
+        if (!guardRequired)
+            PrepareCheckpointLoad();
 
-        int before = SaveLoadWatch.Completed;
-        bool completed;
+        Vehicle? oldVehicle = Program.ControlledVehicle;
         try
         {
-            GameSaves.LoadSaveGame(Flow.SaveName);
-            Vehicle? now = Program.ControlledVehicle;
-            completed = SaveLoadWatch.Available
-                ? SaveLoadWatch.Completed != before
-                : now != null && !now.IsDisposed && !ReferenceEquals(now, _resetOldVehicle);
+            if (GameReflection.GameSaves_Find != null)
+            {
+                // A registry hash can identify a different ID, and copied folders can share a metadata ID.
+                GameSave? entry = FindCheckpoint(Flow.SaveName);
+                if (SaveLoadWatch.ExactCheckpoint(Flow.SaveName, _resetSaveFolder, entry) is not { } save)
+                {
+                    string detail = entry is UncompressedSave registered
+                        ? $"resolved ID \"{registered.Id}\" in \"{registered.Directory.FullName}\""
+                        : "no registered uncompressed save";
+                    DefaultCategory.Log.Error($"[CineCam] Checkpoint \"{Flow.SaveName}\" in \"{_resetSaveFolder}\" does not match the save registry ({detail}).");
+                    LogReset(Flow.LoadFinished(false, ClockSeconds));
+                    return;
+                }
+                if (SaveLoadWatch.Available)
+                    _resetLoad = (save, SaveLoadWatch.Completed);
+                if (guardRequired)
+                {
+                    string? refusal = CheckpointLoadGuard.Load(save, GameReflection.UncompressedSave_ApplyLoaded, () =>
+                    {
+                        End("reset to the checkpoint");
+                        PrepareCheckpointLoad();
+                    });
+                    if (refusal != null)
+                    {
+                        LogReset(Flow.LoadRefused(refusal));
+                        return;
+                    }
+                }
+                else
+                {
+                    save.Load();
+                }
+            }
+            else
+            {
+                GameSaves.LoadSaveGame(Flow.SaveName);
+            }
         }
         catch (Exception ex)
         {
             DefaultCategory.Log.Error($"[CineCam] The load of the save \"{Flow.SaveName}\" threw an exception: {ex}");
-            completed = false;
+            LogReset(Flow.LoadFinished(false, ClockSeconds));
+            return;
         }
 
-        LogReset(Flow.LoadReturned(completed, ClockSeconds));
-        if (!completed)
+        if (_resetLoad.HasValue)
+        {
+            TryCompleteWatchedLoad();
             return;
+        }
 
+        Vehicle? now = Program.ControlledVehicle;
+        if (!SaveLoadWatch.Available && now != null && !now.IsDisposed && !ReferenceEquals(now, oldVehicle))
+            CompleteCheckpointLoad();
+        else
+            LogReset(Flow.LoadFinished(false, ClockSeconds));
+    }
+
+    private static void PrepareCheckpointLoad()
+    {
+        // A stale warp would carry on after the load, and a deferred speed would overwrite the loaded speed.
+        _pendingSpeed = null;
+        if (Universe.IsAutoWarpActive)
+            Universe.AutoWarpStop(false);
+    }
+
+    // Older builds lack GameSaves.Find, so keep this lookup out of the fallback's JIT path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static GameSave? FindCheckpoint(string saveName) => GameSaves.Find(saveName);
+
+    private static bool TryCompleteWatchedLoad()
+    {
+        if (_resetLoad is not { } load || !SaveLoadWatch.AppliedSince(load.Save, load.Before))
+            return false;
+        CompleteCheckpointLoad();
+        return true;
+    }
+
+    private static void CompleteCheckpointLoad()
+    {
+        _resetLoad = null;
+        LogReset(Flow.LoadFinished(true, ClockSeconds));
         _resetNewVehicle = Program.ControlledVehicle;
         _resetLoadMark = SaveLoadWatch.Completed;
         _resetLoadedTake = Flow.TakeName;
@@ -325,6 +403,7 @@ internal static partial class TakeRunner
 
     private static void CancelReset(string reason)
     {
+        _resetLoad = null;
         LogReset(Flow.Cancel(reason));
         ReleaseSimHold();
     }
@@ -354,7 +433,8 @@ internal static partial class TakeRunner
         if (Flow.IsActive)
             CancelReset(UiText.MessageText("text.980de862a114", "the mod unloaded"));
         ReleaseSimHold();
-        _resetOldVehicle = null;
+        _resetSaveFolder = "";
+        _resetLoad = null;
         _resetNewVehicle = null;
         _resetLoadMark = -1;
         _ready = new ReadyLatch();

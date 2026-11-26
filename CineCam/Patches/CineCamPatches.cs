@@ -61,10 +61,17 @@ internal static class CineCamPatches
                 prefix: new HarmonyMethod(typeof(CineCamPatches), nameof(SwitchOnPrefix))));
 
         SaveLoadWatch.Available = Group(GameReflection.ValidateLoadWatch(),
-            "[CineCam] A reset finds the end of the load by the new vehicle only",
-            () => harmony.Patch(GameReflection.UncompressedSave_Load,
-                prefix: new HarmonyMethod(typeof(SaveLoadWatch), nameof(SaveLoadWatch.Prefix)),
+            "[CineCam] A reset can only detect a new vehicle during a synchronous load",
+            () => harmony.Patch(GameReflection.UncompressedSave_ApplyLoaded,
                 postfix: new HarmonyMethod(typeof(SaveLoadWatch), nameof(SaveLoadWatch.Postfix))));
+
+        CheckpointLoadGuard.Available = CheckpointLoadGuard.Required && Group(GameReflection.ValidateLoadWatch(),
+            "[CineCam] Checkpoint resets are disabled because the system swap guard is unavailable",
+            () => harmony.Patch(AccessTools.DeclaredMethod(typeof(SaveSystemSwap), nameof(SaveSystemSwap.RequestLoad),
+                    [typeof(string), typeof(string), typeof(Action)])
+                    ?? throw new MissingMethodException("SaveSystemSwap.RequestLoad(string, string, Action)"),
+                prefix: new HarmonyMethod(typeof(CheckpointLoadGuard), nameof(CheckpointLoadGuard.Prefix))
+                    { priority = Priority.Last }));
 
         SequenceWatch.Available = Group(GameReflection.ValidateSequenceWatch(),
             "[CineCam] A sequence that loses all its parts at once may be missed by the events",
@@ -185,6 +192,7 @@ internal static class CineCamPatches
         FrameAvailable = false;
         CameraAvailable = false;
         SaveLoadWatch.Reset();
+        CheckpointLoadGuard.Available = false;
         SequenceWatch.Reset();
         FlightHooks.Reset();
         VehicleReader.ResetReflection();
